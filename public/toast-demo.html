@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Toast Notification Examples - MauzoLinkV2</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@4.6.0/dist/css/bootstrap.min.css">
+    <style>
+        body {
+            font-family: 'Century Gothic', sans-serif;
+            padding: 40px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+        }
+        .container {
+            max-width: 900px;
+            background: white;
+            border-radius: 15px;
+            padding: 40px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+        }
+        h1 {
+            color: #940000;
+            margin-bottom: 30px;
+            font-weight: bold;
+        }
+        .section {
+            margin-bottom: 30px;
+            padding: 20px;
+            background: #f8f9fa;
+            border-radius: 10px;
+        }
+        .section h3 {
+            color: #940000;
+            margin-bottom: 15px;
+        }
+        .btn-custom {
+            margin: 5px;
+            min-width: 150px;
+        }
+        .code-block {
+            background: #2d2d2d;
+            color: #f8f8f2;
+            padding: 15px;
+            border-radius: 5px;
+            margin-top: 10px;
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+            overflow-x: auto;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎉 Toast Notification System - Examples</h1>
+        <p class="lead">Click the buttons below to see the toast notifications in action!</p>
+
+        <!-- Basic Examples -->
+        <div class="section">
+            <h3>1. Basic Toast Notifications</h3>
+            <p>Simple notifications with just a message</p>
+            <button class="btn btn-success btn-custom" onclick="showToast('success', 'Operation completed successfully!')">
+                Success Toast
+            </button>
+            <button class="btn btn-danger btn-custom" onclick="showToast('error', 'Something went wrong!')">
+                Error Toast
+            </button>
+            <button class="btn btn-warning btn-custom" onclick="showToast('warning', 'Please check your input')">
+                Warning Toast
+            </button>
+            <button class="btn btn-info btn-custom" onclick="showToast('info', 'New update available')">
+                Info Toast
+            </button>
+            <div class="code-block">
+showToast('success', 'Operation completed successfully!');
+showToast('error', 'Something went wrong!');
+showToast('warning', 'Please check your input');
+showToast('info', 'New update available');
+            </div>
+        </div>
+
+        <!-- With Titles -->
+        <div class="section">
+            <h3>2. Toast with Custom Titles</h3>
+            <p>Notifications with both title and message</p>
+            <button class="btn btn-success btn-custom" onclick="showToast('success', 'Your profile has been updated', 'Profile Updated')">
+                Profile Updated
+            </button>
+            <button class="btn btn-danger btn-custom" onclick="showToast('error', 'Please fill all required fields', 'Validation Error')">
+                Validation Error
+            </button>
+            <button class="btn btn-warning btn-custom" onclick="showToast('warning', 'Your session will expire soon', 'Session Warning')">
+                Session Warning
+            </button>
+            <div class="code-block">
+showToast('success', 'Your profile has been updated', 'Profile Updated');
+showToast('error', 'Please fill all required fields', 'Validation Error');
+showToast('warning', 'Your session will expire soon', 'Session Warning');
+            </div>
+        </div>
+
+        <!-- Custom Duration -->
+        <div class="section">
+            <h3>3. Toast with Custom Duration</h3>
+            <p>Control how long the notification stays visible</p>
+            <button class="btn btn-primary btn-custom" onclick="showToast('info', 'This will disappear in 1 second', 'Quick Message', 1000)">
+                1 Second
+            </button>
+            <button class="btn btn-primary btn-custom" onclick="showToast('info', 'This will stay for 5 seconds', 'Normal Message', 5000)">
+                5 Seconds
+            </button>
+            <button class="btn btn-primary btn-custom" onclick="showToast('warning', 'This will stay for 10 seconds', 'Important Message', 10000)">
+                10 Seconds
+            </button>
+            <div class="code-block">
+showToast('info', 'This will disappear in 1 second', 'Quick Message', 1000);
+showToast('info', 'This will stay for 5 seconds', 'Normal Message', 5000);
+showToast('warning', 'This will stay for 10 seconds', 'Important Message', 10000);
+            </div>
+        </div>
+
+        <!-- Real-world Examples -->
+        <div class="section">
+            <h3>4. Real-world Use Cases</h3>
+            <p>Common scenarios in your application</p>
+            <button class="btn btn-success btn-custom" onclick="simulateLogin()">
+                Simulate Login
+            </button>
+            <button class="btn btn-primary btn-custom" onclick="simulateSave()">
+                Simulate Save
+            </button>
+            <button class="btn btn-danger btn-custom" onclick="simulateDelete()">
+                Simulate Delete
+            </button>
+            <button class="btn btn-warning btn-custom" onclick="simulateValidation()">
+                Simulate Validation
+            </button>
+            <div class="code-block">
+// Login Success
+showToast('success', 'Welcome back, John Doe!', 'Login Successful');
+
+// Save Operation
+showToast('success', 'Your changes have been saved', 'Saved');
+
+// Delete Confirmation
+showToast('success', 'Item deleted successfully', 'Deleted');
+
+// Validation Error
+showToast('warning', 'Email field is required', 'Validation Error');
+            </div>
+        </div>
+
+        <!-- Multiple Toasts -->
+        <div class="section">
+            <h3>5. Multiple Sequential Toasts</h3>
+            <p>SweetAlert2 automatically queues multiple toasts</p>
+            <button class="btn btn-secondary btn-custom" onclick="showMultipleToasts()">
+                Show Multiple Toasts
+            </button>
+            <div class="code-block">
+showToast('info', 'Processing your request...', 'Step 1');
+setTimeout(() => showToast('warning', 'Validating data...', 'Step 2'), 500);
+setTimeout(() => showToast('success', 'Operation completed!', 'Step 3'), 1000);
+            </div>
+        </div>
+
+        <!-- AJAX Example -->
+        <div class="section">
+            <h3>6. AJAX Integration Example</h3>
+            <p>Simulate an AJAX request with toast feedback</p>
+            <button class="btn btn-info btn-custom" onclick="simulateAjaxSuccess()">
+                Simulate AJAX Success
+            </button>
+            <button class="btn btn-danger btn-custom" onclick="simulateAjaxError()">
+                Simulate AJAX Error
+            </button>
+            <div class="code-block">
+$.ajax({
+    url: '/api/save-data',
+    method: 'POST',
+    data: formData,
+    success: function(response) {
+        showToast('success', response.message, 'Success!');
+    },
+    error: function(xhr) {
+        showToast('error', xhr.responseJSON.message, 'Error!');
+    }
+});
+            </div>
+        </div>
+    </div>
+
+    <!-- SweetAlert2 -->
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+    <script>
+        // Professional Toast Mixin (same as in dashboard.blade.php)
+        const Toast = Swal.mixin({
+            toast: true,
+            position: 'top-end',
+            showConfirmButton: false,
+            timer: 3000,
+            timerProgressBar: true,
+            didOpen: (toast) => {
+                toast.addEventListener('mouseenter', Swal.stopTimer);
+                toast.addEventListener('mouseleave', Swal.resumeTimer);
+            }
+        });
+
+        // Standardized Global Toast Function
+        function showToast(type, message, title = null, duration = 3000) {
+            const toastConfig = {
+                icon: type,
+                title: title || message,
+                timer: duration
+            };
+            
+            // If both title and message are provided, show message as text
+            if (title && message && title !== message) {
+                toastConfig.title = title;
+                toastConfig.text = message;
+            }
+            
+            Toast.fire(toastConfig);
+        }
+
+        // Real-world simulation functions
+        function simulateLogin() {
+            showToast('success', 'Welcome back, John Doe!', 'Login Successful');
+        }
+
+        function simulateSave() {
+            showToast('success', 'Your changes have been saved', 'Saved');
+        }
+
+        function simulateDelete() {
+            showToast('success', 'Item deleted successfully', 'Deleted');
+        }
+
+        function simulateValidation() {
+            showToast('warning', 'Email field is required', 'Validation Error');
+        }
+
+        function showMultipleToasts() {
+            showToast('info', 'Processing your request...', 'Step 1');
+            setTimeout(() => showToast('warning', 'Validating data...', 'Step 2'), 500);
+            setTimeout(() => showToast('success', 'Operation completed!', 'Step 3'), 1000);
+        }
+
+        function simulateAjaxSuccess() {
+            // Simulate loading
+            showToast('info', 'Sending request...', 'Loading', 1500);
+            
+            // Simulate success after 2 seconds
+            setTimeout(() => {
+                showToast('success', 'Data saved successfully!', 'Success');
+            }, 2000);
+        }
+
+        function simulateAjaxError() {
+            // Simulate loading
+            showToast('info', 'Sending request...', 'Loading', 1500);
+            
+            // Simulate error after 2 seconds
+            setTimeout(() => {
+                showToast('error', 'Failed to connect to server', 'Connection Error');
+            }, 2000);
+        }
+
+        // Show welcome toast on page load
+        window.addEventListener('load', function() {
+            setTimeout(() => {
+                showToast('info', 'Click any button to see toast notifications in action!', 'Welcome', 5000);
+            }, 500);
+        });
+    </script>
+</body>
+</html>

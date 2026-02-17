@@ -1,0 +1,230 @@
+╔══════════════════════════════════════════════════════════════════════════════╗
+║              DUAL NOTIFICATION SYSTEM - QUICK REFERENCE                      ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+┌──────────────────────────────────────────────────────────────────────────────┐
+│ 🍞 TOAST NOTIFICATIONS (Non-Intrusive)                                      │
+└──────────────────────────────────────────────────────────────────────────────┘
+
+  When to Use:
+  ────────────
+  ✓ Success confirmations (saved, updated, deleted)
+  ✓ Quick status updates
+  ✓ Non-critical information
+  ✓ Background process completions
+
+  JavaScript:
+  ───────────
+  showToast('success', 'Data saved!');
+  showToast('error', 'Failed to save');
+  showToast('warning', 'Check input');
+  showToast('info', 'Processing...');
+  
+  With Title:
+  ───────────
+  showToast('success', 'Profile updated', 'Success');
+  
+  Custom Duration:
+  ────────────────
+  showToast('info', 'Important message', 'Notice', 5000);
+
+  PHP/Laravel:
+  ────────────
+  return redirect()->back()->with('success', 'Saved!');
+  return redirect()->back()->with('error', 'Failed!');
+  return redirect()->back()->with('warning', 'Warning!');
+  return redirect()->back()->with('info', 'Info!');
+
+┌──────────────────────────────────────────────────────────────────────────────┐
+│ 🔔 SWEETALERT MODALS (Attention-Grabbing)                                   │
+└──────────────────────────────────────────────────────────────────────────────┘
+
+  When to Use:
+  ────────────
+  ⚠ Critical errors requiring attention
+  ⚠ Confirmations before destructive actions
+  ⚠ Important warnings
+  ⚠ Payment confirmations
+
+  JavaScript - Basic Modal:
+  ─────────────────────────
+  showAlert('success', 'Account created!', 'Welcome!');
+  showAlert('error', 'Critical error', 'Error');
+  showAlert('warning', 'Cannot undo', 'Warning');
+  showAlert('info', 'Read terms', 'Important');
+
+  JavaScript - Confirmation:
+  ──────────────────────────
+  showConfirm(
+      'Delete this item?',
+      'Are you sure?',
+      function() {
+          // User clicked Yes
+          showToast('success', 'Deleted!');
+      },
+      function() {
+          // User clicked No (optional)
+          showToast('info', 'Cancelled');
+      }
+  );
+
+  PHP/Laravel:
+  ────────────
+  return redirect()->back()->with('alert_success', 'Payment complete!');
+  return redirect()->back()->with('alert_error', 'Critical error!');
+  return redirect()->back()->with('alert_warning', 'Important warning!');
+  return redirect()->back()->with('alert_info', 'Read this!');
+
+┌──────────────────────────────────────────────────────────────────────────────┐
+│ 📊 COMPARISON CHART                                                          │
+└──────────────────────────────────────────────────────────────────────────────┘
+
+  Feature              Toast                  Modal
+  ─────────────────────────────────────────────────────────────────────────────
+  Position             Top-right corner       Center screen
+  Behavior             Auto-dismiss (3s)      Requires user click
+  Interruption         Minimal                High
+  Best For             CRUD operations        Critical alerts
+  User Action          None required          Must click OK
+  Multiple             Queued                 One at a time
+
+┌──────────────────────────────────────────────────────────────────────────────┐
+│ 🎯 DECISION TREE                                                             │
+└──────────────────────────────────────────────────────────────────────────────┘
+
+  Is it critical or requires immediate attention?
+  │
+  ├─ YES → Use MODAL (showAlert or showConfirm)
+  │        Examples: Payment confirmation, critical errors, delete confirmation
+  │
+  └─ NO  → Use TOAST (showToast)
+           Examples: Save success, update confirmation, info messages
+
+┌──────────────────────────────────────────────────────────────────────────────┐
+│ 💡 COMMON PATTERNS                                                           │
+└──────────────────────────────────────────────────────────────────────────────┘
+
+  Pattern 1: Simple Save
+  ──────────────────────
+  // Controller
+  return redirect()->back()->with('success', 'Product saved!');
+  
+  // Result: Green toast in top-right corner
+
+  Pattern 2: Delete with Confirmation
+  ────────────────────────────────────
+  // JavaScript
+  function deleteProduct(id) {
+      showConfirm(
+          'Permanently delete this product?',
+          'Delete?',
+          function() {
+              $.post('/api/products/' + id + '/delete', function() {
+                  showToast('success', 'Product deleted');
+              });
+          }
+      );
+  }
+
+  Pattern 3: Payment Processing
+  ──────────────────────────────
+  // Controller
+  return redirect()->route('dashboard')
+      ->with('alert_success', 'Payment of $99 processed!');
+  
+  // Result: Success modal in center screen
+
+  Pattern 4: Form Validation
+  ───────────────────────────
+  // JavaScript
+  if (!isValid) {
+      showToast('warning', 'Please fill all fields', 'Validation Error');
+      return false;
+  }
+
+  Pattern 5: Multi-Step Process
+  ──────────────────────────────
+  // Step 1: Confirm
+  showConfirm('Process order?', 'Confirm', function() {
+      // Step 2: Show processing
+      showToast('info', 'Processing...', 'Please Wait', 5000);
+      
+      // Step 3: API call
+      $.post('/api/process', function(response) {
+          // Step 4: Show result
+          showAlert('success', response.message, 'Complete');
+      });
+  });
+
+┌──────────────────────────────────────────────────────────────────────────────┐
+│ 🔧 FUNCTION SIGNATURES                                                       │
+└──────────────────────────────────────────────────────────────────────────────┘
+
+  showToast(type, message, title, duration)
+  ──────────────────────────────────────────
+  • type: 'success' | 'error' | 'warning' | 'info'
+  • message: string (required)
+  • title: string | null (optional)
+  • duration: number in ms (default: 3000)
+
+  showAlert(type, message, title, options)
+  ─────────────────────────────────────────
+  • type: 'success' | 'error' | 'warning' | 'info' | 'question'
+  • message: string (required)
+  • title: string | null (optional)
+  • options: object (SweetAlert2 options)
+
+  showConfirm(message, title, onConfirm, onCancel)
+  ─────────────────────────────────────────────────
+  • message: string (required)
+  • title: string (default: 'Are you sure?')
+  • onConfirm: function (required)
+  • onCancel: function | null (optional)
+
+┌──────────────────────────────────────────────────────────────────────────────┐
+│ 📋 SESSION KEYS SUMMARY                                                      │
+└──────────────────────────────────────────────────────────────────────────────┘
+
+  TOAST (Non-Intrusive)          MODAL (Attention-Grabbing)
+  ─────────────────────          ──────────────────────────
+  with('success', ...)           with('alert_success', ...)
+  with('error', ...)             with('alert_error', ...)
+  with('warning', ...)           with('alert_warning', ...)
+  with('info', ...)              with('alert_info', ...)
+
+┌──────────────────────────────────────────────────────────────────────────────┐
+│ 🎨 EXAMPLES BY SCENARIO                                                      │
+└──────────────────────────────────────────────────────────────────────────────┘
+
+  Scenario                    Use          Code
+  ───────────────────────────────────────────────────────────────────────────
+  Save product                Toast        with('success', 'Saved!')
+  Update profile              Toast        with('success', 'Updated!')
+  Delete item                 Toast        with('success', 'Deleted!')
+  Validation error            Toast        with('warning', 'Check input')
+  Info message                Toast        with('info', 'Processing...')
+  
+  Critical error              Modal        with('alert_error', 'Error!')
+  Payment success             Modal        with('alert_success', 'Paid!')
+  Delete confirmation         Modal        showConfirm('Delete?', ...)
+  Logout confirmation         Modal        showConfirm('Logout?', ...)
+  Important warning           Modal        with('alert_warning', 'Warning!')
+
+┌──────────────────────────────────────────────────────────────────────────────┐
+│ 🚀 QUICK START                                                               │
+└──────────────────────────────────────────────────────────────────────────────┘
+
+  1. View Interactive Demo:
+     http://localhost/MauzoLinkV2/public/dual-notification-demo.html
+
+  2. Read Full Documentation:
+     docs/DUAL_NOTIFICATION_SYSTEM.md
+
+  3. Start Using:
+     - Use showToast() for routine feedback
+     - Use showAlert() for critical messages
+     - Use showConfirm() before destructive actions
+
+╔══════════════════════════════════════════════════════════════════════════════╗
+║  Choose wisely: Toast for quick feedback, Modal for critical attention!     ║
+╚══════════════════════════════════════════════════════════════════════════════╝

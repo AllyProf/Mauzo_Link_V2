@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Microphone Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+        }
+        .test-section {
+            background: #f5f5f5;
+            padding: 20px;
+            margin: 20px 0;
+            border-radius: 5px;
+        }
+        button {
+            background: #940000;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        .status {
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 5px;
+        }
+        .success { background: #d4edda; color: #155724; }
+        .error { background: #f8d7da; color: #721c24; }
+        .info { background: #d1ecf1; color: #0c5460; }
+    </style>
+</head>
+<body>
+    <h1>🎤 Microphone & MediaRecorder Test</h1>
+    
+    <div class="test-section">
+        <h2>Browser Information</h2>
+        <div id="browser-info"></div>
+    </div>
+
+    <div class="test-section">
+        <h2>Feature Detection</h2>
+        <div id="feature-info"></div>
+    </div>
+
+    <div class="test-section">
+        <h2>Test Microphone Access</h2>
+        <button onclick="testGetUserMedia()">Test getUserMedia</button>
+        <div id="getusermedia-result"></div>
+    </div>
+
+    <div class="test-section">
+        <h2>Test MediaRecorder</h2>
+        <button onclick="testMediaRecorder()">Test MediaRecorder</button>
+        <div id="mediarecorder-result"></div>
+    </div>
+
+    <div class="test-section">
+        <h2>Full Recording Test</h2>
+        <button onclick="testFullRecording()">Test Full Recording</button>
+        <div id="full-test-result"></div>
+        <audio id="test-audio" controls style="display:none;"></audio>
+    </div>
+
+    <script>
+        // Detect browser
+        function getBrowserInfo() {
+            const ua = navigator.userAgent;
+            let browser = 'Unknown';
+            let version = '';
+            
+            if (ua.indexOf('Chrome') > -1 && ua.indexOf('Edg') === -1) {
+                browser = 'Chrome';
+                version = ua.match(/Chrome\/(\d+)/)?.[1] || '';
+            } else if (ua.indexOf('Firefox') > -1) {
+                browser = 'Firefox';
+                version = ua.match(/Firefox\/(\d+)/)?.[1] || '';
+            } else if (ua.indexOf('Edg') > -1) {
+                browser = 'Edge';
+                version = ua.match(/Edg\/(\d+)/)?.[1] || '';
+            } else if (ua.indexOf('Safari') > -1) {
+                browser = 'Safari';
+                version = ua.match(/Version\/(\d+)/)?.[1] || '';
+            }
+            
+            return { browser, version, userAgent: ua };
+        }
+
+        // Check features
+        function checkFeatures() {
+            const features = {
+                'MediaRecorder': !!window.MediaRecorder,
+                'navigator.mediaDevices': !!navigator.mediaDevices,
+                'navigator.mediaDevices.getUserMedia': !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia),
+                'navigator.getUserMedia': !!navigator.getUserMedia,
+                'navigator.webkitGetUserMedia': !!navigator.webkitGetUserMedia,
+                'navigator.mozGetUserMedia': !!navigator.mozGetUserMedia,
+            };
+
+            // Check supported MIME types
+            if (window.MediaRecorder) {
+                features['audio/webm'] = MediaRecorder.isTypeSupported('audio/webm');
+                features['audio/webm;codecs=opus'] = MediaRecorder.isTypeSupported('audio/webm;codecs=opus');
+                features['audio/mp4'] = MediaRecorder.isTypeSupported('audio/mp4');
+                features['audio/ogg'] = MediaRecorder.isTypeSupported('audio/ogg');
+            }
+
+            return features;
+        }
+
+        // Display browser info
+        function displayBrowserInfo() {
+            const info = getBrowserInfo();
+            document.getElementById('browser-info').innerHTML = `
+                <p><strong>Browser:</strong> ${info.browser} ${info.version}</p>
+                <p><strong>User Agent:</strong> ${info.userAgent}</p>
+                <p><strong>Protocol:</strong> ${window.location.protocol}</p>
+                <p><strong>Hostname:</strong> ${window.location.hostname}</p>
+            `;
+        }
+
+        // Display feature info
+        function displayFeatureInfo() {
+            const features = checkFeatures();
+            let html = '<ul>';
+            for (const [feature, supported] of Object.entries(features)) {
+                html += `<li><strong>${feature}:</strong> ${supported ? '✅ Yes' : '❌ No'}</li>`;
+            }
+            html += '</ul>';
+            document.getElementById('feature-info').innerHTML = html;
+        }
+
+        // Test getUserMedia
+        async function testGetUserMedia() {
+            const resultDiv = document.getElementById('getusermedia-result');
+            resultDiv.innerHTML = '<div class="status info">Testing...</div>';
+
+            try {
+                let stream;
+                if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+                    stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                } else {
+                    throw new Error('getUserMedia not available');
+                }
+
+                const tracks = stream.getAudioTracks();
+                resultDiv.innerHTML = `
+                    <div class="status success">
+                        ✅ Success!<br>
+                        Stream active: ${stream.active}<br>
+                        Audio tracks: ${tracks.length}<br>
+                        Track label: ${tracks[0]?.label || 'Unknown'}<br>
+                        Track enabled: ${tracks[0]?.enabled || 'N/A'}<br>
+                        Track readyState: ${tracks[0]?.readyState || 'N/A'}
+                    </div>
+                `;
+
+                // Stop tracks
+                setTimeout(() => {
+                    stream.getTracks().forEach(track => track.stop());
+                }, 1000);
+
+            } catch (error) {
+                resultDiv.innerHTML = `
+                    <div class="status error">
+                        ❌ Error: ${error.name}<br>
+                        Message: ${error.message}<br>
+                        ${error.name === 'NotAllowedError' ? '<strong>Solution:</strong> Allow microphone access in browser settings' : ''}
+                        ${error.name === 'NotFoundError' ? '<strong>Solution:</strong> Connect a microphone' : ''}
+                    </div>
+                `;
+            }
+        }
+
+        // Test MediaRecorder
+        async function testMediaRecorder() {
+            const resultDiv = document.getElementById('mediarecorder-result');
+            resultDiv.innerHTML = '<div class="status info">Testing...</div>';
+
+            if (!window.MediaRecorder) {
+                resultDiv.innerHTML = '<div class="status error">❌ MediaRecorder not supported in this browser</div>';
+                return;
+            }
+
+            try {
+                // Get stream first
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                
+                // Find supported MIME type
+                const types = [
+                    'audio/webm;codecs=opus',
+                    'audio/webm',
+                    'audio/mp4',
+                    'audio/ogg;codecs=opus',
+                    'audio/ogg'
+                ];
+
+                let supportedType = '';
+                for (const type of types) {
+                    if (MediaRecorder.isTypeSupported(type)) {
+                        supportedType = type;
+                        break;
+                    }
+                }
+
+                // Try to create MediaRecorder
+                let recorder;
+                let errorMsg = '';
+
+                if (supportedType) {
+                    try {
+                        recorder = new MediaRecorder(stream, { mimeType: supportedType });
+                    } catch (e) {
+                        errorMsg += `Failed with ${supportedType}: ${e.message}. `;
+                        try {
+                            recorder = new MediaRecorder(stream);
+                        } catch (e2) {
+                            errorMsg += `Failed without options: ${e2.message}`;
+                            throw new Error(errorMsg);
+                        }
+                    }
+                } else {
+                    try {
+                        recorder = new MediaRecorder(stream);
+                    } catch (e) {
+                        throw new Error(`Failed to create MediaRecorder: ${e.message}`);
+                    }
+                }
+
+                resultDiv.innerHTML = `
+                    <div class="status success">
+                        ✅ MediaRecorder created successfully!<br>
+                        State: ${recorder.state}<br>
+                        MIME Type: ${recorder.mimeType || 'Default'}<br>
+                        Supported Type Used: ${supportedType || 'Default (browser choice)'}
+                    </div>
+                `;
+
+                // Clean up
+                stream.getTracks().forEach(track => track.stop());
+
+            } catch (error) {
+                resultDiv.innerHTML = `
+                    <div class="status error">
+                        ❌ Error: ${error.name || 'Unknown'}<br>
+                        Message: ${error.message}<br>
+                        <strong>This is likely the issue!</strong>
+                    </div>
+                `;
+            }
+        }
+
+        // Test full recording
+        async function testFullRecording() {
+            const resultDiv = document.getElementById('full-test-result');
+            resultDiv.innerHTML = '<div class="status info">Testing full recording...</div>';
+
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                
+                // Find supported type
+                let mimeType = '';
+                const types = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4', 'audio/ogg'];
+                for (const type of types) {
+                    if (MediaRecorder.isTypeSupported(type)) {
+                        mimeType = type;
+                        break;
+                    }
+                }
+
+                let recorder;
+                try {
+                    recorder = new MediaRecorder(stream, mimeType ? { mimeType } : {});
+                } catch (e) {
+                    recorder = new MediaRecorder(stream);
+                }
+
+                const chunks = [];
+                recorder.ondataavailable = (e) => {
+                    if (e.data.size > 0) chunks.push(e.data);
+                };
+
+                recorder.onstop = () => {
+                    const blob = new Blob(chunks, { type: mimeType || 'audio/webm' });
+                    const url = URL.createObjectURL(blob);
+                    const audio = document.getElementById('test-audio');
+                    audio.src = url;
+                    audio.style.display = 'block';
+                    resultDiv.innerHTML = `
+                        <div class="status success">
+                            ✅ Recording successful!<br>
+                            Blob size: ${blob.size} bytes<br>
+                            Blob type: ${blob.type}<br>
+                            <audio controls src="${url}"></audio>
+                        </div>
+                    `;
+                    stream.getTracks().forEach(track => track.stop());
+                };
+
+                recorder.start();
+                resultDiv.innerHTML = '<div class="status info">🔴 Recording... (3 seconds)</div>';
+                
+                setTimeout(() => {
+                    recorder.stop();
+                }, 3000);
+
+            } catch (error) {
+                resultDiv.innerHTML = `
+                    <div class="status error">
+                        ❌ Error: ${error.name}<br>
+                        Message: ${error.message}
+                    </div>
+                `;
+            }
+        }
+
+        // Initialize
+        window.addEventListener('load', () => {
+            displayBrowserInfo();
+            displayFeatureInfo();
+        });
+    </script>
+</body>
+</html>
+

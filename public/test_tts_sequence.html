@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Test TTS Sequence</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            padding: 20px;
+            max-width: 800px;
+            margin: 0 auto;
+        }
+        button {
+            background: #940000;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        .log {
+            background: #1e1e1e;
+            color: #d4d4d4;
+            padding: 15px;
+            border-radius: 5px;
+            font-family: monospace;
+            font-size: 12px;
+            max-height: 400px;
+            overflow-y: auto;
+            margin-top: 20px;
+        }
+        .log-entry {
+            margin-bottom: 5px;
+            padding: 3px 0;
+        }
+        .log-info { color: #569cd6; }
+        .log-success { color: #4ec9b0; }
+        .log-error { color: #f48771; }
+    </style>
+</head>
+<body>
+    <h1>Test TTS Sequence</h1>
+    <p>This tests the TTS playback for dynamic parts (order number, waiter name, items, amount)</p>
+    
+    <button onclick="testSequence()">Test TTS Sequence</button>
+    <button onclick="clearLog()">Clear Log</button>
+    
+    <div id="log" class="log"></div>
+
+    <script>
+        function log(message, type = 'info') {
+            const logDiv = document.getElementById('log');
+            const entry = document.createElement('div');
+            entry.className = `log-entry log-${type}`;
+            entry.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
+            logDiv.appendChild(entry);
+            logDiv.scrollTop = logDiv.scrollHeight;
+        }
+
+        function clearLog() {
+            document.getElementById('log').innerHTML = '';
+        }
+
+        function speakSwahiliChunk(text, onComplete) {
+            if (!text || text.trim() === '') {
+                log('Empty text, skipping TTS', 'info');
+                if (onComplete) setTimeout(onComplete, 100);
+                return;
+            }
+
+            // Use browser TTS directly (more reliable)
+            if (!window.speechSynthesis) {
+                log('Speech synthesis not available', 'error');
+                if (onComplete) setTimeout(onComplete, 100);
+                return;
+            }
+
+            try {
+                log(`Using browser TTS: "${text}"`, 'info');
+                
+                // Wait if speech is already in progress
+                if (window.speechSynthesis.speaking) {
+                    log('Speech in progress, waiting...', 'info');
+                    setTimeout(() => speakSwahiliChunk(text, onComplete), 100);
+                    return;
+                }
+
+                const utterance = new SpeechSynthesisUtterance(text);
+                utterance.lang = 'sw-TZ';
+                utterance.rate = 0.9;
+                utterance.pitch = 1.0;
+                utterance.volume = 1.0;
+
+                let completed = false;
+                let started = false;
+                
+                const completeCallback = function() {
+                    if (!completed) {
+                        completed = true;
+                        log(`✅ TTS completed: "${text}"`, 'success');
+                        if (onComplete) {
+                            setTimeout(onComplete, 150);
+                        }
+                    }
+                };
+
+                utterance.onstart = function() {
+                    started = true;
+                    log(`✅ TTS STARTED: "${text}"`, 'success');
+                };
+                
+                utterance.onend = function() {
+                    log(`✅ TTS ENDED: "${text}"`, 'success');
+                    completeCallback();
+                };
+                
+                utterance.onerror = function(event) {
+                    log(`❌ TTS error: ${event.type}`, 'error');
+                    completeCallback();
+                };
+
+                log(`🎤 Queuing TTS: "${text}"`, 'info');
+                window.speechSynthesis.speak(utterance);
+                
+                // Safety timeout
+                setTimeout(function() {
+                    if (!started && !completed) {
+                        log('⚠️ TTS timeout - continuing', 'error');
+                        completeCallback();
+                    }
+                }, 2000);
+                
+            } catch (error) {
+                log(`Error in speakSwahiliChunk: ${error.message}`, 'error');
+                if (onComplete) setTimeout(onComplete, 100);
+            }
+        }
+
+        function playSequence(sequence, index) {
+            if (index >= sequence.length) {
+                log('=== Sequence completed ===', 'success');
+                return;
+            }
+
+            const item = sequence[index];
+            log(`Playing item ${index + 1}/${sequence.length}: ${item.type} - "${item.text || item.url || 'N/A'}"`, 'info');
+            
+            if (item.type === 'tts') {
+                speakSwahiliChunk(item.text, function() {
+                    log(`Item ${index + 1} completed`, 'success');
+                    setTimeout(() => playSequence(sequence, index + 1), 300);
+                });
+            } else {
+                log('Unknown item type, skipping', 'error');
+                setTimeout(() => playSequence(sequence, index + 1), 100);
+            }
+        }
+
+        function testSequence() {
+            log('=== Starting TTS Sequence Test ===', 'info');
+            
+            // Simulate the dynamic parts that should play
+            const sequence = [
+                { type: 'tts', text: '2025120021' }, // Order number
+                { type: 'tts', text: 'NANCY' }, // Waiter name
+                { type: 'tts', text: '2 chupa ya COCA COLA, 2 chupa ya PEPSI' }, // Items
+                { type: 'tts', text: '2,400' } // Amount
+            ];
+            
+            log(`Sequence has ${sequence.length} items`, 'info');
+            playSequence(sequence, 0);
+        }
+
+        // Enable speech on page load
+        if (window.speechSynthesis) {
+            const testUtterance = new SpeechSynthesisUtterance('');
+            testUtterance.volume = 0;
+            window.speechSynthesis.speak(testUtterance);
+            log('Speech enabled', 'success');
+        }
+
+        ['click', 'keydown'].forEach(event => {
+            document.addEventListener(event, function() {
+                if (window.speechSynthesis) {
+                    const testUtterance = new SpeechSynthesisUtterance('');
+                    testUtterance.volume = 0;
+                    window.speechSynthesis.speak(testUtterance);
+                }
+            }, { once: true });
+        });
+    </script>
+</body>
+</html>
+

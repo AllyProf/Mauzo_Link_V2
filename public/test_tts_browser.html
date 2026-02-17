@@ -1,0 +1,407 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Swahili TTS Test - Order Announcement System</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        .test-container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 15px;
+            padding: 30px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+        }
+        .test-section {
+            margin-bottom: 30px;
+            padding: 20px;
+            background: #f8f9fa;
+            border-radius: 10px;
+            border-left: 4px solid #667eea;
+        }
+        .status-indicator {
+            display: inline-block;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            margin-right: 8px;
+        }
+        .status-success { background-color: #28a745; }
+        .status-warning { background-color: #ffc107; }
+        .status-error { background-color: #dc3545; }
+        .test-button {
+            margin: 5px;
+        }
+        .message-display {
+            background: #fff;
+            border: 2px solid #dee2e6;
+            border-radius: 5px;
+            padding: 15px;
+            margin-top: 10px;
+            font-family: 'Courier New', monospace;
+            font-size: 16px;
+            min-height: 60px;
+        }
+        .log-area {
+            background: #1e1e1e;
+            color: #d4d4d4;
+            border-radius: 5px;
+            padding: 15px;
+            max-height: 300px;
+            overflow-y: auto;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+        }
+        .log-entry {
+            margin-bottom: 5px;
+            padding: 5px;
+        }
+        .log-info { color: #569cd6; }
+        .log-success { color: #4ec9b0; }
+        .log-error { color: #f48771; }
+        .log-warning { color: #dcdcaa; }
+    </style>
+</head>
+<body>
+    <div class="test-container">
+        <h1 class="text-center mb-4">🎤 Swahili TTS Test</h1>
+        <p class="text-center text-muted">Test the Text-to-Speech functionality for order announcements</p>
+
+        <!-- Browser Support Check -->
+        <div class="test-section">
+            <h3>
+                <span id="browser-status" class="status-indicator status-warning"></span>
+                Browser Support Check
+            </h3>
+            <div id="browser-info"></div>
+            <button class="btn btn-primary test-button" onclick="checkBrowserSupport()">Check Support</button>
+        </div>
+
+        <!-- Voice Selection -->
+        <div class="test-section">
+            <h3>
+                <span class="status-indicator status-success"></span>
+                Available Voices
+            </h3>
+            <select id="voice-select" class="form-select mb-3">
+                <option value="">Default Voice (Auto-select Swahili)</option>
+            </select>
+            <button class="btn btn-secondary test-button" onclick="loadVoices()">Refresh Voices</button>
+        </div>
+
+        <!-- Test Message -->
+        <div class="test-section">
+            <h3>
+                <span class="status-indicator status-success"></span>
+                Test Swahili Message
+            </h3>
+            <div class="mb-3">
+                <label class="form-label">Test Message:</label>
+                <input type="text" id="test-message" class="form-control" 
+                       value="Oda namba 2025120001 imeombwa: 2 chupa ya Coca Cola, 1 chupa ya Fanta.">
+            </div>
+            <div class="mb-3">
+                <label class="form-label">Speech Rate:</label>
+                <input type="range" id="speech-rate" class="form-range" min="0.5" max="1.5" step="0.1" value="0.9">
+                <small>Value: <span id="rate-value">0.9</span></small>
+            </div>
+            <div class="mb-3">
+                <label class="form-label">Speech Pitch:</label>
+                <input type="range" id="speech-pitch" class="form-range" min="0.5" max="2" step="0.1" value="1.0">
+                <small>Value: <span id="pitch-value">1.0</span></small>
+            </div>
+            <div class="mb-3">
+                <label class="form-label">Speech Volume:</label>
+                <input type="range" id="speech-volume" class="form-range" min="0" max="1" step="0.1" value="1.0">
+                <small>Value: <span id="volume-value">1.0</span></small>
+            </div>
+            <button class="btn btn-success test-button" onclick="testSpeech()">🔊 Speak Message</button>
+            <button class="btn btn-danger test-button" onclick="stopSpeech()">⏹ Stop Speech</button>
+            <div class="message-display mt-3" id="message-display"></div>
+        </div>
+
+        <!-- Sample Order Messages -->
+        <div class="test-section">
+            <h3>
+                <span class="status-indicator status-success"></span>
+                Sample Order Messages
+            </h3>
+            <div class="d-grid gap-2">
+                <button class="btn btn-outline-primary test-button" 
+                        onclick="testSampleOrder(1)">
+                    Test Order 1: Single Item
+                </button>
+                <button class="btn btn-outline-primary test-button" 
+                        onclick="testSampleOrder(2)">
+                    Test Order 2: Multiple Items
+                </button>
+                <button class="btn btn-outline-primary test-button" 
+                        onclick="testSampleOrder(3)">
+                    Test Order 3: Large Order
+                </button>
+            </div>
+        </div>
+
+        <!-- API Test -->
+        <div class="test-section">
+            <h3>
+                <span class="status-indicator status-success"></span>
+                API Endpoint Test
+            </h3>
+            <div class="mb-3">
+                <label class="form-label">Last Order ID:</label>
+                <input type="number" id="last-order-id" class="form-control" value="0">
+            </div>
+            <button class="btn btn-info test-button" onclick="testAPI()">Test API Endpoint</button>
+            <div id="api-result" class="mt-3"></div>
+        </div>
+
+        <!-- Activity Log -->
+        <div class="test-section">
+            <h3>
+                <span class="status-indicator status-success"></span>
+                Activity Log
+            </h3>
+            <div class="log-area" id="log-area"></div>
+            <button class="btn btn-secondary btn-sm mt-2" onclick="clearLog()">Clear Log</button>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        let speechSynthesis = window.speechSynthesis;
+        let currentUtterance = null;
+        let availableVoices = [];
+
+        // Initialize
+        document.addEventListener('DOMContentLoaded', function() {
+            checkBrowserSupport();
+            loadVoices();
+            updateSliderValues();
+        });
+
+        // Update slider values display
+        function updateSliderValues() {
+            document.getElementById('rate-value').textContent = document.getElementById('speech-rate').value;
+            document.getElementById('pitch-value').textContent = document.getElementById('speech-pitch').value;
+            document.getElementById('volume-value').textContent = document.getElementById('speech-volume').value;
+            
+            document.getElementById('speech-rate').addEventListener('input', function() {
+                document.getElementById('rate-value').textContent = this.value;
+            });
+            document.getElementById('speech-pitch').addEventListener('input', function() {
+                document.getElementById('pitch-value').textContent = this.value;
+            });
+            document.getElementById('speech-volume').addEventListener('input', function() {
+                document.getElementById('volume-value').textContent = this.value;
+            });
+        }
+
+        // Check browser support
+        function checkBrowserSupport() {
+            const statusEl = document.getElementById('browser-status');
+            const infoEl = document.getElementById('browser-info');
+            
+            if (!speechSynthesis) {
+                statusEl.className = 'status-indicator status-error';
+                infoEl.innerHTML = '<div class="alert alert-danger">❌ Speech Synthesis API not supported in this browser.</div>';
+                log('error', 'Speech Synthesis API not supported');
+                return;
+            }
+
+            statusEl.className = 'status-indicator status-success';
+            const browserInfo = `
+                <div class="alert alert-success">
+                    ✓ Speech Synthesis API is supported<br>
+                    ✓ Browser: ${navigator.userAgent}<br>
+                    ✓ Available voices: ${speechSynthesis.getVoices().length}
+                </div>
+            `;
+            infoEl.innerHTML = browserInfo;
+            log('success', 'Browser supports Speech Synthesis API');
+        }
+
+        // Load available voices
+        function loadVoices() {
+            if (!speechSynthesis) return;
+
+            const select = document.getElementById('voice-select');
+            select.innerHTML = '<option value="">Default Voice (Auto-select Swahili)</option>';
+
+            availableVoices = speechSynthesis.getVoices();
+            
+            // Try to load voices if not available yet
+            if (availableVoices.length === 0) {
+                speechSynthesis.onvoiceschanged = function() {
+                    availableVoices = speechSynthesis.getVoices();
+                    populateVoiceSelect();
+                };
+            } else {
+                populateVoiceSelect();
+            }
+
+            function populateVoiceSelect() {
+                availableVoices.forEach((voice, index) => {
+                    const option = document.createElement('option');
+                    option.value = index;
+                    option.textContent = `${voice.name} (${voice.lang})${voice.default ? ' [Default]' : ''}`;
+                    if (voice.lang.startsWith('sw')) {
+                        option.textContent += ' 🌍 [Swahili]';
+                    }
+                    select.appendChild(option);
+                });
+                log('info', `Loaded ${availableVoices.length} voices`);
+            }
+        }
+
+        // Test speech
+        function testSpeech() {
+            if (!speechSynthesis) {
+                alert('Speech Synthesis not supported');
+                return;
+            }
+
+            const message = document.getElementById('test-message').value;
+            if (!message.trim()) {
+                alert('Please enter a message to speak');
+                return;
+            }
+
+            stopSpeech();
+
+            const utterance = new SpeechSynthesisUtterance(message);
+            utterance.lang = 'sw-TZ';
+            utterance.rate = parseFloat(document.getElementById('speech-rate').value);
+            utterance.pitch = parseFloat(document.getElementById('speech-pitch').value);
+            utterance.volume = parseFloat(document.getElementById('speech-volume').value);
+
+            // Select voice
+            const voiceIndex = document.getElementById('voice-select').value;
+            if (voiceIndex) {
+                utterance.voice = availableVoices[voiceIndex];
+            } else {
+                // Auto-select Swahili voice
+                const swahiliVoice = availableVoices.find(voice => 
+                    voice.lang.startsWith('sw') || 
+                    voice.lang.includes('Swahili') ||
+                    voice.name.includes('Swahili')
+                );
+                if (swahiliVoice) {
+                    utterance.voice = swahiliVoice;
+                    log('info', `Using Swahili voice: ${swahiliVoice.name}`);
+                }
+            }
+
+            utterance.onstart = function() {
+                log('success', 'Speech started');
+                document.getElementById('message-display').textContent = message;
+            };
+
+            utterance.onend = function() {
+                log('info', 'Speech completed');
+                currentUtterance = null;
+            };
+
+            utterance.onerror = function(event) {
+                log('error', `Speech error: ${event.error}`);
+            };
+
+            currentUtterance = utterance;
+            speechSynthesis.speak(utterance);
+            log('info', `Speaking: "${message}"`);
+        }
+
+        // Stop speech
+        function stopSpeech() {
+            if (speechSynthesis) {
+                speechSynthesis.cancel();
+                log('warning', 'Speech stopped');
+            }
+        }
+
+        // Test sample orders
+        function testSampleOrder(type) {
+            const messages = {
+                1: "Oda namba 2025120001 imeombwa: 1 chupa ya Coca Cola.",
+                2: "Oda namba 2025120002 imeombwa: 2 chupa ya Fanta, 1 chupa ya Sprite, 3 chupa ya Pepsi.",
+                3: "Oda namba 2025120003 imeombwa: 5 chupa ya Coca Cola, 3 chupa ya Fanta, 2 chupa ya Sprite, 4 chupa ya Pepsi, 1 chupa ya Mirinda."
+            };
+
+            document.getElementById('test-message').value = messages[type];
+            testSpeech();
+        }
+
+        // Test API endpoint
+        async function testAPI() {
+            const lastOrderId = document.getElementById('last-order-id').value;
+            const resultEl = document.getElementById('api-result');
+            
+            resultEl.innerHTML = '<div class="alert alert-info">Testing API endpoint...</div>';
+            log('info', `Testing API with last_order_id: ${lastOrderId}`);
+
+            try {
+                // Note: This will only work if you're on the same domain
+                // For testing, you may need to adjust the URL
+                const url = `/bar/counter/latest-orders?last_order_id=${lastOrderId}`;
+                
+                const response = await fetch(url, {
+                    method: 'GET',
+                    headers: {
+                        'Accept': 'application/json',
+                        'X-Requested-With': 'XMLHttpRequest'
+                    }
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    resultEl.innerHTML = `
+                        <div class="alert alert-success">
+                            ✓ API call successful<br>
+                            ✓ New orders found: ${data.new_orders.length}<br>
+                            ✓ Latest order ID: ${data.latest_order_id}
+                        </div>
+                    `;
+                    log('success', `API returned ${data.new_orders.length} new orders`);
+                    
+                    if (data.new_orders.length > 0) {
+                        data.new_orders.forEach(order => {
+                            log('info', `Order #${order.order_number}: ${order.items.length} items`);
+                        });
+                    }
+                } else {
+                    resultEl.innerHTML = `<div class="alert alert-warning">API returned: ${data.error || 'Unknown error'}</div>`;
+                    log('error', `API error: ${data.error}`);
+                }
+            } catch (error) {
+                resultEl.innerHTML = `<div class="alert alert-danger">Error: ${error.message}</div>`;
+                log('error', `API test failed: ${error.message}`);
+            }
+        }
+
+        // Logging function
+        function log(type, message) {
+            const logArea = document.getElementById('log-area');
+            const timestamp = new Date().toLocaleTimeString();
+            const logEntry = document.createElement('div');
+            logEntry.className = `log-entry log-${type}`;
+            logEntry.textContent = `[${timestamp}] ${message}`;
+            logArea.appendChild(logEntry);
+            logArea.scrollTop = logArea.scrollHeight;
+        }
+
+        // Clear log
+        function clearLog() {
+            document.getElementById('log-area').innerHTML = '';
+        }
+    </script>
+</body>
+</html>
+

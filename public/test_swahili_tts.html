@@ -1,0 +1,319 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Swahili TTS Test - Google Translate</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .test-container {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #940000;
+        }
+        .test-section {
+            margin: 20px 0;
+            padding: 20px;
+            background: #f9f9f9;
+            border-radius: 5px;
+            border-left: 4px solid #940000;
+        }
+        button {
+            background: #940000;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+            margin: 5px;
+        }
+        button:hover {
+            background: #7a0000;
+        }
+        button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+        textarea {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            font-size: 14px;
+            min-height: 100px;
+            font-family: Arial, sans-serif;
+        }
+        .status {
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 5px;
+        }
+        .status.success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        .status.error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        .status.info {
+            background: #d1ecf1;
+            color: #0c5460;
+            border: 1px solid #bee5eb;
+        }
+        .log {
+            background: #1e1e1e;
+            color: #d4d4d4;
+            padding: 15px;
+            border-radius: 5px;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            max-height: 300px;
+            overflow-y: auto;
+            margin-top: 10px;
+        }
+        .log-entry {
+            margin-bottom: 5px;
+            padding: 3px 0;
+        }
+        .log-info { color: #569cd6; }
+        .log-success { color: #4ec9b0; }
+        .log-error { color: #f48771; }
+    </style>
+</head>
+<body>
+    <div class="test-container">
+        <h1>🎤 Swahili TTS Test - Google Translate</h1>
+        <p>Test the Google Translate TTS implementation for Swahili pronunciation</p>
+
+        <div class="test-section">
+            <h3>Test Message</h3>
+            <textarea id="test-message">Oda nambari 2025120017 kutoka kwa mhudumu NANCY ameagiza 2 chupa ya COCA COLA, 2 chupa ya PEPSI yenye thamani ya shilingi 2,400. Asante.</textarea>
+            <br><br>
+            <button onclick="testGoogleTTS()">🔊 Test Google TTS</button>
+            <button onclick="testBrowserTTS()">🔊 Test Browser TTS</button>
+            <button onclick="testBoth()">🔊 Test Both (Compare)</button>
+            <button onclick="clearLog()">Clear Log</button>
+            <div id="status"></div>
+        </div>
+
+        <div class="test-section">
+            <h3>Sample Order Messages</h3>
+            <button onclick="testSample(1)">Sample 1: Short Order</button>
+            <button onclick="testSample(2)">Sample 2: Multiple Items</button>
+            <button onclick="testSample(3)">Sample 3: Long Order</button>
+        </div>
+
+        <div class="test-section">
+            <h3>Activity Log</h3>
+            <div id="log" class="log"></div>
+        </div>
+    </div>
+
+    <script>
+        let currentAudio = null;
+
+        function log(message, type = 'info') {
+            const logDiv = document.getElementById('log');
+            const entry = document.createElement('div');
+            entry.className = `log-entry log-${type}`;
+            entry.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
+            logDiv.appendChild(entry);
+            logDiv.scrollTop = logDiv.scrollHeight;
+        }
+
+        function clearLog() {
+            document.getElementById('log').innerHTML = '';
+            document.getElementById('status').innerHTML = '';
+        }
+
+        function showStatus(message, type = 'info') {
+            const statusDiv = document.getElementById('status');
+            statusDiv.innerHTML = `<div class="status ${type}">${message}</div>`;
+        }
+
+        function stopCurrentAudio() {
+            if (currentAudio) {
+                currentAudio.pause();
+                currentAudio.currentTime = 0;
+                currentAudio = null;
+            }
+            if (window.speechSynthesis) {
+                window.speechSynthesis.cancel();
+            }
+        }
+
+        function testGoogleTTS() {
+            stopCurrentAudio();
+            const text = document.getElementById('test-message').value.trim();
+            
+            if (!text) {
+                showStatus('Please enter a message to test', 'error');
+                return;
+            }
+
+            showStatus('Testing Google Translate TTS...', 'info');
+            log('Testing Google Translate TTS', 'info');
+            log(`Message: "${text}"`, 'info');
+
+            try {
+                const encodedText = encodeURIComponent(text);
+                const ttsUrl = `https://translate.google.com/translate_tts?ie=UTF-8&tl=sw&client=tw-ob&q=${encodedText}`;
+                
+                log(`TTS URL: ${ttsUrl.substring(0, 100)}...`, 'info');
+                
+                const audio = new Audio(ttsUrl);
+                audio.volume = 1.0;
+                currentAudio = audio;
+
+                audio.onloadstart = function() {
+                    log('Audio loading started', 'info');
+                    showStatus('Loading audio...', 'info');
+                };
+
+                audio.oncanplay = function() {
+                    log('Audio can play', 'success');
+                };
+
+                audio.onplay = function() {
+                    log('Audio playback started', 'success');
+                    showStatus('✅ Playing audio (Google TTS)', 'success');
+                };
+
+                audio.onended = function() {
+                    log('Audio playback completed', 'success');
+                    showStatus('✅ Audio playback completed', 'success');
+                    currentAudio = null;
+                };
+
+                audio.onerror = function(event) {
+                    log(`Audio error: ${event.type}`, 'error');
+                    showStatus('❌ Audio playback error. Check console for details.', 'error');
+                    currentAudio = null;
+                };
+
+                audio.onabort = function() {
+                    log('Audio aborted', 'error');
+                    currentAudio = null;
+                };
+
+                log('Attempting to play audio...', 'info');
+                audio.play().then(() => {
+                    log('Play promise resolved', 'success');
+                }).catch((error) => {
+                    log(`Play promise rejected: ${error.message}`, 'error');
+                    showStatus(`❌ Error: ${error.message}. This might be a CORS issue.`, 'error');
+                    currentAudio = null;
+                });
+
+            } catch (error) {
+                log(`Error: ${error.message}`, 'error');
+                showStatus(`❌ Error: ${error.message}`, 'error');
+            }
+        }
+
+        function testBrowserTTS() {
+            stopCurrentAudio();
+            const text = document.getElementById('test-message').value.trim();
+            
+            if (!text) {
+                showStatus('Please enter a message to test', 'error');
+                return;
+            }
+
+            if (!window.speechSynthesis) {
+                showStatus('Browser TTS not supported', 'error');
+                return;
+            }
+
+            showStatus('Testing Browser TTS...', 'info');
+            log('Testing Browser TTS', 'info');
+            log(`Message: "${text}"`, 'info');
+
+            try {
+                window.speechSynthesis.cancel();
+                
+                const utterance = new SpeechSynthesisUtterance(text);
+                utterance.lang = 'sw-TZ';
+                utterance.rate = 0.85;
+                utterance.pitch = 1.0;
+                utterance.volume = 1.0;
+
+                const voices = window.speechSynthesis.getVoices();
+                const swahiliVoice = voices.find(v => v.lang.startsWith('sw'));
+                
+                if (swahiliVoice) {
+                    utterance.voice = swahiliVoice;
+                    log(`Using Swahili voice: ${swahiliVoice.name}`, 'success');
+                } else {
+                    log('No Swahili voice found, using default', 'info');
+                }
+
+                utterance.onstart = function() {
+                    log('Browser TTS started', 'success');
+                    showStatus('✅ Playing audio (Browser TTS)', 'success');
+                };
+
+                utterance.onend = function() {
+                    log('Browser TTS completed', 'success');
+                    showStatus('✅ Speech completed', 'success');
+                };
+
+                utterance.onerror = function(event) {
+                    log(`Browser TTS error: ${event.error}`, 'error');
+                    showStatus(`❌ Error: ${event.error}`, 'error');
+                };
+
+                window.speechSynthesis.speak(utterance);
+                log('Browser TTS queued', 'info');
+
+            } catch (error) {
+                log(`Error: ${error.message}`, 'error');
+                showStatus(`❌ Error: ${error.message}`, 'error');
+            }
+        }
+
+        function testBoth() {
+            log('=== Testing Both Methods ===', 'info');
+            testGoogleTTS();
+            setTimeout(() => {
+                log('--- Now testing Browser TTS ---', 'info');
+                setTimeout(() => {
+                    testBrowserTTS();
+                }, 3000);
+            }, 1000);
+        }
+
+        function testSample(num) {
+            const samples = {
+                1: "Oda nambari 2025120001 kutoka kwa mhudumu Juma ameagiza 1 chupa ya Coca Cola yenye thamani ya shilingi 1,500. Asante.",
+                2: "Oda nambari 2025120002 kutoka kwa mhudumu Fatuma ameagiza 2 chupa ya Fanta, 1 chupa ya Sprite, 3 chupa ya Pepsi yenye thamani ya shilingi 6,000. Asante.",
+                3: "Oda nambari 2025120003 kutoka kwa mhudumu Ali ameagiza 5 chupa ya Coca Cola, 3 chupa ya Fanta, 2 chupa ya Sprite, 4 chupa ya Pepsi, 1 chupa ya Mirinda yenye thamani ya shilingi 15,000. Asante."
+            };
+            
+            document.getElementById('test-message').value = samples[num];
+            log(`Loaded sample ${num}`, 'info');
+        }
+
+        // Initialize
+        window.addEventListener('load', () => {
+            log('Page loaded', 'info');
+            log('Ready to test Swahili TTS', 'success');
+        });
+    </script>
+</body>
+</html>
+

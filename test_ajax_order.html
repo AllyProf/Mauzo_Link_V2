@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Test Order AJAX</title>
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+</head>
+<body>
+    <h1>Test Order Creation AJAX</h1>
+    <button id="test-btn">Test Order</button>
+    <div id="result"></div>
+
+    <script>
+    $(document).ready(function() {
+        $('#test-btn').on('click', function() {
+            const testData = {
+                items: [
+                    {
+                        food_item_id: 1,
+                        quantity: 1,
+                        price: 1000,
+                        product_name: 'Test Food'
+                    },
+                    {
+                        variant_id: 1,
+                        quantity: 2
+                    }
+                ],
+                order_source: 'web',
+                order_notes: 'Test order'
+            };
+
+            console.log('Sending data:', JSON.stringify(testData, null, 2));
+
+            $.ajax({
+                url: '/bar/waiter/create-order',
+                method: 'POST',
+                headers: {
+                    'X-CSRF-TOKEN': $('meta[name="csrf-token"]').attr('content') || '',
+                    'Accept': 'application/json'
+                },
+                data: testData,
+                traditional: false,
+                success: function(response) {
+                    console.log('Success:', response);
+                    $('#result').html('<pre>' + JSON.stringify(response, null, 2) + '</pre>');
+                },
+                error: function(xhr) {
+                    console.error('Error:', xhr);
+                    console.error('Response:', xhr.responseJSON);
+                    $('#result').html('<pre>Error: ' + JSON.stringify(xhr.responseJSON, null, 2) + '</pre>');
+                }
+            });
+        });
+    });
+    </script>
+</body>
+</html>
+
+
+
+
+

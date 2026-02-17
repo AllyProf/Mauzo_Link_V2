@@ -159,14 +159,16 @@ class ProductController extends Controller
 
         DB::beginTransaction();
         try {
-            // Use the first variant's name as the base product name
-            $baseName = $validated['variants'][0]['name'];
+            // Use Brand as the product name if provided, otherwise fallback to first variant name
+            $brandName = $validated['brand'] ?? null;
+            $firstVariantName = $validated['variants'][0]['name'];
+            $productName = $brandName ? $brandName : $firstVariantName;
 
             $product = Product::create([
                 'user_id' => $ownerId,
                 'supplier_id' => $validated['supplier_id'] ?? null,
-                'name' => $baseName,
-                'brand' => $validated['brand'] ?? null,
+                'name' => $productName,
+                'brand' => $brandName,
                 'category' => $validated['category'] ?? null,
                 'description' => $validated['description'] ?? null,
                 'barcode' => $validated['barcode'] ?? null,
@@ -246,8 +248,13 @@ class ProductController extends Controller
                     'name' => $variant->name,
                     'image' => $variant->image ? asset('storage/' . $variant->image) : null,
                     'measurement' => $variant->measurement,
+                    'unit' => $variant->unit,
                     'packaging' => $variant->packaging,
                     'items_per_package' => $variant->items_per_package,
+                    'selling_type' => $variant->selling_type,
+                    'can_sell_in_tots' => $variant->can_sell_in_tots,
+                    'total_tots' => $variant->total_tots,
+                    'selling_price_per_tot' => $variant->selling_price_per_tot,
                     'is_active' => $variant->is_active,
                     'warehouse_stock' => $warehouseStock ? ['quantity' => $warehouseStock->quantity] : null,
                     'counter_stock' => $counterStock ? ['quantity' => $counterStock->quantity] : null,
@@ -261,6 +268,7 @@ class ProductController extends Controller
                     'brand' => $product->brand,
                     'category' => $product->category,
                     'description' => $product->description,
+                    'image' => $product->image,
                     'is_active' => $product->is_active,
                     'supplier' => $product->supplier ? [
                         'company_name' => $product->supplier->company_name,
@@ -328,9 +336,12 @@ class ProductController extends Controller
             'variants.*.id' => 'nullable|exists:product_variants,id',
             'variants.*.name' => 'required|string|max:255',
             'variants.*.image' => 'nullable|image|mimes:jpeg,jpg,png,gif|max:2048',
-            'variants.*.measurement' => 'required|string|max:255',
-            'variants.*.packaging' => 'required|string|max:255',
-            'variants.*.items_per_package' => 'required|integer|min:1',
+            'variants.*.measurement' => 'required|numeric',
+            'variants.*.unit' => 'required|string|max:20',
+            'variants.*.selling_type' => 'required|string|in:bottle,glass,mixed',
+            'variants.*.total_tots' => 'nullable|integer|min:1',
+            'variants.*.packaging' => 'required|string|in:Piece,Carton,Crate',
+            'variants.*.items_per_package' => 'nullable|integer|min:1',
         ]);
 
         // Verify supplier belongs to owner
@@ -374,8 +385,12 @@ class ProductController extends Controller
                         $updateData = [
                             'name' => $variantData['name'],
                             'measurement' => $variantData['measurement'],
+                            'unit' => $variantData['unit'],
                             'packaging' => $variantData['packaging'],
-                            'items_per_package' => $variantData['items_per_package'],
+                            'items_per_package' => $variantData['packaging'] === 'Piece' ? 1 : ($variantData['items_per_package'] ?? 1),
+                            'selling_type' => $variantData['selling_type'],
+                            'can_sell_in_tots' => in_array($variantData['selling_type'], ['glass', 'mixed']),
+                            'total_tots' => in_array($variantData['selling_type'], ['glass', 'mixed']) ? ($variantData['total_tots'] ?? null) : null,
                         ];
                         
                         if ($vImagePath) {
@@ -401,10 +416,14 @@ class ProductController extends Controller
                         'name' => $variantData['name'],
                         'image' => $vImagePath,
                         'measurement' => $variantData['measurement'],
+                        'unit' => $variantData['unit'],
+                        'selling_type' => $variantData['selling_type'],
                         'packaging' => $variantData['packaging'],
-                        'items_per_package' => $variantData['items_per_package'],
+                        'items_per_package' => $variantData['packaging'] === 'Piece' ? 1 : ($variantData['items_per_package'] ?? 1),
                         'buying_price_per_unit' => 0,
                         'selling_price_per_unit' => 0,
+                        'can_sell_in_tots' => in_array($variantData['selling_type'], ['glass', 'mixed']),
+                        'total_tots' => in_array($variantData['selling_type'], ['glass', 'mixed']) ? ($variantData['total_tots'] ?? null) : null,
                         'is_active' => true,
                     ]);
                     $submittedVariantIds[] = $variant->id;

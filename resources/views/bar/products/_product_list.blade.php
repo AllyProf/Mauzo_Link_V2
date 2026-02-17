@@ -36,12 +36,13 @@
         @php $lastCategory = $product->category; @endphp
       @endif
 
+      @foreach($product->variants as $variant)
       <div class="col-xl-4 col-lg-6 col-md-6 mb-4">
         <div class="product-card">
           <div class="product-img-container">
             <div class="status-badge-overlay">
-              <span class="badge badge-pill {{ $product->is_active ? 'badge-success' : 'badge-danger' }} shadow-sm px-3 py-2">
-                {{ $product->is_active ? '● Active' : '○ Inactive' }}
+              <span class="badge badge-pill {{ $variant->is_active ? 'badge-success' : 'badge-danger' }} shadow-sm px-3 py-2">
+                {{ $variant->is_active ? '● Active' : '○ Inactive' }}
               </span>
             </div>
             <div class="category-badge-overlay">
@@ -49,8 +50,10 @@
                 <i class="fa fa-folder-o mr-1"></i> {{ $product->category ?: 'General' }}
               </span>
             </div>
-            @if($product->image)
-              <img src="{{ asset('storage/' . $product->image) }}" class="product-img" alt="{{ $product->name }}">
+            @if($variant->image)
+              <img src="{{ asset('storage/' . $variant->image) }}" class="product-img" alt="{{ $variant->name }}">
+            @elseif($product->image)
+              <img src="{{ asset('storage/' . $product->image) }}" class="product-img" alt="{{ $variant->name }}">
             @else
               <div class="d-flex align-items-center justify-content-center bg-light h-100">
                 <i class="fa fa-cube fa-5x text-muted opacity-25"></i>
@@ -59,31 +62,36 @@
           </div>
           
           <div class="product-details">
-            <h5 class="product-title">{{ $product->name }}</h5>
+            <div class="d-flex justify-content-between align-items-start mb-2">
+              <h5 class="product-title mb-0">{{ $variant->name ?: $product->name }}</h5>
+              <span class="badge badge-light border text-muted small px-2">
+                {{ $variant->measurement }}{{ $variant->unit }}
+              </span>
+            </div>
             
+            @if($product->brand && strtolower(trim($product->brand)) !== strtolower(trim($variant->name)))
             <div class="product-meta">
               <i class="fa fa-tag"></i>
-              <span>Brand: <strong>{{ $product->brand ?: 'N/A' }}</strong></span>
+              <span>Brand: <strong>{{ $product->brand }}</strong></span>
             </div>
+            @endif
             
             <div class="product-meta">
               <i class="fa fa-truck"></i>
               <span>Supplier: <strong>{{ $product->supplier->company_name ?? 'N/A' }}</strong></span>
             </div>
 
-            <div class="variant-tags">
-              @foreach($product->variants->take(3) as $variant)
-                <span class="variant-badge">
-                  {{ $variant->name ?: $variant->measurement . ' ' . $variant->packaging }}
-                </span>
-              @endforeach
-              @if($product->variants->count() > 3)
-                <span class="variant-badge bg-primary text-white">+{{ $product->variants->count() - 3 }} more</span>
-              @endif
-              @if($product->variants->count() == 0)
-                <span class="text-muted small italic">No variants defined</span>
-              @endif
+            <div class="product-meta mt-2 text-primary font-weight-bold">
+              <i class="fa fa-dropbox"></i>
+              <span>Format: <strong>{{ $variant->packaging }}</strong></span>
             </div>
+
+            @if($variant->can_sell_in_tots)
+            <div class="product-meta mt-1 text-success">
+              <i class="fa fa-flask"></i>
+              <span>Unit Type: <strong>Liquor (Shots)</strong></span>
+            </div>
+            @endif
           </div>
 
           <div class="product-actions mt-auto">
@@ -98,13 +106,14 @@
               </a>
             @endif
             @if($canDelete)
-              <button type="button" class="btn btn-outline-danger btn-sm delete-product-btn-card px-3" data-product-id="{{ $product->id }}" data-product-name="{{ $product->name }}">
+              <button type="button" class="btn btn-outline-danger btn-sm delete-product-btn-card px-3" data-product-id="{{ $product->id }}" data-product-name="{{ $variant->name }}">
                 <i class="fa fa-trash"></i>
               </button>
             @endif
           </div>
         </div>
       </div>
+      @endforeach
     @endforeach
   </div>
 

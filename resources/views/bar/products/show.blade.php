@@ -87,6 +87,7 @@
                 <table class="table table-hover table-bordered">
                   <thead>
                     <tr>
+                      <th>Name</th>
                       <th>Measurement</th>
                       <th>Packaging</th>
                       <th>Items per Package</th>
@@ -109,6 +110,7 @@
                         }
                       @endphp
                       <tr>
+                        <td><strong>{{ $variant->name }}</strong></td>
                         <td>{{ $variant->measurement }}</td>
                         <td>{{ $variant->packaging }}</td>
                         <td>{{ $variant->items_per_package }}</td>

@@ -740,12 +740,18 @@ $(document).ready(function() {
         const btn = $('#submitBtn');
         const oldHtml = btn.html();
         
-        btn.prop('disabled', true).html('<i class="fa fa-spinner fa-spin"></i> POSTING...');
+        const entriesToSubmit = receiptItems.filter(item => cleanNum(item.quantity_received) > 0);
+        
+        if(entriesToSubmit.length === 0) { 
+            showToast('error', 'Please enter quantity for at least one item.');
+            btn.prop('disabled', false).html(oldHtml);
+            return; 
+        }
 
         const formData = new FormData(myForm);
         formData.delete('items');
 
-        receiptItems.forEach((item, index) => {
+        entriesToSubmit.forEach((item, index) => {
             formData.append(`items[${index}][product_variant_id]`, item.product_variant_id);
             formData.append(`items[${index}][quantity_received]`, item.quantity_received); 
             formData.append(`items[${index}][buying_price_per_unit]`, item.buying_price_per_unit);
@@ -764,8 +770,23 @@ $(document).ready(function() {
         .then(res => res.json())
         .then(data => {
             if(data.alert_success || data.success) {
-                showAlert('success', 'Success', data.message || 'Stock updated.')
-                    .then(() => window.location.href = "{{ route('bar.stock-receipts.index') }}");
+                const receiptNum = data.receipt_number;
+                Swal.fire({
+                    title: 'Stock Updated!',
+                    text: data.message || 'Receipt posted successfully.',
+                    icon: 'success',
+                    showCancelButton: true,
+                    confirmButtonColor: '#940000',
+                    cancelButtonColor: '#6c757d',
+                    confirmButtonText: '<i class="fa fa-print"></i> PRINT RECEIPT',
+                    cancelButtonText: 'Go to List'
+                }).then((result) => {
+                    if (result.isConfirmed) {
+                        window.location.href = `{{ url('bar/stock-receipts/print-batch') }}/${receiptNum}?auto_print=1`;
+                    } else {
+                        window.location.href = "{{ route('bar.stock-receipts.index') }}";
+                    }
+                });
             } else {
                 showToast('error', data.message || 'Error occurred.');
                 btn.prop('disabled', false).html(oldHtml);

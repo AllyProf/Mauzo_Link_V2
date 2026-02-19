@@ -134,7 +134,7 @@ class StockReceiptController extends Controller
             'notes' => 'nullable|string',
             'items' => 'required|array|min:1',
             'items.*.product_variant_id' => 'required|exists:product_variants,id',
-            'items.*.quantity_received' => 'required|integer|min:1',
+            'items.*.quantity_received' => 'required|numeric|min:0',
             'items.*.buying_price_per_unit' => 'required|numeric|min:0',
             'items.*.selling_price_per_unit' => 'required|numeric|min:0',
             'items.*.selling_price_per_tot' => 'nullable|numeric|min:0',
@@ -170,6 +170,7 @@ class StockReceiptController extends Controller
                     ->first();
 
                 if (!$productVariant) continue;
+                if ($item['quantity_received'] <= 0) continue;
 
                 // Calculate values
                 // quantity_received from frontend is actually the number of PACKAGES (crates/cartons)
@@ -265,7 +266,8 @@ class StockReceiptController extends Controller
             if (request()->ajax()) {
                 return response()->json([
                     'success' => true,
-                    'message' => "Stock receipt created successfully with {$receiptsCount} items. Receipt #{$receiptNumber}"
+                    'message' => "Stock receipt created successfully with {$receiptsCount} items. Receipt #{$receiptNumber}",
+                    'receipt_number' => $receiptNumber
                 ]);
             }
 
@@ -592,5 +594,29 @@ class StockReceiptController extends Controller
             return redirect()->route('bar.stock-receipts.index')
                 ->with('error', 'Failed to delete stock receipt: ' . $e->getMessage());
         }
+    }
+
+    /**
+     * Print a batch of stock receipts by receipt number.
+     */
+    public function printBatch($receiptNumber)
+    {
+        $ownerId = $this->getOwnerId();
+        
+        $receipts = StockReceipt::where('user_id', $ownerId)
+            ->where('receipt_number', $receiptNumber)
+            ->with(['productVariant.product', 'supplier', 'receivedBy'])
+            ->get();
+
+        if ($receipts->isEmpty()) {
+            abort(404, 'Receipt batch not found.');
+        }
+
+        $supplier = $receipts->first()->supplier;
+        $receivedDate = $receipts->first()->received_date;
+        $receivedBy = $receipts->first()->receivedBy;
+        $notes = $receipts->first()->notes;
+
+        return view('bar.stock-receipts.print', compact('receipts', 'receiptNumber', 'supplier', 'receivedDate', 'receivedBy', 'notes'));
     }
 }

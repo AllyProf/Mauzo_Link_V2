@@ -158,6 +158,7 @@ Route::middleware('allow.staff')->group(function () {
         Route::resource('products', \App\Http\Controllers\Bar\ProductController::class);
         // Stock Receipts
         Route::resource('stock-receipts', \App\Http\Controllers\Bar\StockReceiptController::class)->only(['index', 'create', 'store', 'show', 'edit', 'update', 'destroy']);
+        Route::get('stock-receipts/print-batch/{receiptNumber}', [\App\Http\Controllers\Bar\StockReceiptController::class, 'printBatch'])->name('stock-receipts.print-batch');
         // Stock Transfers - Specific routes must come before resource route
         Route::get('stock-transfers/available', [\App\Http\Controllers\Bar\StockTransferController::class, 'available'])->name('stock-transfers.available');
         Route::get('stock-transfers/history', [\App\Http\Controllers\Bar\StockTransferController::class, 'history'])->name('stock-transfers.history');

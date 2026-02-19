@@ -154,6 +154,7 @@ Route::middleware('allow.staff')->group(function () {
         // Suppliers
         Route::resource('suppliers', \App\Http\Controllers\Bar\SupplierController::class);
         // Products
+        Route::get('products/get-by-category', [\App\Http\Controllers\Bar\ProductController::class, 'getByCategory'])->name('products.get-by-category');
         Route::resource('products', \App\Http\Controllers\Bar\ProductController::class);
         // Stock Receipts
         Route::resource('stock-receipts', \App\Http\Controllers\Bar\StockReceiptController::class)->only(['index', 'create', 'store', 'show', 'edit', 'update', 'destroy']);

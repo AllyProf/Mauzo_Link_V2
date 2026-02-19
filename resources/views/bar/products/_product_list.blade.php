@@ -1,133 +1,134 @@
 @php $lastCategory = null; @endphp
-@if($products->count() > 0)
-  <div class="row">
-    @foreach($products as $product)
-      @php
-        $canView = false;
-        $canEdit = false;
-        $canDelete = false;
-        if (session('is_staff')) {
-          $staff = \App\Models\Staff::find(session('staff_id'));
-          if ($staff && $staff->role) {
-            $canView = $staff->role->hasPermission('products', 'view');
-            $canEdit = $staff->role->hasPermission('products', 'edit');
-            $canDelete = $staff->role->hasPermission('products', 'delete');
-            if (!$canDelete) {
-              $roleName = strtolower(trim($staff->role->name ?? ''));
-              if (in_array($roleName, ['stock keeper', 'stockkeeper', 'counter', 'bar counter'])) {
-                $canDelete = true;
+@if($variants->count() > 0)
+  <div class="table-responsive">
+    <table class="table table-hover table-bordered shadow-sm">
+      <thead class="bg-dark text-white text-center">
+        <tr>
+          <th width="60px">PHOTO</th>
+          <th class="text-left">PRODUCT / VARIANT NAME</th>
+          <th>CATEGORY</th>
+          <th>SIZE</th>
+          <th>PACKAGING</th>
+          <th>SELL TYPE</th>
+          <th>SERVING INFO</th>
+          <th width="120px">ACTIONS</th>
+        </tr>
+      </thead>
+      <tbody>
+        @foreach($variants as $variant)
+          @php
+            $product = $variant->product;
+            $canEdit = false;
+            $canDelete = false;
+            if (session('is_staff')) {
+              $staff = \App\Models\Staff::find(session('staff_id'));
+              if ($staff && $staff->role) {
+                $canEdit = $staff->role->hasPermission('products', 'edit');
+                $canDelete = $staff->role->hasPermission('products', 'delete');
+              }
+            } else {
+              $user = Auth::user();
+              if ($user) {
+                $canEdit = $user->hasPermission('products', 'edit') || $user->hasRole('owner');
+                $canDelete = $user->hasPermission('products', 'delete') || $user->hasRole('owner');
               }
             }
-          }
-        } else {
-          $user = Auth::user();
-          if ($user) {
-            $canView = $user->hasPermission('products', 'view') || $user->hasRole('owner');
-            $canEdit = $user->hasPermission('products', 'edit') || $user->hasRole('owner');
-            $canDelete = $user->hasPermission('products', 'delete') || $user->hasRole('owner');
-          }
-        }
-      @endphp
+          @endphp
 
-      @if($product->category !== $lastCategory)
-        <div class="col-12 mt-4 mb-3">
-          <h4 class="category-header">{{ $product->category ?: 'Uncategorized' }}</h4>
-        </div>
-        @php $lastCategory = $product->category; @endphp
-      @endif
+          @if($product->category !== $lastCategory)
+            <tr class="bg-light">
+                <td colspan="8" class="py-2 px-3 font-weight-bold text-uppercase text-primary" style="letter-spacing: 1px; font-size: 0.85rem; background: #fdf2f2;">
+                    <i class="fa fa-folder-open mr-2"></i> Category: {{ $product->category ?: 'Uncategorized' }}
+                </td>
+            </tr>
+            @php $lastCategory = $product->category; @endphp
+          @endif
 
-      @foreach($product->variants as $variant)
-      <div class="col-xl-4 col-lg-6 col-md-6 mb-4">
-        <div class="product-card">
-          <div class="product-img-container">
-            <div class="status-badge-overlay">
-              <span class="badge badge-pill {{ $variant->is_active ? 'badge-success' : 'badge-danger' }} shadow-sm px-3 py-2">
-                {{ $variant->is_active ? '● Active' : '○ Inactive' }}
-              </span>
-            </div>
-            <div class="category-badge-overlay">
-              <span class="badge badge-pill bg-glass px-3 py-2 text-dark font-weight-bold">
-                <i class="fa fa-folder-o mr-1"></i> {{ $product->category ?: 'General' }}
-              </span>
-            </div>
-            @if($variant->image)
-              <img src="{{ asset('storage/' . $variant->image) }}" class="product-img" alt="{{ $variant->name }}">
-            @elseif($product->image)
-              <img src="{{ asset('storage/' . $product->image) }}" class="product-img" alt="{{ $variant->name }}">
-            @else
-              <div class="d-flex align-items-center justify-content-center bg-light h-100">
-                <i class="fa fa-cube fa-5x text-muted opacity-25"></i>
-              </div>
-            @endif
-          </div>
-          
-          <div class="product-details">
-            <div class="d-flex justify-content-between align-items-start mb-2">
-              <h5 class="product-title mb-0">{{ $variant->name ?: $product->name }}</h5>
-              <span class="badge badge-light border text-muted small px-2">
+          <tr class="variant-row-record">
+            <td class="text-center align-middle p-1">
+              @if($variant->image)
+                <img src="{{ asset('storage/' . $variant->image) }}" class="rounded shadow-sm" style="width: 45px; height: 45px; object-fit: cover; border: 1px solid #eee;">
+              @elseif($product->image)
+                <img src="{{ asset('storage/' . $product->image) }}" class="rounded shadow-sm" style="width: 45px; height: 45px; object-fit: cover; border: 1px solid #eee;">
+              @else
+                <div class="bg-light rounded d-flex align-items-center justify-content-center" style="width: 45px; height: 45px; border: 1px dashed #ccc;">
+                  <i class="fa fa-cube text-muted small"></i>
+                </div>
+              @endif
+            </td>
+            <td class="align-middle">
+                <div class="font-weight-bold text-dark mb-0" style="font-size: 1rem;">{{ $variant->name ?: $product->name }}</div>
+                @if($product->brand && strtolower(trim($product->brand)) !== strtolower(trim($variant->name)))
+                    <small class="text-muted text-uppercase font-weight-bold">{{ $product->brand }}</small>
+                @endif
+            </td>
+            <td class="text-center align-middle">
+                <span class="badge badge-pill badge-light border px-3">{{ $product->category ?: 'General' }}</span>
+            </td>
+            <td class="text-center align-middle font-weight-bold">
                 {{ $variant->measurement }}{{ $variant->unit }}
-              </span>
-            </div>
-            
-            @if($product->brand && strtolower(trim($product->brand)) !== strtolower(trim($variant->name)))
-            <div class="product-meta">
-              <i class="fa fa-tag"></i>
-              <span>Brand: <strong>{{ $product->brand }}</strong></span>
-            </div>
-            @endif
-            
-            <div class="product-meta">
-              <i class="fa fa-truck"></i>
-              <span>Supplier: <strong>{{ $product->supplier->company_name ?? 'N/A' }}</strong></span>
-            </div>
-
-            <div class="product-meta mt-2 text-primary font-weight-bold">
-              <i class="fa fa-dropbox"></i>
-              <span>Format: <strong>{{ $variant->packaging }}</strong></span>
-            </div>
-
-            @if($variant->can_sell_in_tots)
-            <div class="product-meta mt-1 text-success">
-              <i class="fa fa-flask"></i>
-              <span>Unit Type: <strong>Liquor (Shots)</strong></span>
-            </div>
-            @endif
-          </div>
-
-          <div class="product-actions mt-auto">
-            @if($canView)
-              <button type="button" class="btn btn-outline-info btn-sm view-product flex-grow-1" data-product-id="{{ $product->id }}">
-                <i class="fa fa-eye"></i> Details
-              </button>
-            @endif
-            @if($canEdit)
-              <a href="{{ route('bar.products.edit', $product) }}" class="btn btn-outline-warning btn-sm flex-grow-1">
-                <i class="fa fa-pencil"></i> Edit
-              </a>
-            @endif
-            @if($canDelete)
-              <button type="button" class="btn btn-outline-danger btn-sm delete-product-btn-card px-3" data-product-id="{{ $product->id }}" data-product-name="{{ $variant->name }}">
-                <i class="fa fa-trash"></i>
-              </button>
-            @endif
-          </div>
-        </div>
-      </div>
-      @endforeach
-    @endforeach
+            </td>
+            <td class="text-center align-middle">
+                @if($variant->items_per_package > 1)
+                    <span class="badge badge-danger px-3 shadow-sm">{{ $variant->packaging }} ({{ $variant->items_per_package }} units)</span>
+                @else
+                    <span class="badge badge-secondary px-3">{{ $variant->packaging }}</span>
+                @endif
+            </td>
+            <td class="text-center align-middle">
+                @if($variant->selling_type === 'bottle')
+                    <span class="text-dark font-weight-bold smallest text-uppercase">Bottle Only</span>
+                @elseif($variant->selling_type === 'glass')
+                    <span class="text-info font-weight-bold smallest text-uppercase">Shot/Glass Only</span>
+                @else
+                    <span class="text-success font-weight-bold smallest text-uppercase">Mixed (Both)</span>
+                @endif
+            </td>
+            <td class="text-center align-middle">
+                @if($variant->total_tots > 0)
+                    <div class="text-primary font-weight-bold">{{ $variant->total_tots }} Servings</div>
+                    <small class="text-muted smallest">per bottle/pc</small>
+                @else
+                    <span class="text-muted">-</span>
+                @endif
+            </td>
+            <td class="text-center align-middle">
+                <div class="btn-group">
+                    @if($canEdit)
+                        <a href="{{ route('bar.products.edit', $product) }}" class="btn btn-outline-primary btn-sm border-0" title="Edit">
+                            <i class="fa fa-pencil fa-lg"></i>
+                        </a>
+                    @endif
+                    @if($canDelete)
+                        <form action="{{ route('bar.products.destroy', $product) }}" method="POST" class="d-inline" data-product-name="{{ $variant->name }}">
+                            @csrf
+                            @method('DELETE')
+                            <button type="button" class="btn btn-outline-danger btn-sm border-0 delete-product-btn" title="Delete">
+                                <i class="fa fa-trash fa-lg"></i>
+                            </button>
+                        </form>
+                    @endif
+                </div>
+            </td>
+          </tr>
+        @endforeach
+      </tbody>
+    </table>
   </div>
 
-  <div class="mt-5 d-flex justify-content-center">
-    {{ $products->links() }}
+  <div class="mt-4 d-flex justify-content-center">
+    {{ $variants->links() }}
   </div>
+
+  <style>
+      .variant-row-record:hover { background: #fdfdfd; }
+      .smallest { font-size: 0.75rem; }
+      .table td { border-bottom: 1px solid #f1f1f1 !important; }
+  </style>
 @else
-  <div class="text-center py-5 bg-white rounded-lg shadow-sm">
-    <div class="mb-4">
-      <i class="fa fa-cubes fa-5x text-light"></i>
-    </div>
-    <h3 class="font-weight-bold">No Products Found</h3>
-    <p class="text-muted mx-auto" style="max-width: 500px;">
-      We couldn't find any products matching your search or filters. Try adjusting your criteria.
-    </p>
+  <div class="text-center py-5 bg-white rounded shadow-sm border">
+    <i class="fa fa-cubes fa-4x text-light mb-3"></i>
+    <h4 class="font-weight-bold">No Products Found</h4>
+    <p class="text-muted">Adjust your filters or add a new product to your inventory.</p>
   </div>
 @endif

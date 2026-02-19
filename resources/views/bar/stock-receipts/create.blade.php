@@ -5,769 +5,779 @@
 @section('content')
 <div class="app-title">
   <div>
-    <h1><i class="fa fa-download"></i> New Stock Receipt</h1>
-    <p>Record stock received from supplier</p>
+    <h1><i class="fa fa-download text-success"></i> Stock Reception</h1>
+    <p>Transfer product from Supplier to Warehouse stock</p>
   </div>
   <ul class="app-breadcrumb breadcrumb">
     <li class="breadcrumb-item"><i class="fa fa-home fa-lg"></i></li>
     <li class="breadcrumb-item"><a href="{{ route('dashboard') }}">Dashboard</a></li>
     <li class="breadcrumb-item"><a href="{{ route('bar.stock-receipts.index') }}">Stock Receipts</a></li>
-    <li class="breadcrumb-item">New Stock Receipt</li>
+    <li class="breadcrumb-item active">Receiving</li>
   </ul>
 </div>
 
 <div class="row">
-  <!-- Calculation Summary Section - Left Side -->
-  <div class="col-md-4">
-    <div class="tile" style="background-color: #f8f9fa; border-left: 4px solid #007bff; position: sticky; top: 20px;">
-      <h3 class="tile-title" style="color: #007bff;">
-        <i class="fa fa-calculator"></i> Calculation Summary
-      </h3>
-      <div class="tile-body">
-        <div class="form-group">
-          <label class="control-label" style="font-weight: 600;" id="totalPackagesLabel">Total Packages</label>
-          <div class="input-group">
-            <input type="text" class="form-control" id="total_packages" readonly 
-                   style="background-color: #ffffff; font-size: 1.1em; font-weight: 600; text-align: center; border: 2px solid #dee2e6;">
-            <div class="input-group-append">
-              <span class="input-group-text" style="background-color: #e9ecef;" id="packageUnit">packages</span>
-            </div>
-          </div>
-          <small class="form-text text-muted">Quantity Received</small>
-        </div>
-        
-        <div class="form-group">
-          <label class="control-label" style="font-weight: 600;">Total Bottles</label>
-          <div class="input-group">
-            <input type="text" class="form-control" id="total_units" readonly 
-                   style="background-color: #ffffff; font-size: 1.1em; font-weight: 600; text-align: center; border: 2px solid #dee2e6;">
-            <div class="input-group-append">
-              <span class="input-group-text" style="background-color: #e9ecef;">bottle(s)</span>
-            </div>
-          </div>
-          <small class="form-text text-muted">Packages × Items per Package</small>
-        </div>
-        
-        <div class="form-group">
-          <label class="control-label" style="font-weight: 600;">Profit per Bottle</label>
-          <div class="input-group">
-            <div class="input-group-prepend">
-              <span class="input-group-text" style="background-color: #e9ecef;">TSh</span>
-            </div>
-            <input type="text" class="form-control" id="profit_per_unit" readonly 
-                   style="background-color: #ffffff; font-size: 1.1em; font-weight: 600; text-align: center; border: 2px solid #dee2e6;">
-          </div>
-          <small class="form-text text-muted">Selling Price - Buying Price</small>
-        </div>
-        
-        <div class="form-group">
-          <label class="control-label" style="font-weight: 600;">Total Buying Cost</label>
-          <div class="input-group">
-            <div class="input-group-prepend">
-              <span class="input-group-text" style="background-color: #e9ecef;">TSh</span>
-            </div>
-            <input type="text" class="form-control" id="total_buying_cost" readonly 
-                   style="background-color: #ffffff; font-size: 1.1em; font-weight: 600; text-align: center; border: 2px solid #dee2e6;">
-          </div>
-          <small class="form-text text-muted">Total Bottles × Buying Price</small>
-        </div>
-        
-        <div class="form-group" id="discountSection" style="display: none;">
-          <label class="control-label" style="font-weight: 600; color: #ff9800;">Discount</label>
-          <div class="input-group">
-            <div class="input-group-prepend">
-              <span class="input-group-text" style="background-color: #fff3e0; color: #e65100;">TSh</span>
-            </div>
-            <input type="text" class="form-control" id="discount_value" readonly 
-                   style="background-color: #fff3e0; color: #e65100; font-size: 1.1em; font-weight: 600; text-align: center; border: 2px solid #ff9800;">
-          </div>
-          <small class="form-text text-muted" id="discountLabel"></small>
-        </div>
-        
-        <div class="form-group" id="finalCostSection" style="display: none;">
-          <label class="control-label" style="font-weight: 600; color: #2196f3;">Final Buying Cost</label>
-          <div class="input-group">
-            <div class="input-group-prepend">
-              <span class="input-group-text" style="background-color: #e3f2fd; color: #1565c0;">TSh</span>
-            </div>
-            <input type="text" class="form-control" id="final_buying_cost" readonly 
-                   style="background-color: #e3f2fd; color: #1565c0; font-size: 1.1em; font-weight: 600; text-align: center; border: 2px solid #2196f3;">
-          </div>
-          <small class="form-text text-muted">After Discount</small>
-        </div>
-        
-        <div class="form-group">
-          <label class="control-label" style="font-weight: 600; color: #28a745;">Total Profit</label>
-          <div class="input-group">
-            <div class="input-group-prepend">
-              <span class="input-group-text" style="background-color: #d4edda; color: #155724;">TSh</span>
-            </div>
-            <input type="text" class="form-control" id="total_profit" readonly 
-                   style="background-color: #d4edda; color: #155724; font-size: 1.2em; font-weight: bold; text-align: center; border: 2px solid #28a745;">
-          </div>
-          <small class="form-text text-muted" style="color: #28a745;">Total Bottles × Profit per Bottle</small>
-        </div>
-        
-        <div class="alert alert-info mt-3 mb-0" role="alert" style="font-size: 0.9em;">
-          <i class="fa fa-info-circle"></i> <strong>Note:</strong> Calculations update automatically as you enter values.
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <!-- Form Section - Right Side -->
-  <div class="col-md-8">
-    <div class="tile">
-      <h3 class="tile-title">Stock Receipt Information</h3>
-      <div class="tile-body">
-        <form method="POST" action="{{ route('bar.stock-receipts.store') }}" id="stockReceiptForm">
-          @csrf
-
-          <div class="row">
-            <div class="col-md-6">
-              <div class="form-group">
-                <label class="control-label">Product *</label>
-                <select class="form-control @error('product_id') is-invalid @enderror" id="product_id" name="product_id" required>
-                  <option value="">Select Product</option>
-                  @foreach($products as $product)
-                    <option value="{{ $product->id }}" {{ old('product_id') == $product->id ? 'selected' : '' }}>
-                      {{ $product->name }} @if($product->brand) - {{ $product->brand }} @endif
-                    </option>
-                  @endforeach
-                </select>
-                @error('product_id')
-                  <div class="invalid-feedback">{{ $message }}</div>
-                @enderror
-              </div>
-            </div>
-            <div class="col-md-6">
-              <div class="form-group">
-                <label class="control-label">Product Variant *</label>
-                <select class="form-control @error('product_variant_id') is-invalid @enderror" id="product_variant_id" name="product_variant_id" required>
-                  <option value="">Select Product First</option>
-                </select>
-                @error('product_variant_id')
-                  <div class="invalid-feedback">{{ $message }}</div>
-                @enderror
-                <small class="form-text text-muted" id="variantInfo"></small>
-                <div id="existingStockInfo" class="mt-2" style="display: none;">
-                  <div class="alert alert-info mb-0 py-2" style="font-size: 0.9em;">
-                    <i class="fa fa-info-circle"></i> 
-                    <strong>Existing Stock:</strong> 
-                    <span id="existingStockText"></span>
-                  </div>
+  <div class="col-md-12">
+    <form method="POST" action="{{ route('bar.stock-receipts.store') }}" id="stockReceiptForm">
+      @csrf
+      
+      <div class="row">
+        <!-- Main Form Column -->
+        <div class="col-md-9">
+          <div class="tile shadow-sm border-0 mb-3">
+             <div class="d-flex justify-content-between align-items-center border-bottom pb-3 mb-4">
+                <h3 class="tile-title mb-0"><i class="fa fa-truck mr-2 text-primary"></i> Receipt Details</h3>
+                <div class="d-flex align-items-center">
+                   <div class="mr-3 text-right">
+                      <small class="text-muted d-block text-uppercase font-weight-bold">Batch Target (Crates)</small>
+                       <div class="input-group input-group-sm" style="width: 200px;">
+                          <input type="number" id="batch_target_qty" class="form-control font-weight-bold text-center border-primary" placeholder="Crates" value="0" style="border-radius: 4px;">
+                       </div>
+                   </div>
+                   <div class="text-right">
+                      <small class="text-muted d-block text-uppercase font-weight-bold">Status</small>
+                      <span id="batch_status_badge" class="badge badge-secondary px-3 py-2">Waiting Data</span>
+                   </div>
                 </div>
-              </div>
-            </div>
-          </div>
+             </div>
 
-          <div class="row">
-            <div class="col-md-6">
-              <div class="form-group">
-                <label class="control-label">Supplier *</label>
-                <select class="form-control @error('supplier_id') is-invalid @enderror" name="supplier_id" required>
-                  <option value="">Select Supplier</option>
-                  @foreach($suppliers as $supplier)
-                    <option value="{{ $supplier->id }}" {{ old('supplier_id') == $supplier->id ? 'selected' : '' }}>
-                      {{ $supplier->company_name }}
-                    </option>
-                  @endforeach
-                </select>
-                @error('supplier_id')
-                  <div class="invalid-feedback">{{ $message }}</div>
-                @enderror
-              </div>
-            </div>
-            <div class="col-md-6">
-              <div class="form-group">
-                <label class="control-label">Quantity Received (Packages) *</label>
-                <input type="number" class="form-control @error('quantity_received') is-invalid @enderror" 
-                       name="quantity_received" 
-                       id="quantity_received"
-                       value="{{ old('quantity_received', 1) }}" 
-                       min="1" 
-                       required>
-                @error('quantity_received')
-                  <div class="invalid-feedback">{{ $message }}</div>
-                @enderror
-                <small class="form-text text-muted" id="quantityInfo">e.g., 10 crates</small>
-              </div>
-            </div>
-          </div>
-
-          <div class="row">
-            <div class="col-md-6">
-              <div class="form-group">
-                <label class="control-label">Buying Price per Bottle (TSh) *</label>
-                <input type="number" class="form-control @error('buying_price_per_unit') is-invalid @enderror" 
-                       name="buying_price_per_unit" 
-                       id="buying_price_per_unit"
-                       value="{{ old('buying_price_per_unit') }}" 
-                       step="0.01" 
-                       min="0" 
-                       required>
-                @error('buying_price_per_unit')
-                  <div class="invalid-feedback">{{ $message }}</div>
-                @enderror
-              </div>
-            </div>
-            <div class="col-md-6">
-              <div class="form-group">
-                <label class="control-label">Selling Price per Bottle (TSh) *</label>
-                <input type="number" class="form-control @error('selling_price_per_unit') is-invalid @enderror" 
-                       name="selling_price_per_unit" 
-                       id="selling_price_per_unit"
-                       value="{{ old('selling_price_per_unit') }}" 
-                       step="0.01" 
-                       min="0" 
-                       required>
-                @error('selling_price_per_unit')
-                  <div class="invalid-feedback">{{ $message }}</div>
-                @enderror
-              </div>
-            </div>
-          </div>
-
-          <!-- Price per Tot (Conditional) -->
-          <div class="row" id="totPriceRow" style="display: none;">
-            <div class="col-md-6">
-              <div class="form-group">
-                <label class="control-label">Selling Price per Shot/Tot (TSh) *</label>
-                <input type="number" class="form-control @error('selling_price_per_tot') is-invalid @enderror" 
-                       name="selling_price_per_tot" 
-                       id="selling_price_per_tot"
-                       value="{{ old('selling_price_per_tot') }}" 
-                       step="0.01" 
-                       min="0">
-                @error('selling_price_per_tot')
-                  <div class="invalid-feedback">{{ $message }}</div>
-                @enderror
-                <small class="form-text text-muted">Set price for individual shots/glasses</small>
-              </div>
-            </div>
-          </div>
-
-          <div class="row">
-            <div class="col-md-6">
-              <div class="form-group">
-                <label class="control-label">Discount Type (Optional)</label>
-                <select class="form-control @error('discount_type') is-invalid @enderror" 
-                        name="discount_type" 
-                        id="discount_type">
-                  <option value="">None</option>
-                  <option value="fixed" {{ old('discount_type') == 'fixed' ? 'selected' : '' }}>Fixed Amount</option>
-                  <option value="percent" {{ old('discount_type') == 'percent' ? 'selected' : '' }}>Percentage</option>
-                </select>
-                @error('discount_type')
-                  <div class="invalid-feedback">{{ $message }}</div>
-                @enderror
-                <small class="form-text text-muted" id="discountHint">Select discount type</small>
-              </div>
-            </div>
-            <div class="col-md-6">
-              <div class="form-group">
-                <label class="control-label">Discount Amount</label>
-                <div class="input-group">
-                  <div class="input-group-prepend" id="discountPrefix" style="display: none;">
-                    <span class="input-group-text" id="discountPrefixText">TSh</span>
-                  </div>
-                  <input type="number" 
-                         class="form-control @error('discount_amount') is-invalid @enderror" 
-                         name="discount_amount" 
-                         id="discount_amount"
-                         value="{{ old('discount_amount') }}" 
-                         step="0.01" 
-                         min="0" 
-                         placeholder="0.00"
-                         style="display: none;">
-                  <div class="input-group-append" id="discountSuffix" style="display: none;">
-                    <span class="input-group-text" id="discountSuffixText">%</span>
-                  </div>
-                  @error('discount_amount')
-                    <div class="invalid-feedback">{{ $message }}</div>
-                  @enderror
+             <div class="row">
+                <div class="col-md-5">
+                   <div class="form-group">
+                      <label class="font-weight-bold small text-uppercase">Supplier / Distributor *</label>
+                      <select class="form-control select2" name="supplier_id" id="supplier_id" required>
+                         <option value="">-- Select Supplier --</option>
+                         @foreach($suppliers as $supplier)
+                            <option value="{{ $supplier->id }}">{{ $supplier->company_name }}</option>
+                         @endforeach
+                      </select>
+                   </div>
                 </div>
-                <small class="form-text text-muted" id="discountAmountHint">Enter discount amount</small>
-              </div>
-            </div>
+                <div class="col-md-3">
+                   <div class="form-group">
+                      <label class="font-weight-bold small text-uppercase">Receiving Date *</label>
+                      <input type="date" class="form-control" name="received_date" id="received_date" value="{{ date('Y-m-d') }}" required>
+                   </div>
+                </div>
+                <div class="col-md-4">
+                   <div class="form-group">
+                      <label class="font-weight-bold small text-uppercase text-primary">Load Inventory By Group / Distributor</label>
+                      <select class="form-control border-primary" id="category_filter" style="border-width: 2px;">
+                         <option value="">-- Choose Distributor / Group --</option>
+                         @foreach($categories as $cat)
+                            <option value="{{ $cat }}">{{ $cat }}</option>
+                         @endforeach
+                      </select>
+                   </div>
+                </div>
+             </div>
+
+             <!-- Bulk Price Apply Tool -->
+             <div class="tile shadow-sm border-0 mb-3 p-0 overflow-hidden" id="bulk_section_tile">
+                <div class="bg-light p-3 border-bottom d-flex justify-content-between align-items-center">
+                    <div>
+                        <h6 class="mb-0 text-dark font-weight-bold text-uppercase small"><i class="fa fa-magic mr-1 text-primary"></i> Smart Bulk Pricing Mode</h6>
+                        <p class="smallest text-muted mb-0">Apply one price to all loaded items instantly</p>
+                    </div>
+                    <div class="btn-group btn-group-toggle" data-toggle="buttons">
+                        <label class="btn btn-outline-secondary btn-sm active" id="bulk_off_label">
+                            <input type="radio" name="bulk_toggle" value="off" checked> <i class="fa fa-lock"></i> OFF
+                        </label>
+                        <label class="btn btn-outline-primary btn-sm" id="bulk_on_label">
+                            <input type="radio" name="bulk_toggle" value="on"> <i class="fa fa-bolt"></i> ENABLE BULK
+                        </label>
+                    </div>
+                </div>
+                <div class="p-3 bg-white" id="bulk_inputs_container" style="opacity: 0.4; pointer-events: none; transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1); border-left: 4px solid #ccc;">
+                     <div class="row align-items-end">
+                        <div class="col-md-11">
+                            <div class="row no-gutters">
+                                <div class="col-md-2 pr-2">
+                                    <label class="smallest font-weight-bold text-uppercase text-muted mb-1">Buy Price</label>
+                                    <input type="number" id="bulk_buy_price" class="form-control form-control-sm font-weight-bold border-primary" placeholder="0">
+                                </div>
+                                <div class="col-md-2 pr-2">
+                                    <label class="smallest font-weight-bold text-uppercase text-muted mb-1">Sell (Btl)</label>
+                                    <input type="number" id="bulk_sell_price" class="form-control form-control-sm font-weight-bold border-success" placeholder="0">
+                                </div>
+                                <div class="col-md-2 pr-2">
+                                    <div class="d-flex justify-content-between align-items-center mb-1">
+                                       <label class="smallest font-weight-bold text-uppercase text-muted m-0">Sell (Tot)</label>
+                                       <div class="custom-control custom-switch smallest" style="transform: scale(0.8);">
+                                          <input type="checkbox" class="custom-control-input" id="bulk_dual_toggle">
+                                          <label class="custom-control-label" for="bulk_dual_toggle"></label>
+                                       </div>
+                                    </div>
+                                    <input type="number" id="bulk_sell_tot" class="form-control form-control-sm text-info" placeholder="Tot" disabled>
+                                </div>
+                                <div class="col-md-3 pr-2">
+                                    <label class="smallest font-weight-bold text-uppercase text-muted mb-1">Expiry Date</label>
+                                    <input type="date" id="bulk_expiry" class="form-control form-control-sm">
+                                </div>
+                                <div class="col-md-3 pr-2">
+                                    <label class="smallest font-weight-bold text-uppercase text-muted mb-1">Discount</label>
+                                    <div class="input-group input-group-sm">
+                                        <input type="number" id="bulk_discount_amount" class="form-control" placeholder="0">
+                                        <div class="input-group-append">
+                                            <select id="bulk_discount_type" class="custom-select custom-select-sm" style="border-left:0;">
+                                                <option value="fixed">TSh</option>
+                                                <option value="percent">%</option>
+                                            </select>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-1">
+                            <button type="button" id="applyBulkPrices" class="btn btn-outline-info btn-sm btn-block" title="Sync All">
+                                <i class="fa fa-refresh"></i>
+                            </button>
+                        </div>
+                     </div>
+                </div>
+             </div>
           </div>
 
-          <div class="row">
-            <div class="col-md-6">
-              <div class="form-group">
-                <label class="control-label">Received Date *</label>
-                <input type="date" class="form-control @error('received_date') is-invalid @enderror" 
-                       name="received_date" 
-                       value="{{ old('received_date', date('Y-m-d')) }}" 
-                       required>
-                @error('received_date')
-                  <div class="invalid-feedback">{{ $message }}</div>
-                @enderror
-              </div>
-            </div>
-            <div class="col-md-6">
-              <div class="form-group">
-                <label class="control-label">Expiry Date (Optional)</label>
-                <input type="date" class="form-control @error('expiry_date') is-invalid @enderror" 
-                       name="expiry_date" 
-                       value="{{ old('expiry_date') }}">
-                @error('expiry_date')
-                  <div class="invalid-feedback">{{ $message }}</div>
-                @enderror
-              </div>
-            </div>
+          <!-- Items Table -->
+          <div class="tile shadow-sm border-0 p-0 overflow-hidden">
+             <div class="bg-dark p-3 d-flex justify-content-between align-items-center">
+                <h5 class="mb-0 text-white"><i class="fa fa-list-ul mr-2 text-success"></i> Stock Entry List</h5>
+                <span id="items_badge" class="badge badge-pill badge-primary">0 Items</span>
+             </div>
+             <div class="table-responsive">
+                <table class="table table-hover mb-0" id="itemsTable">
+                   <thead class="bg-light">
+                       <tr>
+                          <th class="border-top-0 px-3 py-2" style="font-size: 0.75rem;">PRODUCT & EXPIRE</th>
+                          <th class="border-top-0 px-2 py-2 text-center" width="90" style="font-size: 0.75rem;">QTY</th>
+                          <th class="border-top-0 px-2 py-2" width="130" style="font-size: 0.75rem;">BUY PRICE</th>
+                          <th class="border-top-0 px-2 py-2" width="150" style="font-size: 0.75rem;">RETAIL PRICE</th>
+                          <th class="border-top-0 px-2 py-2" width="150" style="font-size: 0.75rem;">DISCOUNT</th>
+                          <th class="border-top-0 px-2 py-2" width="40"></th>
+                       </tr>
+                   </thead>
+                   <tbody id="itemsTableBody">
+                      <tr id="emptyTableMsg">
+                         <td colspan="8" class="text-center py-5 text-muted">
+                            <i class="fa fa-cubes fa-3x mb-3 d-block opacity-25"></i>
+                            Select a category above to load products into this receipt.
+                         </td>
+                      </tr>
+                   </tbody>
+                </table>
+             </div>
           </div>
+        </div>
 
-          <div class="row">
-            <div class="col-md-12">
-              <div class="form-group">
-                <label class="control-label">Notes</label>
-                <textarea class="form-control @error('notes') is-invalid @enderror" 
-                          name="notes" 
-                          rows="3" 
-                          placeholder="Any additional notes about this stock receipt">{{ old('notes') }}</textarea>
-                @error('notes')
-                  <div class="invalid-feedback">{{ $message }}</div>
-                @enderror
-              </div>
+        <!-- Summary & Sidebar -->
+        <div class="col-md-3" id="sidebar_col">
+           <div class="sticky-top" style="top: 20px;">
+               <div class="tile shadow-lg border-0 receipt-summary-box">
+               <div class="d-flex justify-content-between align-items-start mb-4">
+                  <div>
+                    <h5 class="mb-0 font-weight-bold">Summary</h5>
+                    <small class="opacity-75">Valuation & Profitability</small>
+                  </div>
+                  <span class="badge badge-light badge-pill px-3 py-1" id="items_badge">0 Items</span>
+               </div>
+
+               <div id="summary_content_area">
+                  <div class="mb-3 d-flex justify-content-between summary-card-dark p-2" id="projected_summary_row" style="display: none !important;">
+                      <span class="smallest font-weight-bold">PROJECTED (Target)</span>
+                      <span class="font-weight-bold text-warning h6 mb-0" id="summ_projected">0</span>
+                  </div>
+
+                  <div class="row no-gutters mb-4">
+                     <div class="col-6 pr-2">
+                        <div class="summary-card-light p-2 text-center h-100">
+                           <small class="smallest d-block opacity-75">Bulk Pkgs</small>
+                           <span class="h4 font-weight-bold mb-0" id="summ_packages">0</span>
+                        </div>
+                     </div>
+                     <div class="col-6 pl-2">
+                        <div class="summary-card-light p-2 text-center h-100">
+                           <small class="smallest d-block opacity-75">Total Bottles/Pc</small>
+                           <span class="h4 font-weight-bold mb-0" id="summ_units">0</span>
+                        </div>
+                     </div>
+                  </div>
+
+                  <div class="mb-2 d-flex justify-content-between smallest px-1">
+                     <span class="opacity-75">Gross Purchase</span>
+                     <span id="summ_gross">0</span>
+                  </div>
+                  <div class="mb-3 d-flex justify-content-between smallest text-warning font-weight-bold px-1">
+                     <span>Discount Applied (-)</span>
+                     <span id="summ_discount">0</span>
+                  </div>
+
+                  <div class="summary-card-dark p-3 text-center mb-4 border-left border-warning" style="border-left-width: 4px !important;">
+                     <span class="smallest opacity-75 d-block mb-1">Total Buying Cost</span>
+                     <div class="h3 font-weight-bold mb-0 text-white" id="summ_cost">0</div>
+                     <div class="smallest text-white-50 mt-1">Avg: <span id="summ_unit_cost" class="text-white">0</span> / bottle/pc</div>
+                  </div>
+
+                  <div class="summary-card-light p-3 mb-4">
+                     <div class="d-flex justify-content-between align-items-center mb-2">
+                        <span class="smallest opacity-75">Expected Selling</span>
+                        <span class="font-weight-bold" id="summ_selling">0</span>
+                     </div>
+                     <div class="selling-row d-flex justify-content-between align-items-center smallest mb-1">
+                        <span class="opacity-75">&#8627; Bottle</span>
+                        <span class="text-primary" id="summ_selling_btl">0</span>
+                     </div>
+                     <div class="selling-row d-flex justify-content-between align-items-center smallest mb-2">
+                        <span class="opacity-75">&#8627; Tot/Glass</span>
+                        <span class="text-info" id="summ_selling_tot">0</span>
+                     </div>
+                     <div class="d-flex justify-content-between align-items-center pt-2 border-top border-white-10">
+                        <span class="smallest font-weight-bold text-warning">Est. Net Profit</span>
+                        <span class="h5 mb-0 font-weight-bold" id="summ_profit">0</span>
+                     </div>
+                  </div>
+
+                  <div class="row no-gutters">
+                      <div class="col-6 pr-1">
+                         <div class="summary-card-dark p-2 text-center">
+                            <small class="smallest d-block opacity-50 mb-1">Margin</small>
+                            <span class="font-weight-bold h5 mb-0" id="summ_margin">0%</span>
+                         </div>
+                      </div>
+                      <div class="col-6 pl-1">
+                         <div class="summary-card-dark p-2 text-center">
+                            <small class="smallest d-block opacity-50 mb-1">ROI</small>
+                            <span class="font-weight-bold h5 mb-0" id="summ_roi">0%</span>
+                         </div>
+                      </div>
+                  </div>
+               </div>
             </div>
-          </div>
+               <div class="tile shadow-sm border-0 p-3 mb-3 bg-white">
+                  <div class="d-flex justify-content-between align-items-center mb-2">
+                     <label class="font-weight-bold small text-uppercase text-muted m-0">Items Breakdown</label>
+                     <i class="fa fa-list-alt opacity-25"></i>
+                  </div>
+                  <div id="items_breakdown_list" style="max-height: 220px; overflow-y: auto;" class="mb-3">
+                     <!-- Populated by JS -->
+                  </div>
+                  <div class="border-top pt-3">
+                     <label class="font-weight-bold small text-uppercase text-muted mb-1">Internal Note</label>
+                     <textarea class="form-control form-control-sm border-0 bg-light" name="notes" rows="2" placeholder="Reference invoice #, condition, etc..." style="border-radius: 8px;"></textarea>
+                  </div>
+               </div><!-- /breakdown -->
 
-          {{-- Barcode Preview Section --}}
-          <div class="row mt-4" id="barcodePreviewSection" style="display: none;">
-            <div class="col-md-12">
-              <div class="tile" style="background-color: #f8f9fa;">
-                <div class="d-flex justify-content-between align-items-center mb-3">
-                  <h3 class="tile-title"><i class="fa fa-barcode"></i> Barcode Preview</h3>
-                  <button type="button" class="btn btn-sm btn-primary" onclick="printBarcodePreview()">
-                    <i class="fa fa-print"></i> Print Preview
+               <div class="tile shadow-sm border-0 p-3 mb-3">
+                  <button type="submit" class="btn btn-success btn-block btn-lg shadow rounded-pill py-3 font-weight-bold" id="submitBtn" disabled>
+                     <i class="fa fa-check-circle mr-2"></i> POST RECEIPT
                   </button>
-                </div>
-                <div class="tile-body">
-                  <div class="alert alert-info">
-                    <i class="fa fa-info-circle"></i> Barcodes will be generated after saving the stock receipt. You can print them from the receipt details page.
-                  </div>
-                  <div class="row" id="barcodePreviewContainer">
-                    <!-- Barcodes will be generated here dynamically -->
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
+                  <p class="text-center small text-muted mt-3 mb-0">Batch data will be added to Warehouse Stock immediately upon posting.</p>
+               </div><!-- /submit -->
 
-          <div class="tile-footer">
-            <button class="btn btn-primary" type="submit">
-              <i class="fa fa-fw fa-lg fa-check-circle"></i>Save Stock Receipt
-            </button>
-            <a class="btn btn-secondary" href="{{ route('bar.stock-receipts.index') }}">
-              <i class="fa fa-fw fa-lg fa-times-circle"></i>Cancel
-            </a>
-          </div>
-        </form>
-      </div>
-    </div>
+           </div>
+        </div>
+    </form>
   </div>
 </div>
+
+<style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+    
+    body { font-family: 'Inter', sans-serif; }
+    .truncate-1 { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .tile { border-radius: 12px; transition: transform 0.2s; }
+    .smallest { font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.5px; }
+    .opacity-50 { opacity: 0.5; }
+    .opacity-75 { opacity: 0.75; }
+    
+    /* Premium Sidebar */
+    .receipt-summary-box { 
+        background: linear-gradient(135deg, #940000 0%, #d40000 100%); 
+        border-radius: 20px; 
+        box-shadow: 0 10px 30px rgba(148, 0, 0, 0.2);
+        color: white;
+        padding: 24px;
+        position: relative;
+        overflow: hidden;
+    }
+    .receipt-summary-box::after {
+        content: ""; position: absolute; top: -20px; right: -20px; width: 100px; height: 100px;
+        background: rgba(255,255,255,0.1); border-radius: 50%;
+    }
+    .summary-card-light { background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.15); border-radius: 12px; }
+    .summary-card-dark { background: rgba(0,0,0,0.15); border: 1px solid rgba(255,255,255,0.05); border-radius: 12px; }
+    
+    /* Interactive Table */
+    .table thead th { background: #f8f9fa; border: 0; color: #6c757d; font-weight: 600; padding: 15px 10px; }
+    .table tbody tr { transition: all 0.2s; }
+    .table tbody tr:hover { background: #fef8f8; }
+    .form-control-sm { border-radius: 6px; border: 1px solid #e9ecef; }
+    .form-control-sm:focus { border-color: #940000; box-shadow: 0 0 0 3px rgba(148, 0, 0, 0.1); }
+    
+    /* Bulk Bar */
+    #bulk_inputs_container { border-radius: 0 0 12px 12px; }
+    .bulk-active { opacity: 1 !important; pointer-events: auto !important; border-left-color: #940000 !important; background: #fffcfc !important; box-shadow: 0 5px 15px rgba(148, 0, 0, 0.05); }
+    
+    /* Badges & Icons */
+    .badge-premium { padding: 6px 12px; border-radius: 20px; font-weight: 600; }
+    .fa-glass { color: #5bc0de; filter: drop-shadow(0 0 2px rgba(91, 192, 222, 0.5)); }
+    .cursor-pointer { cursor: pointer; }
+    .transition-3 { transition: all 0.3s; }
+    
+    /* Custom Input Styling */
+    input[type="number"] { font-family: 'Inter', sans-serif; }
+    .item-pkg { border-color: #940000; color: #940000; background: #fff9f9; }
+</style>
 
 @endsection
 
 @section('scripts')
-<!-- JsBarcode Library -->
-<script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.5/dist/JsBarcode.all.min.js"></script>
-<script type="text/javascript">
-  (function() {
-    const productsData = @json($productsData);
-    
-    // Convert to object keyed by product ID for easier lookup
-    const products = {};
-    productsData.forEach(function(product) {
-      products[product.id] = product;
-    });
-
-    const productSelect = document.getElementById('product_id');
-    const variantSelect = document.getElementById('product_variant_id');
-    const variantInfo = document.getElementById('variantInfo');
-    const quantityInfo = document.getElementById('quantityInfo');
-    const quantityInput = document.getElementById('quantity_received');
-    const buyingPriceInput = document.getElementById('buying_price_per_unit');
-    const sellingPriceInput = document.getElementById('selling_price_per_unit');
-    const totPriceRow = document.getElementById('totPriceRow');
-    const totPriceInput = document.getElementById('selling_price_per_tot');
-    const discountTypeSelect = document.getElementById('discount_type');
-    const discountAmountInput = document.getElementById('discount_amount');
-    const discountHint = document.getElementById('discountHint');
-    const discountAmountHint = document.getElementById('discountAmountHint');
-    const profitPerUnitInput = document.getElementById('profit_per_unit');
-    const totalPackagesInput = document.getElementById('total_packages');
-    const totalPackagesLabel = document.getElementById('totalPackagesLabel');
-    const packageUnitText = document.getElementById('packageUnit');
-    const totalUnitsInput = document.getElementById('total_units');
-    const totalBuyingCostInput = document.getElementById('total_buying_cost');
-    const discountValueInput = document.getElementById('discount_value');
-    const finalBuyingCostInput = document.getElementById('final_buying_cost');
-    const discountSection = document.getElementById('discountSection');
-    const finalCostSection = document.getElementById('finalCostSection');
-    const discountLabel = document.getElementById('discountLabel');
-    const totalProfitInput = document.getElementById('total_profit');
-
-    let selectedVariant = null;
-
-    // Store variants by ID for quick lookup
-    const variantsById = {};
-    productsData.forEach(function(product) {
-      if (product.variants) {
-        product.variants.forEach(function(variant) {
-          variantsById[variant.id] = variant;
-        });
-      }
-    });
-
-    function updateVariants() {
-      const productId = parseInt(productSelect.value);
-      variantSelect.innerHTML = '<option value="">Select Variant</option>';
-      variantInfo.textContent = '';
-      quantityInfo.textContent = '';
-      
-      // Clear prices when product changes
-      buyingPriceInput.value = '';
-      sellingPriceInput.value = '';
-      clearCalculations();
-
-      if (productId && products[productId]) {
-        const product = products[productId];
-        if (product && product.variants && product.variants.length > 0) {
-          product.variants.forEach(function(variant) {
-            const option = document.createElement('option');
-            option.value = variant.id;
-            option.textContent = variant.measurement + ' - ' + variant.packaging;
-            option.dataset.itemsPerPackage = variant.items_per_package;
-            option.dataset.packaging = variant.packaging;
-            variantSelect.appendChild(option);
-          });
-        }
-      }
-    }
-
-    function updateVariantInfo() {
-      const selectedOption = variantSelect.options[variantSelect.selectedIndex];
-      const existingStockInfo = document.getElementById('existingStockInfo');
-      const existingStockText = document.getElementById('existingStockText');
-      
-      if (selectedOption && selectedOption.value) {
-        const variantId = parseInt(selectedOption.value);
-        const variant = variantsById[variantId];
-        
-        if (variant) {
-          selectedVariant = {
-            id: variant.id,
-            itemsPerPackage: variant.items_per_package,
-            packaging: variant.packaging,
-            measurement: variant.measurement,
-            buyingPrice: variant.buying_price_per_unit,
-            sellingPrice: variant.selling_price_per_unit
-          };
-          
-          // Display variant information
-          variantInfo.textContent = variant.measurement + ' | ' + variant.items_per_package + ' items per ' + variant.packaging;
-          quantityInfo.textContent = 'e.g., 10 ' + variant.packaging.toLowerCase();
-          
-          // Display existing stock
-          if (variant.existing_quantity !== undefined) {
-            const existingQuantity = variant.existing_quantity || 0;
-            const existingPackages = variant.existing_packages || 0;
-            const packagingLower = variant.packaging.toLowerCase();
-            
-            if (existingQuantity > 0) {
-              let stockText = '';
-              if (existingPackages > 0) {
-                stockText = existingPackages + ' ' + packagingLower + ' (' + existingQuantity.toLocaleString() + ' bottle(s))';
-              } else {
-                stockText = existingQuantity.toLocaleString() + ' bottle(s)';
-              }
-              existingStockText.textContent = stockText;
-              existingStockInfo.style.display = 'block';
-            } else {
-              existingStockText.textContent = 'No existing stock';
-              existingStockInfo.style.display = 'block';
-            }
-          } else {
-            existingStockInfo.style.display = 'none';
-          }
-          
-          // Update package unit text and label
-          const packagingLower = variant.packaging.toLowerCase();
-          const packagingCapitalized = variant.packaging.charAt(0).toUpperCase() + variant.packaging.slice(1).toLowerCase();
-          packageUnitText.textContent = packagingLower;
-          totalPackagesLabel.textContent = 'Total ' + packagingCapitalized;
-          
-          // Load registered prices if available
-          if (variant.buying_price_per_unit) {
-            buyingPriceInput.value = parseFloat(variant.buying_price_per_unit).toFixed(2);
-          } else {
-            buyingPriceInput.value = '';
-          }
-          
-          if (variant.selling_price_per_unit) {
-            sellingPriceInput.value = parseFloat(variant.selling_price_per_unit).toFixed(2);
-          } else {
-            sellingPriceInput.value = '';
-          }
-          
-          // Handle Tot pricing visibility
-          if (variant.can_sell_in_tots) {
-            totPriceRow.style.display = 'flex';
-            totPriceInput.required = true;
-            if (variant.selling_price_per_tot) {
-              totPriceInput.value = parseFloat(variant.selling_price_per_tot).toFixed(2);
-            } else {
-              totPriceInput.value = '';
-            }
-          } else {
-            totPriceRow.style.display = 'none';
-            totPriceInput.required = false;
-            totPriceInput.value = '';
-          }
-          
-          // Trigger calculation after loading prices
-          calculateTotals();
-        }
-      } else {
-        selectedVariant = null;
-        variantInfo.textContent = '';
-        quantityInfo.textContent = '';
-        existingStockInfo.style.display = 'none';
-        buyingPriceInput.value = '';
-        sellingPriceInput.value = '';
-        totPriceRow.style.display = 'none';
-        totPriceInput.required = false;
-        totPriceInput.value = '';
-        totalPackagesLabel.textContent = 'Total Packages';
-        packageUnitText.textContent = 'packages';
-        clearCalculations();
-      }
-    }
-
-    function calculateTotals() {
-      if (!selectedVariant) {
-        clearCalculations();
-        return;
-      }
-
-      const quantity = parseInt(quantityInput.value) || 0;
-      const buyingPrice = parseFloat(buyingPriceInput.value) || 0;
-      const sellingPrice = parseFloat(sellingPriceInput.value) || 0;
-      const discountType = discountTypeSelect.value;
-      const discountAmount = parseFloat(discountAmountInput.value) || 0;
-
-      const totalPackages = quantity;
-      const totalUnits = quantity * selectedVariant.itemsPerPackage;
-      const profitPerUnit = sellingPrice - buyingPrice;
-      let totalBuyingCost = totalUnits * buyingPrice;
-      
-      // Calculate discount
-      let discountValue = 0;
-      let finalBuyingCost = totalBuyingCost;
-      
-      if (discountType && discountAmount > 0) {
-        if (discountType === 'fixed') {
-          discountValue = Math.min(discountAmount, totalBuyingCost); // Discount cannot exceed total cost
-          finalBuyingCost = totalBuyingCost - discountValue;
-        } else if (discountType === 'percent') {
-          discountValue = (totalBuyingCost * discountAmount) / 100;
-          finalBuyingCost = totalBuyingCost - discountValue;
-        }
-        
-        // Show discount section
-        discountSection.style.display = 'block';
-        finalCostSection.style.display = 'block';
-        discountValueInput.value = discountValue.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
-        finalBuyingCostInput.value = finalBuyingCost.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
-        discountLabel.textContent = discountType === 'fixed' ? 'Fixed Amount Discount' : discountAmount + '% Discount';
-      } else {
-        // Hide discount section
-        discountSection.style.display = 'none';
-        finalCostSection.style.display = 'none';
-      }
-      
-      const totalProfit = totalUnits * profitPerUnit;
-
-      totalPackagesInput.value = totalPackages > 0 ? totalPackages.toLocaleString() : '';
-      totalUnitsInput.value = totalUnits > 0 ? totalUnits.toLocaleString() : '';
-      profitPerUnitInput.value = profitPerUnit.toFixed(2);
-      totalBuyingCostInput.value = totalBuyingCost.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
-      totalProfitInput.value = totalProfit.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
-    }
-
-    function clearCalculations() {
-      totalPackagesInput.value = '';
-      totalUnitsInput.value = '';
-      profitPerUnitInput.value = '';
-      totalBuyingCostInput.value = '';
-      discountValueInput.value = '';
-      finalBuyingCostInput.value = '';
-      totalProfitInput.value = '';
-      discountSection.style.display = 'none';
-      finalCostSection.style.display = 'none';
-      packageUnitText.textContent = 'packages';
-    }
-    
-    // Handle discount type change
-    const discountPrefix = document.getElementById('discountPrefix');
-    const discountPrefixText = document.getElementById('discountPrefixText');
-    const discountSuffix = document.getElementById('discountSuffix');
-    const discountSuffixText = document.getElementById('discountSuffixText');
-    
-    discountTypeSelect.addEventListener('change', function() {
-      if (this.value) {
-        discountAmountInput.style.display = 'block';
-        discountAmountInput.required = true;
-        if (this.value === 'fixed') {
-          discountHint.textContent = 'Fixed amount discount';
-          discountAmountHint.textContent = 'Enter fixed amount (e.g., 50000)';
-          discountAmountInput.placeholder = '0.00';
-          discountAmountInput.step = '0.01';
-          discountPrefix.style.display = 'flex';
-          discountSuffix.style.display = 'none';
-          discountPrefixText.textContent = 'TSh';
-        } else {
-          discountHint.textContent = 'Percentage discount';
-          discountAmountHint.textContent = 'Enter percentage (e.g., 5 for 5%)';
-          discountAmountInput.placeholder = '0';
-          discountAmountInput.step = '1';
-          discountPrefix.style.display = 'none';
-          discountSuffix.style.display = 'flex';
-          discountSuffixText.textContent = '%';
-        }
-        calculateTotals();
-      } else {
-        discountAmountInput.style.display = 'none';
-        discountAmountInput.required = false;
-        discountAmountInput.value = '';
-        discountPrefix.style.display = 'none';
-        discountSuffix.style.display = 'none';
-        discountHint.textContent = 'Select discount type';
-        discountAmountHint.textContent = 'Enter discount amount';
-        calculateTotals();
-      }
-    });
-
-    // Event listeners
-    productSelect.addEventListener('change', updateVariants);
-    variantSelect.addEventListener('change', updateVariantInfo);
-    quantityInput.addEventListener('input', calculateTotals);
-    buyingPriceInput.addEventListener('input', calculateTotals);
-    sellingPriceInput.addEventListener('input', calculateTotals);
-    discountAmountInput.addEventListener('input', calculateTotals);
-    
-    // Initialize discount field visibility
-    if (discountTypeSelect.value) {
-      discountAmountInput.style.display = 'block';
-      discountAmountInput.required = true;
-      if (discountTypeSelect.value === 'fixed') {
-        discountHint.textContent = 'Fixed amount discount';
-        discountAmountHint.textContent = 'Enter fixed amount (e.g., 50000)';
-        discountAmountInput.step = '0.01';
-        discountPrefix.style.display = 'flex';
-        discountSuffix.style.display = 'none';
-        discountPrefixText.textContent = 'TSh';
-      } else {
-        discountHint.textContent = 'Percentage discount';
-        discountAmountHint.textContent = 'Enter percentage (e.g., 5 for 5%)';
-        discountAmountInput.step = '1';
-        discountPrefix.style.display = 'none';
-        discountSuffix.style.display = 'flex';
-        discountSuffixText.textContent = '%';
-      }
-    }
-
-    // Initialize if product is pre-selected
-    if (productSelect.value) {
-      updateVariants();
-      const oldVariantId = '{{ old("product_variant_id") }}';
-      if (oldVariantId) {
-        variantSelect.value = oldVariantId;
-        updateVariantInfo();
-      }
-    }
-
-    // Update barcode preview when quantity changes
-    quantityInput.addEventListener('input', function() {
-      updateBarcodePreview();
-    });
-
-    variantSelect.addEventListener('change', function() {
-      updateBarcodePreview();
-    });
-
-    function updateBarcodePreview() {
-      const quantity = parseInt(quantityInput.value) || 0;
-      const previewContainer = document.getElementById('barcodePreviewContainer');
-      const previewSection = document.getElementById('barcodePreviewSection');
-      
-      if (quantity > 0 && selectedVariant) {
-        previewSection.style.display = 'block';
-        previewContainer.innerHTML = '';
-        
-        // Generate preview barcodes (limited to 4 for preview)
-        const previewCount = Math.min(quantity, 4);
-        for (let i = 1; i <= previewCount; i++) {
-          const barcodeValue = 'PREVIEW-' + i;
-          const barcodeDiv = document.createElement('div');
-          barcodeDiv.className = 'col-md-3 mb-3 text-center';
-          barcodeDiv.style.cssText = 'border: 1px solid #dee2e6; padding: 15px; margin: 5px;';
-          barcodeDiv.innerHTML = `
-            <div class="mb-2">
-              <strong>${productSelect.options[productSelect.selectedIndex]?.text || 'Product'}</strong><br>
-              <small>${selectedVariant.measurement} - ${selectedVariant.packaging}</small><br>
-              <small class="text-muted">#${i}/${quantity}</small>
-            </div>
-            <svg id="preview-barcode-${i}" class="barcode-svg"></svg>
-            <div class="mt-2">
-              <small class="text-muted">${barcodeValue}</small>
-            </div>
-          `;
-          previewContainer.appendChild(barcodeDiv);
-          
-          // Generate barcode
-          setTimeout(() => {
-            try {
-              if (typeof JsBarcode !== 'undefined') {
-                JsBarcode('#preview-barcode-' + i, barcodeValue, {
-                  format: "CODE128",
-                  width: 2,
-                  height: 50,
-                  displayValue: true,
-                  fontSize: 10,
-                  margin: 5
-                });
-              }
-            } catch (e) {
-              console.error('Barcode preview error:', e);
-            }
-          }, 100);
-        }
-        
-        if (quantity > 4) {
-          const moreDiv = document.createElement('div');
-          moreDiv.className = 'col-md-12 text-center mt-2';
-          moreDiv.innerHTML = `<small class="text-muted">... and ${quantity - 4} more barcode(s) will be generated after saving</small>`;
-          previewContainer.appendChild(moreDiv);
-        }
-      } else {
-        previewSection.style.display = 'none';
-      }
-    }
-  })();
-</script>
 <script>
-  function printBarcodePreview() {
-    const printContent = document.getElementById('barcodePreviewSection').innerHTML;
-    const originalContent = document.body.innerHTML;
-    
-    document.body.innerHTML = printContent;
-    window.print();
-    document.body.innerHTML = originalContent;
-    location.reload();
-  }
+$(document).ready(function() {
+    // 1. STATE MANAGEMENT
+    let receiptItems = [];
+
+    // 2. SELECTORS
+    const categoryFilter = $('#category_filter');
+    const itemsTableBody = $('#itemsTableBody');
+    const emptyTableMsg = $('#emptyTableMsg');
+    const submitBtn = $('#submitBtn');
+    const batchTarget = $('#batch_target_qty');
+    const bulkRadios = $('input[name="bulk_toggle"]');
+    const bulkContainer = $('#bulk_inputs_container');
+    const bulkTile = $('#bulk_section_tile');
+
+    // 3. CORE FUNCTIONS
+
+    function isBulkEnabled() {
+        return $('input[name="bulk_toggle"]:checked').val() === 'on';
+    }
+
+    function cleanNum(val) {
+        if(!val) return 0;
+        if(typeof val === 'string') val = val.replace(/,/g, '');
+        let n = parseFloat(val);
+        return isNaN(n) ? 0 : n;
+    }
+
+    function updateSummaries() {
+        let actualPackages = 0;
+        let actualUnits = 0;
+        let actualGrossCost = 0;
+        let actualDiscount = 0;
+        let actualTotalSelling = 0;
+        let actualSellingBtl = 0;
+        let actualSellingTot = 0;
+
+        $('#items_breakdown_list').empty();
+
+        const isBulk = isBulkEnabled();
+        const bulkBuy = cleanNum($('#bulk_buy_price').val());
+        const bulkSell = cleanNum($('#bulk_sell_price').val());
+        const bulkDiscAmt = cleanNum($('#bulk_discount_amount').val());
+        const bulkDiscType = $('#bulk_discount_type').val() || 'fixed';
+        const targetQty = cleanNum(batchTarget.val());
+
+        // A. Handle Projection (Show what IS EXPECTED based on Target and Price)
+        if(targetQty > 0 && bulkBuy > 0 && isBulk) {
+            // Estimate units: assume items in list or default to 1 conversion
+            let avgConv = 1;
+            if(receiptItems.length > 0) {
+                avgConv = receiptItems.reduce((acc, i) => acc + (i.conversion_qty || 1), 0) / receiptItems.length;
+            }
+            const projectedCost = targetQty * avgConv * bulkBuy;
+            $('#summ_projected').text(Math.round(projectedCost).toLocaleString());
+            $('#projected_summary_row').show().attr('style', 'display: flex !important;');
+        } else {
+            $('#projected_summary_row').hide().attr('style', 'display: none !important;');
+        }
+
+        // B. Process Loaded Items (ACTUAL quantities in list)
+        receiptItems.forEach((item) => {
+            const buyPrice = isBulk ? bulkBuy : cleanNum(item.buying_price_per_unit);
+            const sellPrice = isBulk ? bulkSell : cleanNum(item.selling_price_per_unit);
+            const sellTot = isBulk ? cleanNum($('#bulk_sell_tot').val()) : cleanNum(item.selling_price_per_tot);
+            const discAmt = isBulk ? bulkDiscAmt : cleanNum(item.discount_amount);
+            const discType = isBulk ? bulkDiscType : (item.discount_type || 'fixed');
+
+            const pkgQty = cleanNum(item.quantity_received);
+            const conv = cleanNum(item.conversion_qty) || 1;
+            
+            const units = pkgQty * conv;
+            const lineGross = units * buyPrice;
+            
+            let lineDisc = 0;
+            if (discType === 'percent') {
+                lineDisc = (discAmt / 100) * lineGross;
+            } else {
+                lineDisc = discAmt; 
+            }
+
+            const lineNetCost = Math.max(0, lineGross - lineDisc);
+
+            // Only count as "Bulk Package" if conversion > 1 (e.g. CRATE)
+            if (conv > 1) {
+                actualPackages += pkgQty;
+            }
+            
+            actualUnits += units;
+            actualGrossCost += lineGross;
+            actualDiscount += lineDisc;
+
+            // Smart Revenue: Calculate BOTH channels independently
+            const totalTotsPerUnit = cleanNum(item.total_tots) || 0;
+            const isDualSelling = isBulk ? $('#bulk_dual_toggle').is(':checked') : item.is_dual;
+
+            const lineBtlRetail = units * sellPrice;                                   // Bottle potential
+            const lineTotRetail = (isDualSelling && sellTot > 0 && totalTotsPerUnit > 0)
+                ? (units * totalTotsPerUnit * sellTot) : 0;                            // Tot potential
+
+            // Primary retail = Tot if dual active, else Bottle
+            const lineRetail = (lineTotRetail > 0) ? lineTotRetail : lineBtlRetail;
+
+            actualSellingBtl += lineBtlRetail;
+            if (lineTotRetail > 0) actualSellingTot += lineTotRetail;
+            actualTotalSelling += lineRetail;
+
+            // Build dynamic breakdown item
+            const itemUnitLabel = (item.unit || 'Tot').charAt(0).toUpperCase() + (item.unit || 'Tot').slice(1).toLowerCase();
+            const avgCostPerUnit = units > 0 ? lineNetCost / units : 0;
+            const profitPerBottle = sellPrice - avgCostPerUnit;
+            const profitPerTot = (isDualSelling && sellTot > 0 && totalTotsPerUnit > 0)
+                ? sellTot - (avgCostPerUnit / totalTotsPerUnit) : null;
+            const profitBtlColor = profitPerBottle >= 0 ? 'text-success' : 'text-danger';
+            const profitTotColor = profitPerTot !== null ? (profitPerTot >= 0 ? 'text-success' : 'text-danger') : '';
+            const totProfitHtml = profitPerTot !== null
+                ? `<span class="${profitTotColor}">${itemUnitLabel} profit: ${profitPerTot >= 0 ? '+' : ''}${Math.round(profitPerTot).toLocaleString()}</span>`
+                : '';
+            // Only show units count if it differs from pkgQty (i.e. crate/case situation)
+            const qtyDisplay = (conv > 1)
+                ? `${pkgQty} ${item.packaging} &bull; ${Math.round(units)} btl`
+                : `${pkgQty} ${item.packaging}`;
+            // Show both retail channels in breakdown
+            const totCountHtml = (lineTotRetail > 0 && totalTotsPerUnit > 0)
+                ? ` <span class="opacity-50">(${totalTotsPerUnit} ${itemUnitLabel}s/btl)</span>`
+                : '';
+            const retailDisplay = (lineTotRetail > 0)
+                ? `Btl: ${Math.round(lineBtlRetail).toLocaleString()} &bull; ${itemUnitLabel}: ${Math.round(lineTotRetail).toLocaleString()}${totCountHtml}`
+                : `Retail: ${Math.round(lineBtlRetail).toLocaleString()}`;
+
+            const breakdownHtml = `
+                <div class="mb-3 pb-2 border-bottom border-light">
+                    <div class="d-flex justify-content-between align-items-start mb-1">
+                        <span class="small font-weight-bold text-dark pr-2" style="max-width: 145px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${item.name}</span>
+                        <span class="small font-weight-bold">TSh ${Math.round(lineNetCost).toLocaleString()}</span>
+                    </div>
+                    <div class="d-flex justify-content-between smallest text-muted mb-1">
+                        <span>${qtyDisplay}</span>
+                        <span>${retailDisplay}</span>
+                    </div>
+                    <div class="d-flex justify-content-between smallest font-weight-bold">
+                        <span class="${profitBtlColor}">Btl: +${Math.round(profitPerBottle).toLocaleString()}</span>
+                        ${totProfitHtml}
+                    </div>
+                </div>
+            `;
+            $('#items_breakdown_list').append(breakdownHtml);
+        });
+
+        if(receiptItems.length === 0) {
+            $('#items_breakdown_list').html('<p class="text-center py-4 smallest text-muted">No items in list yet.</p>');
+        }
+
+        // C. Update Dashboard UI
+        const actualNetCost = Math.max(0, actualGrossCost - actualDiscount);
+        const profit = actualTotalSelling - actualNetCost;
+        const margin = actualTotalSelling > 0 ? (profit / actualTotalSelling) * 100 : 0;
+        const roi = actualNetCost > 0 ? (profit / actualNetCost) * 100 : 0;
+        const avgUnitCost = actualUnits > 0 ? (actualNetCost / actualUnits) : 0;
+
+        $('#summ_packages').text(actualPackages.toFixed(1));
+        $('#summ_units').text(Math.round(actualUnits));
+        $('#summ_gross').text(Math.round(actualGrossCost).toLocaleString());
+        $('#summ_discount').text(Math.round(actualDiscount).toLocaleString());
+        $('#summ_cost').text(Math.round(actualNetCost).toLocaleString());
+        $('#summ_selling').text(Math.round(actualTotalSelling).toLocaleString());
+        // Bottle row: always show since we always calculate bottle potential
+        $('#summ_selling_btl').text(Math.round(actualSellingBtl).toLocaleString()).closest('.selling-row').show();
+        // Tot row: only show when at least one item is in dual/tot mode
+        if(actualSellingTot > 0) {
+            $('#summ_selling_tot').text(Math.round(actualSellingTot).toLocaleString()).closest('.selling-row').show();
+        } else {
+            $('#summ_selling_tot').closest('.selling-row').hide();
+        }
+        $('#summ_profit').text(Math.round(profit).toLocaleString());
+        $('#summ_margin').text(margin.toFixed(1) + '%');
+        $('#summ_roi').text(roi.toFixed(1) + '%');
+        $('#summ_unit_cost').text(Math.round(avgUnitCost).toLocaleString());
+        $('#items_badge').text(receiptItems.length + ' Items');
+
+        // D. Batch Status Badge
+        const badge = $('#batch_status_badge');
+        if(targetQty > 0) {
+            const diff = targetQty - actualPackages;
+            if(Math.abs(diff) < 0.01) {
+                badge.removeClass('badge-secondary badge-warning badge-danger').addClass('badge-success').text('Fully Matched');
+            } else if(diff < 0) {
+                badge.removeClass('badge-secondary badge-success badge-warning').addClass('badge-danger').text(`Mismatch (+${Math.abs(diff).toFixed(1)})`);
+            } else {
+                badge.removeClass('badge-secondary badge-success badge-danger').addClass('badge-warning').text(`${diff.toFixed(1)} Pkgs Remaining`);
+            }
+        } else {
+            badge.removeClass('badge-success badge-warning badge-danger').addClass('badge-secondary').text('Set Target');
+        }
+    }
+
+    function syncBulkToItems() {
+        const buy = parseFloat($('#bulk_buy_price').val()) || 0;
+        const sell = parseFloat($('#bulk_sell_price').val()) || 0;
+        const isDual = $('#bulk_dual_toggle').is(':checked');
+        const sellTot = isDual ? cleanNum($('#bulk_sell_tot').val()) : 0;
+        const discAmt = parseFloat($('#bulk_discount_amount').val()) || 0;
+        const discType = $('#bulk_discount_type').val() || 'fixed';
+
+        receiptItems.forEach(item => {
+            item.buying_price_per_unit = buy;
+            item.selling_price_per_unit = sell;
+            item.is_dual = isDual;
+            item.selling_price_per_tot = sellTot;
+            item.expiry_date = $('#bulk_expiry').val();
+            item.discount_amount = discAmt;
+            item.discount_type = discType;
+        });
+        
+        $('.item-buy-price').val(buy > 0 ? buy : '');
+        $('.item-sell-price').val(sell > 0 ? sell : '');
+        $('.item-sell-tot').val(sellTot > 0 ? sellTot : '').prop('disabled', !isDual).css('opacity', isDual ? '1' : '0');
+        $('.item-expiry').val($('#bulk_expiry').val());
+        $('.item-discount-amount').val(discAmt);
+        $('.item-discount-type').val(discType);
+
+    }
+
+    function renderTable() {
+        if(receiptItems.length === 0) {
+            itemsTableBody.html(emptyTableMsg);
+            submitBtn.prop('disabled', true);
+            return;
+        }
+
+        emptyTableMsg.remove();
+        itemsTableBody.empty();
+        submitBtn.prop('disabled', false);
+
+        const isBulk = isBulkEnabled();
+
+        receiptItems.forEach((item, index) => {
+            const tr = $(`
+                <tr>
+                    <td class="px-3" style="max-width:300px;">
+                        <div class="font-weight-bold text-dark mb-1" style="font-size:14px;">${item.name} ${item.packaging} (${item.conversion_qty} Btl/Pc)</div>
+                        <div class="input-group input-group-sm" style="max-width:140px;">
+                           <div class="input-group-prepend"><span class="input-group-text p-0 px-1 bg-transparent border-0 opacity-50 smallest">EXP:</span></div>
+                           <input type="date" class="form-control form-control-sm item-expiry border-0 p-0 h-auto bg-transparent smallest" data-index="${index}" value="${item.expiry_date || ''}" ${isBulk ? 'readonly' : ''}>
+                        </div>
+                    </td>
+                    <td class="px-2">
+                        <input type="number" class="form-control font-weight-bold item-pkg" data-index="${index}" value="${item.quantity_received}" min="0" step="0.1" placeholder="0">
+                    </td>
+                    <td class="px-2">
+                        <input type="number" class="form-control item-buy-price" data-index="${index}" value="${item.buying_price_per_unit}" step="0.01" ${isBulk ? 'readonly style="background:#f8f9fa; border-color:transparent;"' : ''}>
+                    </td>
+                    <td class="px-2">
+                        <div class="d-flex align-items-center mb-1">
+                           <input type="number" class="form-control item-sell-price font-weight-bold text-primary mr-2" data-index="${index}" value="${item.selling_price_per_unit}" step="0.01" placeholder="Btl" ${isBulk ? 'readonly style="background:#f8f9fa; border-color:transparent;"' : ''}>
+                           <i class="fa ${item.is_dual ? 'fa-glass text-info' : 'fa-circle-thin opacity-25'} toggle-dual cursor-pointer" data-index="${index}" title="Toggle Retail Mode"></i>
+                        </div>
+                        <div class="input-group input-group-sm tot-input-wrapper" style="visibility: ${item.is_dual ? 'visible' : 'hidden'}; opacity: ${item.is_dual ? '1' : '0'}; transition: all 0.3s;">
+                           <div class="input-group-prepend"><span class="input-group-text p-0 px-1 bg-transparent border-0 opacity-50 smallest">${(item.unit || 'TOT').toUpperCase()}:</span></div>
+                           <input type="number" class="form-control form-control-sm item-sell-tot text-info p-0 h-auto bg-transparent border-0 smallest" data-index="${index}" value="${item.selling_price_per_tot || ''}" step="0.01" placeholder="0" ${isBulk ? 'readonly' : ''}>
+                        </div>
+                    </td>
+                    <td class="px-2">
+                        <div class="input-group">
+                           <input type="number" class="form-control item-discount-amount" data-index="${index}" value="${item.discount_amount}" step="0.01" ${isBulk ? 'readonly style="background:#f8f9fa; border-color:transparent;"' : ''}>
+                           <div class="input-group-append">
+                              <select class="custom-select p-0 px-1 item-discount-type" data-index="${index}" style="width: 50px; font-size: 11px;" ${isBulk ? 'disabled style="background:#f8f9fa; border-color:transparent;"' : ''}>
+                                 <option value="fixed" ${item.discount_type === 'fixed' ? 'selected' : ''}>TSh</option>
+                                 <option value="percent" ${item.discount_type === 'percent' ? 'selected' : ''}>%</option>
+                              </select>
+                           </div>
+                        </div>
+                    </td>
+                    <td class="text-center px-2">
+                        <button type="button" class="btn btn-link py-0 text-danger remove-item" data-index="${index}"><i class="fa fa-times-circle"></i></button>
+                    </td>
+                </tr>
+            `);
+            itemsTableBody.append(tr);
+        });
+
+        updateSummaries();
+    }
+
+    // 4. EVENT LISTENERS
+
+    categoryFilter.on('change', function() {
+        const category = $(this).val();
+        const supplierId = $('#supplier_id').val();
+        if(!category) return;
+        if(!supplierId) {
+            showToast('warning', 'Please select a supplier first.');
+            $(this).val('');
+            return;
+        }
+
+        showToast('info', 'Fetching inventory...', true);
+        fetch(`{{ route('bar.products.get-by-category') }}?category=${encodeURIComponent(category)}&supplier_id=${supplierId}`)
+            .then(res => res.json())
+            .then(data => {
+                if(data.length > 0) {
+                    data.forEach(item => {
+                        if(!receiptItems.some(ri => ri.product_variant_id === item.id)) {
+                            // Smart auto-detection for dual selling (Spirits, Wine, Liquor)
+                            const dualKeywords = ['spirit', 'whisky', 'whiskey', 'vodka', 'gin', 'brandy', 'liquor', 'wine', 'vinywaji vikali', 'konyagi', 'smart'];
+                            const fullName = (item.name + ' ' + (item.brand || '') + ' ' + (item.packaging || '')).toLowerCase();
+                            const isDualDetected = dualKeywords.some(kw => fullName.includes(kw));
+
+                            receiptItems.push({
+                                product_variant_id: item.id,
+                                name: item.name,
+                                brand: item.brand || item.product.brand,
+                                packaging: item.packaging || 'Piece',
+                                conversion_qty: item.conversion_qty || 1,
+                                quantity_received: 0,
+                                buying_price_per_unit: item.buying_price_per_unit || 0,
+                                selling_price_per_unit: item.selling_price_per_unit || 0,
+                                is_dual: isDualDetected,
+                                total_tots: item.total_tots || 0,
+                                selling_price_per_tot: item.selling_price_per_tot || 0,
+                                expiry_date: '',
+                                discount_type: 'fixed',
+                                discount_amount: 0
+                            });
+                        }
+                    });
+                    if(isBulkEnabled()) syncBulkToItems();
+                    renderTable();
+                    showToast('success', `${data.length} items loaded.`);
+                } else {
+                    showToast('warning', 'No products found.');
+                }
+            })
+            .catch(err => {
+                console.error(err);
+                showToast('error', 'Inventory load failed.');
+            });
+    });
+
+    bulkRadios.on('change', function() {
+        const isEnabled = $(this).val() === 'on';
+        if(isEnabled) {
+            bulkContainer.addClass('bulk-active');
+            bulkTile.addClass('border-primary shadow');
+            syncBulkToItems();
+        } else {
+            bulkContainer.removeClass('bulk-active');
+            bulkTile.removeClass('border-primary shadow');
+        }
+        renderTable();
+    });
+
+    $('#bulk_buy_price, #bulk_sell_price, #bulk_sell_tot, #bulk_expiry, #bulk_discount_amount, #bulk_discount_type, #batch_target_qty, #bulk_dual_toggle').on('input change', function() {
+        if(this.id === 'bulk_dual_toggle') {
+           $('#bulk_sell_tot').prop('disabled', !$(this).is(':checked')).focus();
+        }
+        if(isBulkEnabled()) syncBulkToItems();
+        updateSummaries();
+    });
+
+    $(document).on('click', '.toggle-dual', function() {
+        if(isBulkEnabled()) return; // Controlled by bulk switch
+        const idx = $(this).attr('data-index');
+        receiptItems[idx].is_dual = !receiptItems[idx].is_dual;
+        renderTable();
+    });
+
+    $(document).on('input change', '.item-pkg, .item-buy-price, .item-sell-price, .item-sell-tot, .item-expiry, .item-discount-amount, .item-discount-type', function() {
+        const idx = $(this).attr('data-index');
+        const item = receiptItems[idx];
+        if(!item) return;
+        
+        if($(this).hasClass('item-pkg')) {
+            item.quantity_received = cleanNum($(this).val());
+        } else if(!isBulkEnabled()) {
+            if($(this).hasClass('item-buy-price')) item.buying_price_per_unit = cleanNum($(this).val());
+            if($(this).hasClass('item-sell-price')) item.selling_price_per_unit = cleanNum($(this).val());
+            if($(this).hasClass('item-sell-tot')) item.selling_price_per_tot = cleanNum($(this).val());
+            if($(this).hasClass('item-expiry')) item.expiry_date = $(this).val();
+            if($(this).hasClass('item-discount-amount')) item.discount_amount = cleanNum($(this).val());
+            if($(this).hasClass('item-discount-type')) item.discount_type = $(this).val();
+        }
+        updateSummaries();
+    });
+
+    $(document).on('click', '.remove-item', function() {
+        const idx = $(this).attr('data-index');
+        receiptItems.splice(idx, 1);
+        renderTable();
+    });
+
+    $('#applyBulkPrices').on('click', function() {
+        syncBulkToItems();
+        renderTable();
+        showToast('success', 'Prices synced.');
+    });
+
+
+
+    $('#stockReceiptForm').on('submit', function(e) {
+        e.preventDefault();
+        if(receiptItems.length === 0) { showToast('error', 'List is empty!'); return; }
+        if(!$('#supplier_id').val()) { showToast('error', 'Select supplier.'); return; }
+
+        const myForm = this;
+        const btn = $('#submitBtn');
+        const oldHtml = btn.html();
+        
+        btn.prop('disabled', true).html('<i class="fa fa-spinner fa-spin"></i> POSTING...');
+
+        const formData = new FormData(myForm);
+        formData.delete('items');
+
+        receiptItems.forEach((item, index) => {
+            formData.append(`items[${index}][product_variant_id]`, item.product_variant_id);
+            formData.append(`items[${index}][quantity_received]`, item.quantity_received); 
+            formData.append(`items[${index}][buying_price_per_unit]`, item.buying_price_per_unit);
+            formData.append(`items[${index}][selling_price_per_unit]`, item.selling_price_per_unit);
+            formData.append(`items[${index}][selling_price_per_tot]`, item.selling_price_per_tot || 0);
+            formData.append(`items[${index}][expiry_date]`, item.expiry_date || '');
+            formData.append(`items[${index}][discount_type]`, item.discount_type);
+            formData.append(`items[${index}][discount_amount]`, item.discount_amount);
+        });
+
+        fetch(myForm.action, {
+            method: 'POST',
+            body: formData,
+            headers: { 'X-Requested-With': 'XMLHttpRequest' }
+        })
+        .then(res => res.json())
+        .then(data => {
+            if(data.alert_success || data.success) {
+                showAlert('success', 'Success', data.message || 'Stock updated.')
+                    .then(() => window.location.href = "{{ route('bar.stock-receipts.index') }}");
+            } else {
+                showToast('error', data.message || 'Error occurred.');
+                btn.prop('disabled', false).html(oldHtml);
+            }
+        })
+        .catch(err => {
+            console.error(err);
+            showToast('error', 'Server error.');
+            btn.prop('disabled', false).html(oldHtml);
+        });
+    });
+});
+
 </script>
 @endsection
+

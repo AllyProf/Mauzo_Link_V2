@@ -12,12 +12,24 @@
 
   .product-card {
     border: none;
-    border-radius: 16px;
+    border-radius: 12px;
     overflow: hidden;
     background: #fff;
-    transition: all 0.3s cubic-bezier(.25,.8,.25,1);
+    transition: all 0.3s ease;
     box-shadow: var(--card-shadow);
     height: 100%;
+    opacity: 1;
+  }
+
+  /* Prevent flash */
+  #products-container {
+    transition: opacity 0.2s ease-in-out;
+  }
+
+  .loading-skeleton {
+    opacity: 0.5 !important;
+    pointer-events: none;
+    filter: blur(2px);
   }
 
   .product-card:hover {
@@ -26,7 +38,7 @@
   }
 
   .product-img-container {
-    height: 220px;
+    height: 180px;
     position: relative;
     overflow: hidden;
     background: #f8f9fa;
@@ -58,7 +70,7 @@
   }
 
   .product-details {
-    padding: 1.5rem;
+    padding: 1rem;
     font-family: "Century Gothic", sans-serif !important;
   }
 
@@ -148,9 +160,45 @@
 
   .bg-glass {
     background: rgba(255, 255, 255, 0.85);
-    backdrop-filter: blur(8px);
-    -webkit-backdrop-filter: blur(8px);
+    backdrop-filter: blur(5px);
     border: 1px solid rgba(255, 255, 255, 0.3);
+  }
+
+  .search-input-group:focus-within {
+    border-color: #940000 !important;
+    box-shadow: 0 0 10px rgba(148, 0, 0, 0.1) !important;
+  }
+
+  .btn-category {
+    font-size: 0.85rem !important;
+    letter-spacing: 0.3px;
+    border: 1.5px solid #eee !important;
+  }
+
+  .btn-category:hover {
+    border-color: #940000 !important;
+    color: #940000 !important;
+    background: #fff !important;
+  }
+
+  .btn-category.active {
+    background: var(--primary-gradient) !important;
+    color: white !important;
+    border-color: transparent !important;
+    box-shadow: 0 4px 10px rgba(148, 0, 0, 0.2) !important;
+  }
+
+  .btn-category i {
+    transition: transform 0.3s ease;
+  }
+
+  .btn-category.active i {
+    transform: scale(1.1);
+  }
+
+  .search-input-group input::placeholder {
+    color: #adb5bd;
+    font-size: 0.9rem;
   }
   
   .gap-2 {
@@ -172,112 +220,119 @@
 
 <div class="row">
   <div class="col-md-12">
-    <div class="card bg-transparent border-0 mb-4">
-      <div class="card-body p-0">
-        <div class="d-flex justify-content-between align-items-center mb-4">
-          <h3 class="mb-0 font-weight-bold">Product Showcase</h3>
-          @php
-            $canCreate = false;
-            if (session('is_staff')) {
-              $staff = \App\Models\Staff::find(session('staff_id'));
-              if ($staff && $staff->role) {
-                $canCreate = $staff->role->hasPermission('products', 'create');
-                if (!$canCreate) {
-                  $roleName = strtolower(trim($staff->role->name ?? ''));
-                  if (in_array($roleName, ['stock keeper', 'stockkeeper', 'counter', 'bar counter'])) {
-                    $canCreate = true;
-                  }
-                }
-              }
-            } else {
-              $user = Auth::user();
-              if ($user) {
-                $canCreate = $user->hasPermission('products', 'create') || $user->hasRole('owner');
-              }
-            }
-          @endphp
-          @if($canCreate)
-            <a href="{{ route('bar.products.create') }}" class="btn-premium">
-              <i class="fa fa-plus-circle"></i> Create New Product
-            </a>
-          @endif
+    <div class="tile shadow-sm border-0 mb-4" style="border-top: 4px solid #940000 !important;">
+      <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center mb-3">
+        <div>
+          <h3 class="tile-title mb-1 text-primary"><i class="fa fa-th-list mr-2"></i> Product Inventory</h3>
+          <p class="text-muted small mb-0">Total visibility of your bar stock, packaging, and serving metrics.</p>
         </div>
+        @if($canCreate)
+          <a href="{{ route('bar.products.create') }}" class="btn btn-primary btn-lg px-4 shadow-sm font-weight-bold" style="background-color: #940000; border-color: #940000;">
+            <i class="fa fa-plus-circle mr-2"></i> ADD NEW PRODUCT
+          </a>
+        @endif
+      </div>
 
-        <!-- Filter & Search Bar -->
-        <div class="row mb-4">
-          <div class="col-md-12">
-            <div class="card shadow-sm border-0 rounded-lg">
-              <div class="card-body p-4">
-                <form id="filterForm" action="{{ route('bar.products.index') }}" method="GET">
-                  <div class="row align-items-end">
-                    <div class="col-lg-5 mb-3 mb-lg-0">
-                      <label class="font-weight-bold small text-uppercase text-muted">Search Inventory</label>
-                      <div class="input-group">
-                        <div class="input-group-prepend">
-                          <span class="input-group-text bg-light border-0"><i class="fa fa-search"></i></span>
-                        </div>
-                        <input type="text" id="searchInput" name="search" class="form-control bg-light border-0" placeholder="Product name or brand..." value="{{ $search ?? '' }}">
-                      </div>
-                    </div>
-                    <div class="col-lg-4 mb-3 mb-lg-0">
-                      <label class="font-weight-bold small text-uppercase text-muted">Filter Category</label>
-                      <select id="categoryFilter" name="category" class="form-control bg-light border-0">
-                        <option value="">All Categories</option>
-                        @foreach($categories as $cat)
-                          <option value="{{ $cat }}" {{ ($category ?? '') == $cat ? 'selected' : '' }}>{{ $cat }}</option>
-                        @endforeach
-                      </select>
-                    </div>
-                    <div class="col-lg-3">
-                      <div class="d-flex">
-                        <button type="button" id="resetFilters" class="btn btn-light btn-block py-2 ml-2" title="Reset All Filters">
-                          <i class="fa fa-refresh mr-2"></i> Reset
-                        </button>
-                      </div>
-                    </div>
+      <div class="bg-light p-3 rounded-lg mb-4">
+        <form id="filterForm" action="{{ route('bar.products.index') }}" method="GET">
+          <div class="row align-items-end">
+            <div class="col-lg-6 mb-3 mb-lg-0">
+              <div class="form-group mb-0">
+                <label class="small font-weight-bold text-uppercase text-muted">Search Inventory</label>
+                <div class="input-group search-input-group shadow-sm border rounded">
+                  <div class="input-group-prepend">
+                    <span class="input-group-text bg-white border-0"><i class="fa fa-search text-primary"></i></span>
                   </div>
-                </form>
-                
-                <div class="mt-4">
-                  <label class="font-weight-bold small text-uppercase text-muted d-block mb-3">Quick Navigation</label>
-                  <div class="d-flex flex-wrap quick-nav-tags" style="gap: 10px;">
-                    <button type="button" data-category="" class="btn btn-sm px-3 py-2 btn-category {{ !($category ?? '') ? 'btn-primary shadow-sm' : 'btn-light text-muted border-0' }}" style="border-radius: 50px;">
-                      All Products
-                    </button>
-                    @foreach($categories as $cat)
-                      <button type="button" data-category="{{ $cat }}" 
-                         class="btn btn-sm px-3 py-2 btn-category {{ ($category ?? '') == $cat ? 'btn-primary shadow-sm' : 'btn-light text-muted border-0' }}" style="border-radius: 50px;">
-                        {{ $cat }}
-                      </button>
-                    @endforeach
-                  </div>
+                  <input type="text" id="searchInput" name="search" class="form-control border-0" placeholder="Search product name, brand or variant..." value="{{ $search ?? '' }}">
                 </div>
               </div>
             </div>
-          </div>
-        </div>
-
-        <div id="products-loader" style="display: none;">
-          <div class="text-center py-5">
-            <div class="spinner-border text-primary" role="status" style="width: 3rem; height: 3rem;">
-              <span class="sr-only">Loading...</span>
+            <div class="col-lg-3 mb-3 mb-lg-0">
+              <div class="form-group mb-0">
+                <label class="small font-weight-bold text-uppercase text-muted">Core Category</label>
+                <select id="categoryFilter" name="category" class="form-control border shadow-sm">
+                  <option value="">All Categories</option>
+                  @foreach($categories as $cat)
+                    <option value="{{ $cat }}" {{ ($category ?? '') == $cat ? 'selected' : '' }}>{{ $cat }}</option>
+                  @endforeach
+                </select>
+              </div>
             </div>
-            <p class="mt-3 text-muted font-italic">Filtering your inventory...</p>
+            <div class="col-lg-3 text-right">
+                <button type="button" id="resetFilters" class="btn btn-outline-secondary btn-sm"><i class="fa fa-refresh mr-1"></i> Clear Filters</button>
+            </div>
           </div>
-        </div>
+        </form>
+      </div>
 
-        <div id="products-container">
-          @include('bar.products._product_list')
-        </div>
-            @if($canCreate)
-              <a href="{{ route('bar.products.create') }}" class="btn-premium mt-3">
-                <i class="fa fa-plus-circle"></i> Add Your First Product
+      <div class="category-tabs-wrapper mb-4 border-bottom">
+        <ul class="nav nav-tabs border-0" id="categoryTabs" role="tablist">
+          <li class="nav-item">
+            <a class="nav-link {{ !($category ?? '') ? 'active' : '' }} category-tab" href="#" data-category="">
+              <i class="fa fa-th-large mr-2"></i> ALL PRODUCTS
+            </a>
+          </li>
+          @foreach($categories as $cat)
+            <li class="nav-item">
+              <a class="nav-link {{ ($category ?? '') == $cat ? 'active' : '' }} category-tab" href="#" data-category="{{ $cat }}">
+                @php
+                  $icon = 'fa-cube';
+                  if(str_contains(strtolower($cat), 'beer')) $icon = 'fa-beer';
+                  if(str_contains(strtolower($cat), 'spirit')) $icon = 'fa-glass';
+                  if(str_contains(strtolower($cat), 'wine')) $icon = 'fa-flask';
+                  if(str_contains(strtolower($cat), 'soda') || str_contains(strtolower($cat), 'drink')) $icon = 'fa-coffee';
+                  if(str_contains(strtolower($cat), 'water')) $icon = 'fa-tint';
+                  if(str_contains(strtolower($cat), 'energy')) $icon = 'fa-bolt';
+                @endphp
+                <i class="fa {{ $icon }} mr-2"></i> {{ strtoupper($cat) }}
               </a>
-            @endif
+            </li>
+          @endforeach
+        </ul>
+      </div>
+
+      <div id="products-loader" style="display: none;">
+        <div class="text-center py-5">
+          <div class="spinner-border text-primary" role="status">
+            <span class="sr-only">Loading...</span>
           </div>
+        </div>
+      </div>
+
+      <div id="products-container">
+        @include('bar.products._product_list')
       </div>
     </div>
   </div>
+</div>
+
+<style>
+  .nav-tabs .nav-link {
+    border: none;
+    color: #6c757d;
+    font-weight: 700;
+    font-size: 0.85rem;
+    padding: 12px 25px;
+    letter-spacing: 0.5px;
+    transition: all 0.2s;
+    border-bottom: 3px solid transparent;
+  }
+  .nav-tabs .nav-link:hover {
+    color: #940000;
+    border-bottom: 3px solid #eee;
+  }
+  .nav-tabs .nav-link.active {
+    color: #940000 !important;
+    background: transparent !important;
+    border-bottom: 3px solid #940000 !important;
+  }
+  .category-tabs-wrapper {
+    overflow-x: auto;
+    white-space: nowrap;
+    scrollbar-width: none; /* Firefox */
+  }
+  .category-tabs-wrapper::-webkit-scrollbar { display: none; } /* Safari/Chrome */
+</style>
 
 @endsection
 
@@ -342,18 +397,22 @@
     $('#resetFilters').on('click', function() {
       $('#searchInput').val('');
       $('#categoryFilter').val('');
-      updateQuickNavBadges('');
+      updateTabState('');
       fetchProducts();
     });
 
-    function updateQuickNavBadges(activeCat) {
-      $('.btn-category').each(function() {
-        if ($(this).data('category') == activeCat) {
-          $(this).removeClass('btn-light text-muted border-0').addClass('btn-primary shadow-sm');
-        } else {
-          $(this).addClass('btn-light text-muted border-0').removeClass('btn-primary shadow-sm');
-        }
-      });
+    // Category Tab Click
+    $(document).on('click', '.category-tab', function(e) {
+      e.preventDefault();
+      const cat = $(this).data('category');
+      $('#categoryFilter').val(cat);
+      updateTabState(cat);
+      fetchProducts();
+    });
+
+    function updateTabState(activeCat) {
+      $('.category-tab').removeClass('active');
+      $(`.category-tab[data-category="${activeCat}"]`).addClass('active');
     }
 
     function fetchProducts() {
@@ -362,9 +421,8 @@
       const container = $('#products-container');
       const loader = $('#products-loader');
 
-      loader.show();
-      container.css('opacity', '0.5');
-
+      container.addClass('loading-skeleton');
+      
       $.ajax({
         url: '{{ route("bar.products.index") }}',
         method: 'GET',
@@ -373,22 +431,15 @@
           category: category
         },
         success: function(response) {
-          loader.hide();
-          container.html(response).css('opacity', '1');
+          container.html(response);
+          container.removeClass('loading-skeleton');
           
-          // Re-update browser URL without reload (optional but good for UX)
           const newUrl = window.location.pathname + '?search=' + encodeURIComponent(search) + '&category=' + encodeURIComponent(category);
           window.history.pushState({ path: newUrl }, '', newUrl);
         },
         error: function() {
-          loader.hide();
-          container.css('opacity', '1');
-          Swal.fire({
-            icon: 'error',
-            title: 'Search Failed',
-            text: 'There was an error updating the product list.',
-            confirmButtonColor: '#940000'
-          });
+          container.removeClass('loading-skeleton');
+          showToast('error', 'Filtering failed. Please try again.');
         }
       });
     }
@@ -487,8 +538,9 @@
               html += '<h6 class="font-weight-bold text-uppercase small text-muted mb-3">Product Variants & Pricing</h6>';
               html += '<div class="table-responsive rounded-lg border">';
               html += '<table class="table table-hover mb-0">';
-              html += '<thead class="bg-light"><tr>';
-              html += '<th class="border-0">Measurement</th>';
+              html += '<thead class="bg-light text-primary"><tr>';
+              html += '<th class="border-0">Variant Name</th>';
+              html += '<th class="border-0">Size</th>';
               html += '<th class="border-0 text-center">Packaging</th>';
               html += '<th class="border-0 text-right">Shot Price</th>';
               html += '<th class="border-0 text-center">Status</th>';
@@ -497,7 +549,8 @@
               
               product.variants.forEach(function(variant) {
                 html += '<tr>';
-                html += '<td class="align-middle"><strong>' + escapeHtml(variant.measurement) + '</strong></td>';
+                html += '<td class="align-middle"><strong>' + escapeHtml(variant.name || 'N/A') + '</strong></td>';
+                html += '<td class="align-middle">' + escapeHtml(variant.measurement) + ' ' + (variant.unit || '') + '</td>';
                 html += '<td class="align-middle text-center">' + escapeHtml(variant.packaging) + '</td>';
                 html += '<td class="align-middle text-right">';
                 if (variant.can_sell_in_tots) {

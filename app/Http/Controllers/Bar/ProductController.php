@@ -29,11 +29,11 @@ class ProductController extends Controller
         $search = $request->get('search');
         $category = $request->get('category');
         
-        // Comprehensive list of categories for bar context
+        // Comprehensive list of categories precisely matching the bar context
         $standardCategories = collect([
-            'Soda', 'Water', 'Energies', 'Beer/Lager', 'Can Beer', 
-            'Wine by Bottle', 'Brandy/Whisky/RUM/Gin', 
-            'Alcoholic Beverages', 'Non-Alcoholic Beverages'
+            'BEER/LAGER', 'BRANDY/WHISKY/RUM/GIN', 'CAN BEER', 
+            'ENERGIES', 'MIXED', 'SODA', 'SOFT DRINKS', 
+            'SPIRITS', 'WATER', 'WINE BY BOTTLE'
         ]);
 
         // Get unique categories currently in use plus standard ones
@@ -41,34 +41,50 @@ class ProductController extends Controller
             ->whereNotNull('category')
             ->where('category', '!=', '')
             ->distinct()
-            ->pluck('category');
+            ->pluck('category')
+            ->map(fn($c) => strtoupper($c));
         
         $categories = $standardCategories->merge($existingCategories)->unique()->sort();
 
-        $query = Product::where('user_id', $ownerId)
-            ->with(['supplier', 'variants']);
+        $query = ProductVariant::with(['product.supplier', 'product'])
+            ->join('products', 'product_variants.product_id', '=', 'products.id')
+            ->where('products.user_id', $ownerId);
 
         if ($search) {
             $query->where(function($q) use ($search) {
-                $q->where('name', 'LIKE', "%{$search}%")
-                  ->orWhere('brand', 'LIKE', "%{$search}%");
+                $q->where('product_variants.name', 'LIKE', "%{$search}%")
+                  ->orWhere('products.brand', 'LIKE', "%{$search}%")
+                  ->orWhere('products.name', 'LIKE', "%{$search}%");
             });
         }
 
         if ($category) {
-            $query->where('category', $category);
+            $query->where('products.category', $category);
         }
 
-        $products = $query->orderBy('category')
-            ->orderBy('name')
-            ->paginate(12) // Smaller pagination for easier demo, can be adjusted
+        $variants = $query->orderBy('products.category')
+            ->orderBy('product_variants.name')
+            ->select('product_variants.*')
+            ->paginate(12)
             ->appends(['search' => $search, 'category' => $category]);
 
-        if ($request->ajax()) {
-            return view('bar.products._product_list', compact('products'))->render();
+        // Check permission for the view
+        $canCreate = $this->hasPermission('products', 'create');
+        if (!$canCreate && session('is_staff')) {
+            $staff = \App\Models\Staff::with('role')->find(session('staff_id'));
+            if ($staff && $staff->role) {
+                $roleName = strtolower(trim($staff->role->name ?? ''));
+                if (in_array($roleName, ['stock keeper', 'stockkeeper', 'counter', 'bar counter'])) {
+                    $canCreate = true;
+                }
+            }
         }
 
-        return view('bar.products.index', compact('products', 'categories', 'search', 'category'));
+        if ($request->ajax()) {
+            return view('bar.products._product_list', compact('variants', 'canCreate'))->render();
+        }
+
+        return view('bar.products.index', compact('variants', 'categories', 'search', 'category', 'canCreate'));
     }
 
     /**
@@ -493,5 +509,71 @@ class ProductController extends Controller
 
         return redirect()->route('bar.products.index')
             ->with('success', 'Product deleted successfully.');
+    }
+    /**
+     * Get products by category (AJAX).
+     */
+    public function getByCategory(Request $request)
+    {
+        $ownerId = $this->getOwnerId();
+        $category = $request->category;
+        $supplierId = $request->supplier_id;
+
+        $products = Product::where('user_id', $ownerId)
+            ->where('is_active', true)
+            ->when($category, function($q) use ($category) {
+                // Smart check: matches Category OR Brand (Distributor)
+                return $q->where(function($qq) use ($category) {
+                    $qq->where('category', $category)
+                       ->orWhere('brand', 'LIKE', "%{$category}%");
+                });
+            })
+            ->when($supplierId, function($q) use ($supplierId) {
+                // Return products matching the supplier OR products with no supplier (orphans) that match the brand/category
+                return $q->where(function($qq) use ($supplierId) {
+                    $qq->where('supplier_id', $supplierId)
+                       ->orWhereNull('supplier_id');
+                });
+            })
+            ->with(['variants' => function($q) {
+                $q->where('is_active', true);
+            }])
+            ->get();
+
+        $variantsData = $products->flatMap(function($product) use ($ownerId) {
+            return $product->variants->map(function($variant) use ($product, $ownerId) {
+                $warehouseStock = \App\Models\StockLocation::where('user_id', $ownerId)
+                    ->where('product_variant_id', $variant->id)
+                    ->where('location', 'warehouse')
+                    ->first();
+                
+                $existingQuantity = $warehouseStock ? $warehouseStock->quantity : 0;
+                $itemsPerPackage = $variant->items_per_package ?? 1;
+                $existingPackages = $itemsPerPackage > 0 ? floor($existingQuantity / $itemsPerPackage) : 0;
+                
+                return [
+                    'id' => $variant->id,
+                    'name' => $variant->name,
+                    'product' => [
+                        'name' => $product->name,
+                        'brand' => $product->brand,
+                    ],
+                    'measurement' => $variant->measurement,
+                    'packaging' => $variant->packaging,
+                    'unit' => $variant->unit,
+                    'items_per_package' => $variant->items_per_package,
+                    'buying_price_per_unit' => $variant->buying_price_per_unit ? (float)$variant->buying_price_per_unit : null,
+                    'selling_price_per_unit' => $variant->selling_price_per_unit ? (float)$variant->selling_price_per_unit : null,
+                    'can_sell_in_tots' => $variant->can_sell_in_tots,
+                    'total_tots' => $variant->total_tots,
+                    'selling_price_per_tot' => $variant->selling_price_per_tot ? (float)$variant->selling_price_per_tot : null,
+                    'existing_quantity' => $existingQuantity,
+                    'existing_packages' => $existingPackages,
+                    'conversion_qty' => $itemsPerPackage,
+                ];
+            });
+        })->values();
+
+        return response()->json($variantsData);
     }
 }

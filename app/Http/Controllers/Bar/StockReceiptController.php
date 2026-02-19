@@ -57,14 +57,34 @@ class StockReceiptController extends Controller
 
         $products = Product::where('user_id', $ownerId)
             ->where('is_active', true)
-            ->with('variants')
+            ->with(['variants' => function($q) {
+                $q->where('is_active', true);
+            }])
             ->orderBy('name')
             ->get();
 
-        // Prepare products data for JavaScript
+        $loadGroups = [
+            // Load by Distributor Label
+            'BONITE', 'SBC (PEPSI)', 'AZAM', 'TBL BEERS', 'SBL BEERS', 
+            // Load by Core Category
+            'BEER/LAGER', 'BRANDY/WHISKY/RUM/GIN', 'CAN BEER', 
+            'ENERGIES', 'MIXED', 'SODA', 'SOFT DRINKS', 
+            'SPIRITS', 'WATER', 'WINE BY BOTTLE'
+        ];
+
+        $categories = $products->pluck('category')
+            ->merge($loadGroups)
+            ->unique()
+            ->filter()
+            ->values()
+            ->all();
+
         $productsData = $products->map(function($product) use ($ownerId) {
             return [
                 'id' => $product->id,
+                'name' => $product->name,
+                'brand' => $product->brand,
+                'category' => $product->category,
                 'variants' => $product->variants->map(function($variant) use ($ownerId) {
                     // Get existing warehouse stock for this variant
                     $warehouseStock = StockLocation::where('user_id', $ownerId)
@@ -78,8 +98,10 @@ class StockReceiptController extends Controller
                     
                     return [
                         'id' => $variant->id,
+                        'name' => $variant->name,
                         'measurement' => $variant->measurement,
                         'packaging' => $variant->packaging,
+                        'unit' => $variant->unit,
                         'items_per_package' => $variant->items_per_package,
                         'buying_price_per_unit' => $variant->buying_price_per_unit ? (float)$variant->buying_price_per_unit : null,
                         'selling_price_per_unit' => $variant->selling_price_per_unit ? (float)$variant->selling_price_per_unit : null,
@@ -92,8 +114,9 @@ class StockReceiptController extends Controller
             ];
         })->all();
 
-        return view('bar.stock-receipts.create', compact('suppliers', 'products', 'productsData'));
+        return view('bar.stock-receipts.create', compact('suppliers', 'products', 'productsData', 'categories'));
     }
+
 
     /**
      * Store a newly created stock receipt.
@@ -106,31 +129,21 @@ class StockReceiptController extends Controller
         }
 
         $validated = $request->validate([
-            'product_variant_id' => 'required|exists:product_variants,id',
             'supplier_id' => 'required|exists:suppliers,id',
-            'quantity_received' => 'required|integer|min:1',
-            'buying_price_per_unit' => 'required|numeric|min:0',
-            'selling_price_per_unit' => 'required|numeric|min:0',
-            'selling_price_per_tot' => 'nullable|numeric|min:0',
-            'discount_type' => 'nullable|in:fixed,percent',
-            'discount_amount' => 'nullable|numeric|min:0|required_with:discount_type',
             'received_date' => 'required|date',
-            'expiry_date' => 'nullable|date|after:received_date',
             'notes' => 'nullable|string',
+            'items' => 'required|array|min:1',
+            'items.*.product_variant_id' => 'required|exists:product_variants,id',
+            'items.*.quantity_received' => 'required|integer|min:1',
+            'items.*.buying_price_per_unit' => 'required|numeric|min:0',
+            'items.*.selling_price_per_unit' => 'required|numeric|min:0',
+            'items.*.selling_price_per_tot' => 'nullable|numeric|min:0',
+            'items.*.discount_type' => 'nullable|in:fixed,percent',
+            'items.*.discount_amount' => 'nullable|numeric|min:0',
+            'items.*.expiry_date' => 'nullable|date|after:received_date',
         ]);
 
         $ownerId = $this->getOwnerId();
-
-        // Verify product variant belongs to user
-        $productVariant = ProductVariant::where('id', $validated['product_variant_id'])
-            ->whereHas('product', function($query) use ($ownerId) {
-                $query->where('user_id', $ownerId);
-            })
-            ->first();
-
-        if (!$productVariant) {
-            return back()->withErrors(['product_variant_id' => 'Invalid product variant selected.'])->withInput();
-        }
 
         // Verify supplier belongs to user
         $supplier = Supplier::where('id', $validated['supplier_id'])
@@ -143,132 +156,134 @@ class StockReceiptController extends Controller
 
         DB::beginTransaction();
         try {
-            // Calculate values
-            $totalUnits = $validated['quantity_received'] * $productVariant->items_per_package;
-            $totalBuyingCost = $totalUnits * $validated['buying_price_per_unit'];
-            $totalSellingValue = $totalUnits * $validated['selling_price_per_unit'];
-            $profitPerUnit = $validated['selling_price_per_unit'] - $validated['buying_price_per_unit'];
-            $totalProfit = $totalUnits * $profitPerUnit;
-            
-            // Calculate discount
-            $discountType = $validated['discount_type'] ?? null;
-            $discountAmount = $validated['discount_amount'] ?? 0;
-            $discountValue = 0;
-            $finalBuyingCost = $totalBuyingCost;
-            
-            if ($discountType && $discountAmount > 0) {
-                if ($discountType === 'fixed') {
-                    $discountValue = min($discountAmount, $totalBuyingCost); // Discount cannot exceed total cost
-                    $finalBuyingCost = $totalBuyingCost - $discountValue;
-                } elseif ($discountType === 'percent') {
-                    $discountValue = ($totalBuyingCost * $discountAmount) / 100;
-                    $finalBuyingCost = $totalBuyingCost - $discountValue;
-                }
-            }
-
-            // Generate receipt number
+            // Generate ONE receipt number for the entire batch
             $receiptNumber = StockReceipt::generateReceiptNumber($ownerId);
+            $receiptsCount = 0;
+            $lastCreatedReceipt = null;
 
-            // Create stock receipt
-            $receipt = StockReceipt::create([
-                'user_id' => $ownerId,
-                'product_variant_id' => $validated['product_variant_id'],
-                'supplier_id' => $validated['supplier_id'],
-                'receipt_number' => $receiptNumber,
-                'quantity_received' => $validated['quantity_received'],
-                'total_units' => $totalUnits,
-                'buying_price_per_unit' => $validated['buying_price_per_unit'],
-                'selling_price_per_unit' => $validated['selling_price_per_unit'],
-                'selling_price_per_tot' => $validated['selling_price_per_tot'] ?? null,
-                'total_buying_cost' => $totalBuyingCost,
-                'total_selling_value' => $totalSellingValue,
-                'profit_per_unit' => $profitPerUnit,
-                'total_profit' => $totalProfit,
-                'discount_type' => $discountType,
-                'discount_amount' => $discountAmount > 0 ? $discountAmount : null,
-                'discount_value' => $discountValue,
-                'final_buying_cost' => $finalBuyingCost,
-                'received_date' => $validated['received_date'],
-                'expiry_date' => $validated['expiry_date'] ?? null,
-                'notes' => $validated['notes'] ?? null,
-                'received_by' => $ownerId,
-            ]);
+            foreach ($validated['items'] as $item) {
+                // Verify product variant belongs to user
+                $productVariant = ProductVariant::where('id', $item['product_variant_id'])
+                    ->whereHas('product', function($query) use ($ownerId) {
+                        $query->where('user_id', $ownerId);
+                    })
+                    ->first();
 
-            // Update or create warehouse stock location
-            $warehouseStock = StockLocation::firstOrCreate(
-                [
+                if (!$productVariant) continue;
+
+                // Calculate values
+                // quantity_received from frontend is actually the number of PACKAGES (crates/cartons)
+                $numPackages = $item['quantity_received'];
+                $itemsPerPackage = $productVariant->items_per_package ?? 1;
+                $totalUnits = $numPackages * $itemsPerPackage;
+
+                $totalBuyingCost = $totalUnits * $item['buying_price_per_unit'];
+                $totalSellingValue = $totalUnits * $item['selling_price_per_unit'];
+                $profitPerUnit = $item['selling_price_per_unit'] - $item['buying_price_per_unit'];
+                $totalProfit = $totalUnits * $profitPerUnit;
+                
+                // Calculate discount
+                $discountType = $item['discount_type'] ?? null;
+                $discountAmount = $item['discount_amount'] ?? 0;
+                $discountValue = 0;
+                $finalBuyingCost = $totalBuyingCost;
+                
+                if ($discountType && $discountAmount > 0) {
+                    if ($discountType === 'fixed') {
+                        $discountValue = min($discountAmount, $totalBuyingCost);
+                        $finalBuyingCost = $totalBuyingCost - $discountValue;
+                    } elseif ($discountType === 'percent') {
+                        $discountValue = ($totalBuyingCost * $discountAmount) / 100;
+                        $finalBuyingCost = $totalBuyingCost - $discountValue;
+                    }
+                }
+
+                // Create stock receipt record
+                $receipt = StockReceipt::create([
                     'user_id' => $ownerId,
-                    'product_variant_id' => $productVariant->id,
-                    'location' => 'warehouse',
-                ],
-                [
-                    'quantity' => 0,
-                    'average_buying_price' => $validated['buying_price_per_unit'],
-                    'selling_price' => $validated['selling_price_per_unit'],
-                    'selling_price_per_tot' => $validated['selling_price_per_tot'] ?? null,
-                ]
-            );
+                    'product_variant_id' => $item['product_variant_id'],
+                    'supplier_id' => $validated['supplier_id'],
+                    'receipt_number' => $receiptNumber,
+                    'quantity_received' => $numPackages,
+                    'total_units' => $totalUnits,
+                    'buying_price_per_unit' => $item['buying_price_per_unit'],
+                    'selling_price_per_unit' => $item['selling_price_per_unit'],
+                    'total_buying_cost' => $totalBuyingCost,
+                    'total_selling_value' => $totalSellingValue,
+                    'profit_per_unit' => $profitPerUnit,
+                    'total_profit' => $totalProfit,
+                    'discount_type' => $discountType,
+                    'discount_amount' => $discountAmount,
+                    'discount_value' => $discountValue,
+                    'final_buying_cost' => $finalBuyingCost,
+                    'received_date' => $validated['received_date'],
+                    'notes' => $validated['notes'],
+                    'received_by' => Auth::id(),
+                ]);
 
-            // Calculate new average buying price (weighted average)
-            // Use final buying cost (after discount) for inventory valuation
-            $existingQuantity = $warehouseStock->quantity;
-            $existingTotalCost = $existingQuantity * $warehouseStock->average_buying_price;
-            $newTotalCost = $finalBuyingCost; // Use final cost after discount
-            $newTotalQuantity = $existingQuantity + $totalUnits;
-            $newAverageBuyingPrice = $newTotalQuantity > 0 
-                ? ($existingTotalCost + $newTotalCost) / $newTotalQuantity 
-                : ($finalBuyingCost / $totalUnits); // Use effective buying price per unit
+                // Update Warehouse Stock
+                $warehouseStock = \App\Models\StockLocation::firstOrCreate(
+                    [
+                        'user_id' => $ownerId,
+                        'product_variant_id' => $item['product_variant_id'],
+                        'location' => 'warehouse',
+                    ],
+                    ['quantity' => 0]
+                );
 
-            // Update warehouse stock
-            $warehouseStock->update([
-                'quantity' => $newTotalQuantity,
-                'average_buying_price' => $newAverageBuyingPrice,
-                'selling_price' => $validated['selling_price_per_unit'], // Update to latest selling price
-                'selling_price_per_tot' => $validated['selling_price_per_tot'] ?? null,
-            ]);
+                $warehouseStock->increment('quantity', $totalUnits);
 
-            // Update product variant prices
-            $productVariant->update([
-                'buying_price_per_unit' => $validated['buying_price_per_unit'],
-                'selling_price_per_unit' => $validated['selling_price_per_unit'],
-                'selling_price_per_tot' => $validated['selling_price_per_tot'] ?? null,
-            ]);
+                // Log Stock Movement
+                \App\Models\StockMovement::create([
+                    'user_id' => $ownerId,
+                    'product_variant_id' => $item['product_variant_id'],
+                    'from_location' => 'supplier',
+                    'to_location' => 'warehouse',
+                    'quantity' => $totalUnits,
+                    'type' => 'in',
+                    'reference_type' => 'stock_receipt',
+                    'reference_id' => $receipt->id,
+                    'notes' => "Stock received from {$supplier->company_name}. Receipt #{$receiptNumber}",
+                ]);
 
-            // Create stock movement record
-            StockMovement::create([
-                'user_id' => $ownerId,
-                'product_variant_id' => $productVariant->id,
-                'movement_type' => 'receipt',
-                'from_location' => 'supplier',
-                'to_location' => 'warehouse',
-                'quantity' => $totalUnits,
-                'unit_price' => $validated['buying_price_per_unit'],
-                'reference_type' => StockReceipt::class,
-                'reference_id' => $receipt->id,
-                'created_by' => $ownerId,
-                'notes' => 'Stock receipt: ' . $receiptNumber,
-            ]);
+                $receiptsCount++;
+                $lastCreatedReceipt = $receipt;
+            }
 
             DB::commit();
 
-            // Send SMS notifications to stock keeper and counter staff
-            try {
-                $smsService = new StockReceiptSmsService();
-                $smsService->sendStockReceiptNotification($receipt, $ownerId);
-            } catch (\Exception $smsException) {
-                // Log SMS error but don't fail the transaction
-                \Log::error('Failed to send stock receipt SMS notifications: ' . $smsException->getMessage(), [
-                    'receipt_id' => $receipt->id,
-                    'error' => $smsException->getMessage()
+            // Send Notifications
+            if ($lastCreatedReceipt) {
+                try {
+                    $smsService = new \App\Services\StockReceiptSmsService();
+                    $smsService->sendStockReceiptNotification($lastCreatedReceipt, $ownerId);
+                } catch (\Exception $e) {
+                    \Log::error('SMS Notification failed for stock receipt: ' . $e->getMessage());
+                }
+            }
+
+            if (request()->ajax()) {
+                return response()->json([
+                    'success' => true,
+                    'message' => "Stock receipt created successfully with {$receiptsCount} items. Receipt #{$receiptNumber}"
                 ]);
             }
 
             return redirect()->route('bar.stock-receipts.index')
-                ->with('success', 'Stock receipt created successfully. Stock has been added to warehouse.');
+                ->with('success', "Stock receipt created successfully with {$receiptsCount} items. Receipt #{$receiptNumber}");
+
         } catch (\Exception $e) {
             DB::rollBack();
-            \Log::error('Stock receipt creation failed: ' . $e->getMessage());
-            return back()->withErrors(['error' => 'Failed to create stock receipt: ' . $e->getMessage()])->withInput();
+            \Log::error('Error creating stock receipt: ' . $e->getMessage());
+            
+            if (request()->ajax()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Error creating stock receipt: ' . $e->getMessage()
+                ], 500);
+            }
+            
+            return back()->with('error', 'Error creating stock receipt: ' . $e->getMessage())->withInput();
         }
     }
 

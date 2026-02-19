@@ -219,7 +219,7 @@ class StockReceiptController extends Controller
                     'final_buying_cost' => $finalBuyingCost,
                     'received_date' => $validated['received_date'],
                     'notes' => $validated['notes'],
-                    'received_by' => Auth::id(),
+                    'received_by' => Auth::id() ?? $ownerId,
                 ]);
 
                 // Update Warehouse Stock

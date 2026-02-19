@@ -42,7 +42,7 @@
         </div>
         <div class="col-4">
             <h6 class="text-muted text-uppercase smallest font-weight-bold mb-3">Received By</h6>
-            <h5 class="font-weight-bold mb-1">{{ $receivedBy->name }}</h5>
+            <h5 class="font-weight-bold mb-1">{{ $receivedBy->name ?? 'System Administrator' }}</h5>
             <p class="text-muted small mb-0">Warehouse Department</p>
         </div>
         <div class="col-4 text-right">

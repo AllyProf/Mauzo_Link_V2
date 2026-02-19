@@ -393,11 +393,11 @@ $(document).ready(function() {
 
         // B. Process Loaded Items (ACTUAL quantities in list)
         receiptItems.forEach((item) => {
-            const buyPrice = isBulk ? bulkBuy : cleanNum(item.buying_price_per_unit);
-            const sellPrice = isBulk ? bulkSell : cleanNum(item.selling_price_per_unit);
-            const sellTot = isBulk ? cleanNum($('#bulk_sell_tot').val()) : cleanNum(item.selling_price_per_tot);
-            const discAmt = isBulk ? bulkDiscAmt : cleanNum(item.discount_amount);
-            const discType = isBulk ? bulkDiscType : (item.discount_type || 'fixed');
+            const buyPrice = cleanNum(item.buying_price_per_unit);
+            const sellPrice = cleanNum(item.selling_price_per_unit);
+            const sellTot = cleanNum(item.selling_price_per_tot);
+            const discAmt = cleanNum(item.discount_amount);
+            const discType = item.discount_type || 'fixed';
 
             const pkgQty = cleanNum(item.quantity_received);
             const conv = cleanNum(item.conversion_qty) || 1;
@@ -425,7 +425,7 @@ $(document).ready(function() {
 
             // Smart Revenue: Calculate BOTH channels independently
             const totalTotsPerUnit = cleanNum(item.total_tots) || 0;
-            const isDualSelling = isBulk ? $('#bulk_dual_toggle').is(':checked') : item.is_dual;
+            const isDualSelling = item.is_dual;
 
             const lineBtlRetail = units * sellPrice;                                   // Bottle potential
             const lineTotRetail = (isDualSelling && sellTot > 0 && totalTotsPerUnit > 0)
@@ -696,6 +696,7 @@ $(document).ready(function() {
         const idx = $(this).attr('data-index');
         receiptItems[idx].is_dual = !receiptItems[idx].is_dual;
         renderTable();
+        updateSummaries();
     });
 
     $(document).on('input change', '.item-pkg, .item-buy-price, .item-sell-price, .item-sell-tot, .item-expiry, .item-discount-amount, .item-discount-type', function() {

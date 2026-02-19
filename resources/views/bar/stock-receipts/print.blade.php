@@ -19,7 +19,7 @@
 
 <div class="tile shadow-lg border-0 p-5 position-relative overflow-hidden" id="printableArea">
     <!-- RECEIVED Watermark -->
-    <div class="watermark d-none d-print-flex">RECEIVED</div>
+    <div class="watermark d-flex">RECEIVED</div>
 
     <!-- Header -->
     <div class="row mb-5 align-items-center">
@@ -58,10 +58,13 @@
             </div>
         </div>
         <div class="col-4 text-right">
-            <h6 class="text-muted text-uppercase smallest font-weight-bold mb-3" style="letter-spacing: 1px;">Stock Summary</h6>
-            <p class="mb-1 small">Total Items: <span class="font-weight-bold text-dark">{{ $receipts->count() }}</span></p>
-            <p class="mb-1 small">Total Packages: <span class="font-weight-bold text-dark">{{ number_format($receipts->sum('quantity_received'), 1) }}</span></p>
-            <p class="mb-0 h5 mt-2 font-weight-bold" style="color: #940000;">TSh {{ number_format($receipts->sum('final_buying_cost')) }}</p>
+            <h6 class="text-muted text-uppercase smallest font-weight-bold mb-3" style="letter-spacing: 1px;">Financial Summary</h6>
+            <p class="mb-1 small">Gross Purchase: <span class="text-muted">TSh {{ number_format($receipts->sum('total_buying_cost')) }}</span></p>
+            <p class="mb-1 small text-danger">Total Discounts: <span class="font-weight-bold">(-) TSh {{ number_format($receipts->sum('discount_value')) }}</span></p>
+            <p class="mb-0 h5 mt-2 font-weight-bold" style="color: #940000;">NET TOTAL: TSh {{ number_format($receipts->sum('final_buying_cost')) }}</p>
+            <div class="mt-2 smallest text-muted">
+                {{ $receipts->count() }} items &bull; {{ number_format($receipts->sum('quantity_received'), 1) }} packages
+            </div>
         </div>
     </div>
 
@@ -152,13 +155,13 @@
         transform: translate(-50%, -50%) rotate(-30deg);
         font-size: 120px;
         font-weight: 900;
-        color: rgba(148, 0, 0, 0.05);
+        color: rgba(148, 0, 0, 0.1);
         z-index: 0;
         pointer-events: none;
         user-select: none;
         text-transform: uppercase;
         letter-spacing: 20px;
-        border: 15px solid rgba(148, 0, 0, 0.05);
+        border: 15px solid rgba(148, 0, 0, 0.1);
         padding: 20px 60px;
         border-radius: 20px;
     }
@@ -169,7 +172,7 @@
         .tile { box-shadow: none !important; border: 0 !important; padding: 0 !important; }
         body { background: white !important; }
         .container-fluid, .row { width: 100% !important; margin: 0 !important; }
-        .watermark { color: rgba(148, 0, 0, 0.08) !important; border-color: rgba(148, 0, 0, 0.08) !important; z-index: -10 !important; display: flex !important; }
+        .watermark { color: rgba(148, 0, 0, 0.12) !important; border-color: rgba(148, 0, 0, 0.12) !important; z-index: -10 !important; display: flex !important; }
         .bg-white { background-color: #fff !important; }
     }
 </style>

@@ -574,30 +574,30 @@ $(document).ready(function() {
                         <div class="font-weight-bold text-dark mb-1" style="font-size:14px;">${item.name} ${item.packaging} (${item.conversion_qty} Btl/Pc)</div>
                         <div class="input-group input-group-sm" style="max-width:140px;">
                            <div class="input-group-prepend"><span class="input-group-text p-0 px-1 bg-transparent border-0 opacity-50 smallest">EXP:</span></div>
-                           <input type="date" class="form-control form-control-sm item-expiry border-0 p-0 h-auto bg-transparent smallest" data-index="${index}" value="${item.expiry_date || ''}" ${isBulk ? 'readonly' : ''}>
+                           <input type="date" class="form-control form-control-sm item-expiry border-0 p-0 h-auto bg-transparent smallest" data-index="${index}" value="${item.expiry_date || ''}">
                         </div>
                     </td>
                     <td class="px-2">
                         <input type="number" class="form-control font-weight-bold item-pkg" data-index="${index}" value="${item.quantity_received}" min="0" step="0.1" placeholder="0">
                     </td>
                     <td class="px-2">
-                        <input type="number" class="form-control item-buy-price" data-index="${index}" value="${item.buying_price_per_unit}" step="0.01" ${isBulk ? 'readonly style="background:#f8f9fa; border-color:transparent;"' : ''}>
+                        <input type="number" class="form-control item-buy-price" data-index="${index}" value="${item.buying_price_per_unit}" step="0.01">
                     </td>
                     <td class="px-2">
                         <div class="d-flex align-items-center mb-1">
-                           <input type="number" class="form-control item-sell-price font-weight-bold text-primary mr-2" data-index="${index}" value="${item.selling_price_per_unit}" step="0.01" placeholder="Btl" ${isBulk ? 'readonly style="background:#f8f9fa; border-color:transparent;"' : ''}>
-                           <i class="fa ${item.is_dual ? 'fa-glass text-info' : 'fa-circle-thin opacity-25'} toggle-dual cursor-pointer" data-index="${index}" title="Toggle Retail Mode"></i>
+                            <input type="number" class="form-control item-sell-price font-weight-bold text-primary mr-2" data-index="${index}" value="${item.selling_price_per_unit}" step="0.01" placeholder="Btl">
+                            <i class="fa ${item.is_dual ? 'fa-glass text-info' : 'fa-circle-thin opacity-25'} toggle-dual cursor-pointer" data-index="${index}" title="Toggle Retail Mode"></i>
                         </div>
                         <div class="input-group input-group-sm tot-input-wrapper" style="visibility: ${item.is_dual ? 'visible' : 'hidden'}; opacity: ${item.is_dual ? '1' : '0'}; transition: all 0.3s;">
                            <div class="input-group-prepend"><span class="input-group-text p-0 px-1 bg-transparent border-0 opacity-50 smallest">${(item.unit || 'TOT').toUpperCase()}:</span></div>
-                           <input type="number" class="form-control form-control-sm item-sell-tot text-info p-0 h-auto bg-transparent border-0 smallest" data-index="${index}" value="${item.selling_price_per_tot || ''}" step="0.01" placeholder="0" ${isBulk ? 'readonly' : ''}>
+                           <input type="number" class="form-control form-control-sm item-sell-tot text-info p-0 h-auto bg-transparent border-0 smallest" data-index="${index}" value="${item.selling_price_per_tot || ''}" step="0.01" placeholder="0">
                         </div>
                     </td>
                     <td class="px-2">
                         <div class="input-group">
-                           <input type="number" class="form-control item-discount-amount" data-index="${index}" value="${item.discount_amount}" step="0.01" ${isBulk ? 'readonly style="background:#f8f9fa; border-color:transparent;"' : ''}>
+                           <input type="number" class="form-control item-discount-amount" data-index="${index}" value="${item.discount_amount}" step="0.01">
                            <div class="input-group-append">
-                              <select class="custom-select p-0 px-1 item-discount-type" data-index="${index}" style="width: 50px; font-size: 11px;" ${isBulk ? 'disabled style="background:#f8f9fa; border-color:transparent;"' : ''}>
+                              <select class="custom-select p-0 px-1 item-discount-type" data-index="${index}" style="width: 50px; font-size: 11px;">
                                  <option value="fixed" ${item.discount_type === 'fixed' ? 'selected' : ''}>TSh</option>
                                  <option value="percent" ${item.discount_type === 'percent' ? 'selected' : ''}>%</option>
                               </select>
@@ -692,7 +692,7 @@ $(document).ready(function() {
     });
 
     $(document).on('click', '.toggle-dual', function() {
-        if(isBulkEnabled()) return; // Controlled by bulk switch
+        // if(isBulkEnabled()) return; // Controlled by bulk switch -> Removed to allow item level override
         const idx = $(this).attr('data-index');
         receiptItems[idx].is_dual = !receiptItems[idx].is_dual;
         renderTable();
@@ -705,14 +705,14 @@ $(document).ready(function() {
         
         if($(this).hasClass('item-pkg')) {
             item.quantity_received = cleanNum($(this).val());
-        } else if(!isBulkEnabled()) {
-            if($(this).hasClass('item-buy-price')) item.buying_price_per_unit = cleanNum($(this).val());
-            if($(this).hasClass('item-sell-price')) item.selling_price_per_unit = cleanNum($(this).val());
-            if($(this).hasClass('item-sell-tot')) item.selling_price_per_tot = cleanNum($(this).val());
-            if($(this).hasClass('item-expiry')) item.expiry_date = $(this).val();
-            if($(this).hasClass('item-discount-amount')) item.discount_amount = cleanNum($(this).val());
-            if($(this).hasClass('item-discount-type')) item.discount_type = $(this).val();
         }
+        
+        if($(this).hasClass('item-buy-price')) item.buying_price_per_unit = cleanNum($(this).val());
+        if($(this).hasClass('item-sell-price')) item.selling_price_per_unit = cleanNum($(this).val());
+        if($(this).hasClass('item-sell-tot')) item.selling_price_per_tot = cleanNum($(this).val());
+        if($(this).hasClass('item-expiry')) item.expiry_date = $(this).val();
+        if($(this).hasClass('item-discount-amount')) item.discount_amount = cleanNum($(this).val());
+        if($(this).hasClass('item-discount-type')) item.discount_type = $(this).val();
         updateSummaries();
     });
 

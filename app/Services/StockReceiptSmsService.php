@@ -42,7 +42,7 @@ class StockReceiptSmsService
         $stockKeeperMessage .= "Variant: {$variant->measurement} - {$variant->packaging}\n";
         $stockKeeperMessage .= "Supplier: {$supplier->company_name}\n";
         $stockKeeperMessage .= "Quantity: {$stockReceipt->quantity_received} {$variant->packaging}\n";
-        $stockKeeperMessage .= "Total Units: " . number_format($stockReceipt->total_units) . " bottle(s)\n";
+        $stockKeeperMessage .= "Total Btls/Pcs: " . number_format($stockReceipt->total_units) . "\n";
         $stockKeeperMessage .= "Date: " . $stockReceipt->received_date->format('M d, Y') . "\n";
         $stockKeeperMessage .= "\nStock has been added to warehouse.";
 
@@ -51,7 +51,7 @@ class StockReceiptSmsService
         $counterMessage .= "Product: {$product->name}\n";
         $counterMessage .= "Variant: {$variant->measurement} - {$variant->packaging}\n";
         $counterMessage .= "Available: {$stockReceipt->quantity_received} {$variant->packaging}\n";
-        $counterMessage .= "Total Units: " . number_format($stockReceipt->total_units) . " bottle(s)\n";
+        $counterMessage .= "Total Btls/Pcs: " . number_format($stockReceipt->total_units) . "\n";
         $counterMessage .= "Receipt #: {$stockReceipt->receipt_number}\n";
         $counterMessage .= "\nYou can now request stock transfer from warehouse to counter.";
 

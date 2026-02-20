@@ -29,10 +29,18 @@ class StockReceiptController extends Controller
         }
 
         $ownerId = $this->getOwnerId();
+        
+        // Group by receipt_number to show deliveries rather than individual items
         $receipts = StockReceipt::where('user_id', $ownerId)
-            ->with(['productVariant.product', 'supplier'])
+            ->select('receipt_number', 'supplier_id', 'received_date', 'notes', 'received_by')
+            ->selectRaw('count(*) as item_count')
+            ->selectRaw('sum(total_units) as total_units_sum')
+            ->selectRaw('sum(quantity_received) as total_packages_sum')
+            ->selectRaw('sum(final_buying_cost) as total_cost_sum')
+            ->selectRaw('sum(total_profit) as total_profit_sum')
+            ->with(['supplier', 'receivedBy'])
+            ->groupBy('receipt_number', 'supplier_id', 'received_date', 'notes', 'received_by')
             ->orderBy('received_date', 'desc')
-            ->orderBy('created_at', 'desc')
             ->paginate(20);
 
         return view('bar.stock-receipts.index', compact('receipts'));
@@ -103,12 +111,14 @@ class StockReceiptController extends Controller
                         'packaging' => $variant->packaging,
                         'unit' => $variant->unit,
                         'items_per_package' => $variant->items_per_package,
+                        'selling_type' => $variant->selling_type,
                         'buying_price_per_unit' => $variant->buying_price_per_unit ? (float)$variant->buying_price_per_unit : null,
                         'selling_price_per_unit' => $variant->selling_price_per_unit ? (float)$variant->selling_price_per_unit : null,
                         'can_sell_in_tots' => $variant->can_sell_in_tots,
                         'selling_price_per_tot' => $variant->selling_price_per_tot ? (float)$variant->selling_price_per_tot : null,
                         'existing_quantity' => $existingQuantity,
                         'existing_packages' => $existingPackages,
+                        'average_buying_price' => $warehouseStock ? (float)$warehouseStock->average_buying_price : ($variant->buying_price_per_unit ? (float)$variant->buying_price_per_unit : 0),
                     ];
                 })->values()->all()
             ];
@@ -138,7 +148,7 @@ class StockReceiptController extends Controller
             'items.*.buying_price_per_unit' => 'required|numeric|min:0',
             'items.*.selling_price_per_unit' => 'required|numeric|min:0',
             'items.*.selling_price_per_tot' => 'nullable|numeric|min:0',
-            'items.*.discount_type' => 'nullable|in:fixed,percent',
+            'items.*.discount_type' => 'nullable|string|in:fixed,percent',
             'items.*.discount_amount' => 'nullable|numeric|min:0',
             'items.*.expiry_date' => 'nullable|date|after:received_date',
         ]);
@@ -179,9 +189,19 @@ class StockReceiptController extends Controller
                 $totalUnits = $numPackages * $itemsPerPackage;
 
                 $totalBuyingCost = $totalUnits * $item['buying_price_per_unit'];
-                $totalSellingValue = $totalUnits * $item['selling_price_per_unit'];
-                $profitPerUnit = $item['selling_price_per_unit'] - $item['buying_price_per_unit'];
-                $totalProfit = $totalUnits * $profitPerUnit;
+                
+                // Calculate smart selling value (following frontend logic: use tot revenue if available)
+                $bottleSellingValue = $totalUnits * $item['selling_price_per_unit'];
+                $totSellingValue = 0;
+                $totPrice = $item['selling_price_per_tot'] ?? 0;
+                
+                if ($totPrice > 0 && ($productVariant->total_tots ?? 0) > 0) {
+                    $totSellingValue = $totalUnits * $productVariant->total_tots * $totPrice;
+                }
+                
+                $totalSellingValue = ($totSellingValue > 0) ? $totSellingValue : $bottleSellingValue;
+                $profitPerUnit = ($totalSellingValue / $totalUnits) - $item['buying_price_per_unit'];
+                $totalProfit = $totalSellingValue - $totalBuyingCost;
                 
                 // Calculate discount
                 $discountType = $item['discount_type'] ?? null;
@@ -209,6 +229,7 @@ class StockReceiptController extends Controller
                     'total_units' => $totalUnits,
                     'buying_price_per_unit' => $item['buying_price_per_unit'],
                     'selling_price_per_unit' => $item['selling_price_per_unit'],
+                    'selling_price_per_tot' => $item['selling_price_per_tot'] ?? 0,
                     'total_buying_cost' => $totalBuyingCost,
                     'total_selling_value' => $totalSellingValue,
                     'profit_per_unit' => $profitPerUnit,
@@ -222,17 +243,44 @@ class StockReceiptController extends Controller
                     'received_by' => Auth::id() ?? $ownerId,
                 ]);
 
-                // Update Warehouse Stock
+                // Update Warehouse Stock (With Weighted Average Costing)
                 $warehouseStock = \App\Models\StockLocation::firstOrCreate(
                     [
                         'user_id' => $ownerId,
                         'product_variant_id' => $item['product_variant_id'],
                         'location' => 'warehouse',
                     ],
-                    ['quantity' => 0]
+                    [
+                        'quantity' => 0,
+                        'average_buying_price' => $item['buying_price_per_unit'],
+                        'selling_price' => $item['selling_price_per_unit'],
+                        'selling_price_per_tot' => $item['selling_price_per_tot'] ?? 0,
+                    ]
                 );
 
-                $warehouseStock->increment('quantity', $totalUnits);
+                // Weighted Average Buying Price Formula:
+                // ((Existing Qty * Current Ave) + (New Qty * New Cost)) / (Existing Qty + New Qty)
+                $existingQty = $warehouseStock->quantity;
+                $currentAve = $warehouseStock->average_buying_price;
+                $newCost = $item['buying_price_per_unit'];
+                $newQty = $totalUnits;
+
+                $newAveragePrice = (($existingQty * $currentAve) + ($newQty * $newCost)) / ($existingQty + $newQty);
+
+                $warehouseStock->update([
+                    'quantity' => $existingQty + $newQty,
+                    'average_buying_price' => $newAveragePrice,
+                    'selling_price' => $item['selling_price_per_unit'], // Use newest selling price
+                    'selling_price_per_tot' => $item['selling_price_per_tot'] ?? 0,
+                ]);
+
+                // Update Master Product Variant prices to reflect latest delivery prices
+                $productVariant->update([
+                    'buying_price_per_unit' => $item['buying_price_per_unit'],
+                    'selling_price_per_unit' => $item['selling_price_per_unit'],
+                    'selling_price_per_tot' => $item['selling_price_per_tot'] ?? 0,
+                    'can_sell_in_tots' => ($item['selling_price_per_tot'] ?? 0) > 0,
+                ]);
 
                 // Log Stock Movement
                 \App\Models\StockMovement::create([
@@ -290,25 +338,84 @@ class StockReceiptController extends Controller
     }
 
     /**
-     * Display the specified stock receipt.
+     * Display the specified stock receipt or batch of receipts.
      */
-    public function show(StockReceipt $stockReceipt)
+    public function show($idOrNumber)
     {
         $ownerId = $this->getOwnerId();
         
-        // Check ownership
-        if ($stockReceipt->user_id !== $ownerId) {
-            abort(403, 'You do not have access to this stock receipt.');
+        // Find by receipt number first (Batch view)
+        $receipts = StockReceipt::where('user_id', $ownerId)
+            ->where('receipt_number', $idOrNumber)
+            ->with(['productVariant.product', 'supplier', 'receivedBy'])
+            ->get();
+
+        if ($receipts->count() > 0) {
+            $receiptNumber = $idOrNumber;
+            return view('bar.stock-receipts.show_batch', compact('receipts', 'receiptNumber'));
         }
 
+        // Fallback to single ID if needed (for legacy links)
+        $stockReceipt = StockReceipt::where('user_id', $ownerId)->find($idOrNumber);
+        if (!$stockReceipt) {
+            abort(404, 'Stock receipt not found.');
+        }
+
+        // Redirect to batch view for consistency
+        return redirect()->route('bar.stock-receipts.show', $stockReceipt->receipt_number);
+    }
+
+    /**
+     * Delete an entire batch of stock receipts.
+     */
+    public function deleteBatch($receiptNumber)
+    {
         // Check permission
-        if (!$this->hasPermission('stock_receipt', 'view')) {
-            abort(403, 'You do not have permission to view stock receipts.');
+        if (!$this->hasPermission('stock_receipt', 'delete')) {
+            abort(403, 'You do not have permission to delete stock receipts.');
         }
 
-        $stockReceipt->load(['productVariant.product', 'supplier', 'receivedBy']);
+        $ownerId = $this->getOwnerId();
+        
+        DB::beginTransaction();
+        try {
+            $receipts = StockReceipt::where('user_id', $ownerId)
+                ->where('receipt_number', $receiptNumber)
+                ->get();
 
-        return view('bar.stock-receipts.show', compact('stockReceipt'));
+            if ($receipts->isEmpty()) {
+                throw new \Exception('Receipt batch not found.');
+            }
+
+            foreach ($receipts as $receipt) {
+                // Adjust Warehouse Stock (Reverse)
+                $warehouseStock = StockLocation::where('user_id', $ownerId)
+                    ->where('product_variant_id', $receipt->product_variant_id)
+                    ->where('location', 'warehouse')
+                    ->first();
+
+                if ($warehouseStock) {
+                    $warehouseStock->decrement('quantity', $receipt->total_units);
+                }
+
+                // Delete related movement logs
+                StockMovement::where('reference_type', 'stock_receipt')
+                    ->where('reference_id', $receipt->id)
+                    ->delete();
+
+                // Delete the receipt record
+                $receipt->delete();
+            }
+
+            DB::commit();
+            return redirect()->route('bar.stock-receipts.index')
+                ->with('success', "Batch #{$receiptNumber} deleted successfully. Stock has been adjusted.");
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+            \Log::error('Batch deletion failed: ' . $e->getMessage());
+            return back()->with('error', 'Failed to delete batch: ' . $e->getMessage());
+        }
     }
 
     /**

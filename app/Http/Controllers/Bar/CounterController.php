@@ -578,54 +578,53 @@ class CounterController extends Controller
 
         $ownerId = $this->getOwnerId();
 
-        $variants = ProductVariant::whereHas('product', function($query) use ($ownerId) {
-            $query->where('user_id', $ownerId)
-                  ->where(function($q) {
-                      $q->where('category', 'like', '%beverage%')
-                        ->orWhere('category', 'like', '%drink%')
-                        ->orWhere('category', 'like', '%alcohol%')
-                        ->orWhere('category', 'like', '%beer%')
-                        ->orWhere('category', 'like', '%wine%')
-                        ->orWhere('category', 'like', '%spirit%');
-                  });
-        })
-        ->with(['product', 'stockLocations' => function($query) use ($ownerId) {
-            $query->where('user_id', $ownerId)->where('location', 'counter');
-        }])
-        ->get()
-        ->filter(function($variant) {
-            $counterStock = $variant->stockLocations->where('location', 'counter')->first();
-            return $counterStock && $counterStock->quantity > 0;
-        })
-        ->map(function($variant) {
-            $counterStock = $variant->stockLocations->where('location', 'counter')->first();
-            $itemsPerPackage = $variant->items_per_package ?? 1;
-            $packaging = $variant->packaging ?? 'Package';
-            $quantity = $counterStock->quantity;
-            $packages = $itemsPerPackage > 1 ? floor($quantity / $itemsPerPackage) : 0;
-            $remainingBottles = $itemsPerPackage > 1 ? ($quantity % $itemsPerPackage) : $quantity;
-            
-            return [
-                'id' => $variant->id,
-                'product_name' => $variant->product->name,
-                'product_image' => $variant->product->image,
-                'variant' => $variant->measurement,
-                'quantity' => $quantity,
-                'items_per_package' => $itemsPerPackage,
-                'packaging' => $packaging,
-                'packages' => $packages,
-                'remaining_bottles' => $remainingBottles,
-                'selling_price' => $counterStock->selling_price ?? $variant->selling_price_per_unit ?? 0,
-                'buying_price' => $counterStock->average_buying_price ?? $variant->buying_price_per_unit ?? 0,
-                'is_low_stock' => $counterStock->quantity < 10,
-            ];
-        });
+        // Get all product_variant_ids that have a counter stock entry for this owner
+        $counterVariantIds = \App\Models\StockLocation::where('user_id', $ownerId)
+            ->where('location', 'counter')
+            ->pluck('product_variant_id');
 
-        $totalValue = $variants->sum(function($v) {
-            return $v['quantity'] * $v['selling_price'];
-        });
+        $variants = ProductVariant::whereIn('id', $counterVariantIds)
+            ->whereHas('product', function($query) use ($ownerId) {
+                $query->where('user_id', $ownerId);
+            })
+            ->with(['product', 'stockLocations' => function($query) use ($ownerId) {
+                $query->where('user_id', $ownerId)->where('location', 'counter');
+            }])
+            ->get()
+            ->map(function($variant) {
+                $counterStock    = $variant->stockLocations->where('location', 'counter')->first();
+                $itemsPerPackage = $variant->items_per_package ?? 1;
+                $packaging       = $variant->packaging ?? 'Package';
+                $quantity        = $counterStock ? $counterStock->quantity : 0;
+                $packages        = $itemsPerPackage > 1 ? floor($quantity / $itemsPerPackage) : 0;
+                $remainingBottles= $itemsPerPackage > 1 ? ($quantity % $itemsPerPackage) : $quantity;
 
-        return view('bar.counter.counter-stock', compact('variants', 'totalValue'));
+                return [
+                    'id'                   => $variant->id,
+                    'product_name'         => $variant->product->name,
+                    'variant_name'         => $variant->name,          // e.g. "Fanta Pineapple"
+                    'product_image'        => $variant->product->image,
+                    'category'             => $variant->product->category ?? 'General',
+                    'variant'              => $variant->measurement,    // e.g. "350"
+                    'quantity'             => $quantity,
+                    'items_per_package'    => $itemsPerPackage,
+                    'packaging'            => $packaging,
+                    'packages'             => $packages,
+                    'remaining_bottles'    => $remainingBottles,
+                    'selling_price'        => $counterStock->selling_price ?? $variant->selling_price_per_unit ?? 0,
+                    'selling_price_per_tot'=> $counterStock->selling_price_per_tot ?? $variant->selling_price_per_tot ?? 0,
+                    'can_sell_in_tots'     => $variant->can_sell_in_tots && ($variant->total_tots > 0),
+                    'buying_price'         => $counterStock->average_buying_price ?? $variant->buying_price_per_unit ?? 0,
+                    'is_low_stock'         => $quantity < 10,
+                ];
+            });
+
+        $totalValue = $variants->sum(fn($v) => $v['quantity'] * $v['selling_price']);
+
+        // Get unique categories for tabs
+        $categories = $variants->pluck('category')->unique()->sort()->values();
+
+        return view('bar.counter.counter-stock', compact('variants', 'totalValue', 'categories'));
     }
 
     /**

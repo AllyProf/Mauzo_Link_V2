@@ -13,6 +13,7 @@ use App\Services\StockTransferSmsService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 
 class StockTransferController extends Controller
 {
@@ -44,32 +45,25 @@ class StockTransferController extends Controller
         $transfers = StockTransfer::where('user_id', $ownerId)
             ->with(['productVariant.product', 'productVariant.counterStock', 'requestedBy', 'approvedBy'])
             ->orderBy('created_at', 'desc')
+            ->orderBy('transfer_number', 'desc')
             ->paginate(20);
 
-        // Calculate expected revenue and profit for completed transfers
-        $ownerId = $this->getOwnerId();
+        // Check for batch success flag from available page
+        if (request()->has('batch_success')) {
+            session()->flash('success', 'Batch transfer request sent successfully. All items are waiting for approval.');
+        }
+
+        // Calculate expected revenue and profit for all transfers
         $transfers->getCollection()->transform(function($transfer) use ($ownerId) {
+            $financials = $transfer->calculateFinancials();
+            $transfer->expected_revenue = $financials['revenue'];
+            $transfer->expected_profit = $financials['profit'];
+            $transfer->is_tot_calculation = $financials['is_tot'];
+
             if ($transfer->status === 'completed' && $transfer->productVariant) {
-                // Get counter stock to get current selling price
-                $counterStock = StockLocation::where('user_id', $ownerId)
-                    ->where('product_variant_id', $transfer->product_variant_id)
-                    ->where('location', 'counter')
-                    ->first();
-                
-                // Get buying price from warehouse stock or variant
-                $warehouseStock = StockLocation::where('user_id', $ownerId)
-                    ->where('product_variant_id', $transfer->product_variant_id)
-                    ->where('location', 'warehouse')
-                    ->first();
-                
-                $sellingPrice = $counterStock->selling_price ?? $warehouseStock->selling_price ?? $transfer->productVariant->selling_price_per_unit ?? 0;
-                $buyingPrice = $warehouseStock->average_buying_price ?? $transfer->productVariant->buying_price_per_unit ?? 0;
-                
-                // Calculate expected revenue and profit
-                $transfer->expected_revenue = $transfer->total_units * $sellingPrice;
-                $transfer->expected_profit = ($sellingPrice - $buyingPrice) * $transfer->total_units;
-                
                 // Calculate real-time generated profit (from paid orders after transfer completion)
+                $sellingPrice = $financials['selling_price'];
+                $buyingPrice = $financials['buying_price'];
                 $transfer->real_time_profit = $this->calculateRealTimeProfit($transfer, $ownerId, $sellingPrice, $buyingPrice);
                 $revenueData = $this->calculateRealTimeRevenue($transfer, $ownerId);
                 $transfer->real_time_revenue = $revenueData['total'];
@@ -77,27 +71,10 @@ class StockTransferController extends Controller
                 $transfer->real_time_revenue_submitted = $revenueData['submitted'];
                 $transfer->real_time_revenue_pending = $revenueData['pending'];
             } else {
-                // For pending/approved transfers, calculate expected profit based on warehouse prices
-                if ($transfer->productVariant) {
-                    $warehouseStock = StockLocation::where('user_id', $ownerId)
-                        ->where('product_variant_id', $transfer->product_variant_id)
-                        ->where('location', 'warehouse')
-                        ->first();
-                    
-                    $sellingPrice = $warehouseStock->selling_price ?? $transfer->productVariant->selling_price_per_unit ?? 0;
-                    $buyingPrice = $warehouseStock->average_buying_price ?? $transfer->productVariant->buying_price_per_unit ?? 0;
-                    
-                    $transfer->expected_revenue = $transfer->total_units * $sellingPrice;
-                    $transfer->expected_profit = ($sellingPrice - $buyingPrice) * $transfer->total_units;
-                    $transfer->real_time_profit = 0;
-                    $transfer->real_time_revenue = 0;
-                } else {
-                    $transfer->expected_revenue = null;
-                    $transfer->expected_profit = null;
-                    $transfer->real_time_profit = 0;
-                    $transfer->real_time_revenue = 0;
-                }
+                $transfer->real_time_profit = 0;
+                $transfer->real_time_revenue = 0;
             }
+            
             return $transfer;
         });
 
@@ -145,57 +122,56 @@ class StockTransferController extends Controller
                 $query->where('user_id', $ownerId)
                       ->where('quantity', '>', 0);
             })
+            ->orderBy('category')
             ->orderBy('name')
             ->get();
 
-        // Process products to include stock information
-        $productsWithStock = $products->map(function($product) {
-            $variantsWithStock = $product->variants->filter(function($variant) {
+        // Create a unified list of Categories and Brands for the Tab Bar
+        $quickFilters = $products->pluck('category')
+            ->merge($products->pluck('brand'))
+            ->unique()
+            ->filter()
+            ->values()
+            ->sort()
+            ->all();
+
+        // Separate Brands for the dropdown still (if needed for fallback)
+        $brands = $products->pluck('brand')->unique()->filter()->values()->all();
+        $categories = $products->pluck('category')->unique()->filter()->values()->all();
+
+        // Process products and variants into a flat list of individual inventory items
+        $inventoryItems = $products->flatMap(function($product) {
+            return $product->variants->filter(function($variant) {
                 return $variant->warehouseStock && $variant->warehouseStock->quantity > 0;
             })->map(function($variant) use ($product) {
                 $warehouseStock = $variant->warehouseStock;
                 $warehousePackages = floor($warehouseStock->quantity / $variant->items_per_package);
                 
-                // Determine unit label based on product category or default to 'bottles' for bar
-                $unitLabel = 'bottles'; // Default for bar/beverage products
-                if ($product->category) {
-                    $category = strtolower($product->category);
-                    if (str_contains($category, 'beverage') || str_contains($category, 'drink') || str_contains($category, 'alcohol')) {
-                        $unitLabel = 'bottles';
-                    } elseif (str_contains($category, 'food') || str_contains($category, 'snack')) {
-                        $unitLabel = 'items';
-                    } else {
-                        $unitLabel = 'items';
-                    }
-                }
-                
                 return [
-                    'id' => $variant->id,
+                    'variant_id' => $variant->id,
+                    'product_name' => $product->name,
+                    'variant_name' => $variant->name,
+                    'brand' => $product->brand,
+                    'category' => $product->category,
+                    'description' => $product->description,
+                    'image' => $product->image,
                     'measurement' => $variant->measurement,
                     'packaging' => $variant->packaging,
+                    'unit' => $variant->unit,
                     'items_per_package' => $variant->items_per_package,
                     'warehouse_quantity' => $warehouseStock->quantity,
                     'warehouse_packages' => $warehousePackages,
                     'average_buying_price' => $warehouseStock->average_buying_price,
                     'selling_price' => $warehouseStock->selling_price,
-                    'unit_label' => $unitLabel,
+                    'unit_label' => $variant->unit ?? 'btl',
+                    'can_sell_in_tots' => $variant->can_sell_in_tots,
+                    'total_tots_per_unit' => $variant->total_tots,
+                    'selling_price_per_tot' => $variant->selling_price_per_tot,
                 ];
-            })->values();
-
-            return [
-                'id' => $product->id,
-                'name' => $product->name,
-                'brand' => $product->brand,
-                'description' => $product->description,
-                'image' => $product->image,
-                'variants' => $variantsWithStock,
-                'total_variants' => $variantsWithStock->count(),
-            ];
-        })->filter(function($product) {
-            return $product['total_variants'] > 0;
+            });
         })->values();
 
-        return view('bar.stock-transfers.available', compact('productsWithStock'));
+        return view('bar.stock-transfers.available', compact('inventoryItems', 'categories', 'brands', 'quickFilters'));
     }
 
     /**
@@ -406,6 +382,92 @@ class StockTransferController extends Controller
     }
 
     /**
+     * Store a batch of stock transfer requests.
+     */
+    public function batchStore(Request $request)
+    {
+        // Check permission
+        $canCreate = $this->hasPermission('stock_transfer', 'create') || $this->hasPermission('inventory', 'edit');
+        if (!$canCreate && session('is_staff')) {
+            $staff = \App\Models\Staff::with('role')->find(session('staff_id'));
+            if ($staff && $staff->role) {
+                $roleName = strtolower(trim($staff->role->name ?? ''));
+                if (in_array($roleName, ['counter', 'bar counter', 'stock keeper', 'stockkeeper'])) {
+                    $canCreate = true;
+                }
+            }
+        }
+        
+        if (!$canCreate) {
+            return response()->json(['error' => 'You do not have permission to request transfers.'], 403);
+        }
+
+        $validated = $request->validate([
+            'items' => 'required|array|min:1',
+            'items.*.product_variant_id' => 'required|exists:product_variants,id',
+            'items.*.quantity_requested' => 'required|integer|min:1',
+            'notes' => 'nullable|string|max:500',
+        ]);
+
+        $ownerId = $this->getOwnerId();
+        $requestedById = Auth::id() ?? $ownerId;
+
+        // Determine who is making the request (staff check)
+        if (session('is_staff') && session('staff_id')) {
+            $staff = \App\Models\Staff::find(session('staff_id'));
+            if ($staff && $staff->user_id) {
+                $requestedById = $staff->user_id;
+            }
+        }
+
+        DB::beginTransaction();
+        try {
+            $transferNumber = StockTransfer::generateTransferNumber($ownerId);
+            $createdTransfers = [];
+
+            foreach ($validated['items'] as $itemData) {
+                $variant = ProductVariant::where('id', $itemData['product_variant_id'])->first();
+                if (!$variant) continue;
+
+                $totalUnits = $itemData['quantity_requested'] * ($variant->items_per_package ?? 1);
+
+                $transfer = StockTransfer::create([
+                    'user_id' => $ownerId,
+                    'product_variant_id' => $variant->id,
+                    'transfer_number' => $transferNumber,
+                    'quantity_requested' => $itemData['quantity_requested'],
+                    'total_units' => $totalUnits,
+                    'status' => 'pending',
+                    'requested_by' => $requestedById,
+                    'notes' => $validated['notes'] ?? null,
+                ]);
+
+                $createdTransfers[] = $transfer;
+            }
+
+            DB::commit();
+
+            // Send batch SMS notification
+            try {
+                $smsService = new StockTransferSmsService();
+                $smsService->sendBatchTransferRequestNotification($createdTransfers, $ownerId, $transferNumber);
+            } catch (\Exception $e) {
+                \Log::error('Batch SMS notification failed: ' . $e->getMessage());
+            }
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Batch transfer request submitted successfully.',
+                'transfer_number' => $transferNumber
+            ]);
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return response()->json(['error' => 'Failed to process batch: ' . $e->getMessage()], 400);
+        }
+    }
+
+    /**
      * Display the specified stock transfer.
      */
     public function show(StockTransfer $stockTransfer)
@@ -476,76 +538,55 @@ class StockTransferController extends Controller
 
         // Return JSON response for AJAX requests
         if (request()->ajax() || request()->wantsJson()) {
-            $packagingType = strtolower($stockTransfer->productVariant->packaging ?? 'packages');
-            $packagingTypeSingular = rtrim($packagingType, 's');
-            if ($packagingTypeSingular == 'boxe') {
-                $packagingTypeSingular = 'box';
-            }
-            $packagingDisplay = $stockTransfer->quantity_requested == 1 ? $packagingTypeSingular : $packagingType;
-            
-            // Calculate expected and real-time profit/revenue for completed transfers
-            $expectedProfit = null;
-            $realTimeProfit = 0;
-            $realTimeRevenue = 0;
-            $realTimeRevenueSubmitted = 0;
-            $realTimeRevenuePending = 0;
-            
-            if ($stockTransfer->status === 'completed' && $stockTransfer->productVariant) {
-                // Use transfer's ownerId for accountants
-                $transferOwnerId = $isAccountant ? $stockTransfer->user_id : $ownerId;
-                
-                $counterStock = StockLocation::where('user_id', $transferOwnerId)
-                    ->where('product_variant_id', $stockTransfer->product_variant_id)
-                    ->where('location', 'counter')
-                    ->first();
-                
-                $warehouseStock = StockLocation::where('user_id', $transferOwnerId)
-                    ->where('product_variant_id', $stockTransfer->product_variant_id)
-                    ->where('location', 'warehouse')
-                    ->first();
-                
-                $sellingPrice = $counterStock->selling_price ?? $warehouseStock->selling_price ?? $stockTransfer->productVariant->selling_price_per_unit ?? 0;
-                $buyingPrice = $warehouseStock->average_buying_price ?? $stockTransfer->productVariant->buying_price_per_unit ?? 0;
-                
-                $expectedRevenue = $stockTransfer->total_units * $sellingPrice;
-                $expectedProfit = ($sellingPrice - $buyingPrice) * $stockTransfer->total_units;
-                
-                // Calculate real-time profit and revenue
-                $realTimeProfit = $this->calculateRealTimeProfit($stockTransfer, $transferOwnerId, $sellingPrice, $buyingPrice);
-                $revenueData = $this->calculateRealTimeRevenue($stockTransfer, $transferOwnerId);
-                $realTimeRevenue = $revenueData['total'];
-                $realTimeRevenueSubmitted = $revenueData['submitted'];
-                $realTimeRevenuePending = $revenueData['pending'];
-            }
-            
+            // Fetch all items in this batch
+            $batchItems = StockTransfer::where('transfer_number', $stockTransfer->transfer_number)
+                ->with(['productVariant.product'])
+                ->get();
+
+            $formattedBatchItems = $batchItems->map(function($item) {
+                $pkg = strtolower($item->productVariant->packaging ?? 'packages');
+                $pkgSingular = rtrim($pkg, 's');
+                if ($pkgSingular == 'boxe') $pkgSingular = 'box';
+                $pkgDisplay = $item->quantity_requested == 1 ? $pkgSingular : $pkg;
+
+                $unit = strtolower($item->productVariant->unit ?? 'btl');
+                if (in_array($unit, ['ml', 'cl', 'l'])) $unit = 'bottle';
+                $unitDisplay = $item->total_units == 1 ? $unit : Str::plural($unit);
+
+                $financials = $item->calculateFinancials();
+
+                return [
+                    'id' => $item->id,
+                    'product_name' => $item->productVariant->product->name ?? 'N/A',
+                    'variant_measurement' => $item->productVariant->measurement ?? null,
+                    'quantity_requested' => $item->quantity_requested,
+                    'packaging_display' => $pkgDisplay,
+                    'total_units' => $item->total_units,
+                    'unit_display' => $unitDisplay,
+                    'expected_profit' => $financials['profit'],
+                    'expected_revenue' => $financials['revenue'],
+                    'is_tot' => $financials['is_tot']
+                ];
+            });
+
             return response()->json([
                 'success' => true,
+                'is_batch' => $batchItems->count() > 1,
+                'batch_items' => $formattedBatchItems,
                 'transfer' => [
                     'id' => $stockTransfer->id,
                     'transfer_number' => $stockTransfer->transfer_number,
                     'status' => $stockTransfer->status,
-                    'quantity_requested' => $stockTransfer->quantity_requested,
-                    'total_units' => $stockTransfer->total_units,
-                    'expected_profit' => $expectedProfit,
-                    'real_time_profit' => $realTimeProfit,
-                    'expected_revenue' => $expectedRevenue ?? null,
-                    'real_time_revenue' => $realTimeRevenue,
-                    'real_time_revenue_submitted' => $realTimeRevenueSubmitted,
-                    'real_time_revenue_pending' => $realTimeRevenuePending,
                     'notes' => $stockTransfer->notes,
                     'rejection_reason' => $stockTransfer->rejection_reason,
                     'created_at' => $stockTransfer->created_at ? $stockTransfer->created_at->format('M d, Y H:i') : null,
                     'approved_at' => $stockTransfer->approved_at ? $stockTransfer->approved_at->format('M d, Y H:i') : null,
                     'completed_date' => $stockTransfer->updated_at ? $stockTransfer->updated_at->format('M d, Y H:i') : null,
-                    'product_name' => $stockTransfer->productVariant->product->name ?? 'N/A',
-                    'variant_measurement' => $stockTransfer->productVariant->measurement ?? null,
-                    'variant_packaging' => $stockTransfer->productVariant->packaging ?? null,
                     'requested_by_name' => $stockTransfer->requestedBy ? ($stockTransfer->requestedBy->name ?? 'N/A') : 'N/A',
                     'approved_by_name' => $stockTransfer->approvedBy ? ($stockTransfer->approvedBy->name ?? 'N/A') : 'N/A',
                     'verified_by' => $stockTransfer->verifiedBy ? $stockTransfer->verifiedBy->name : null,
                     'verified_at' => $stockTransfer->verified_at ? $stockTransfer->verified_at->format('M d, Y H:i') : null,
-                ],
-                'packagingDisplay' => $packagingDisplay,
+                ]
             ]);
         }
 
@@ -598,41 +639,45 @@ class StockTransferController extends Controller
             return back()->withErrors(['error' => 'This transfer has already been processed.']);
         }
 
-        // Check warehouse stock availability
-        $warehouseStock = StockLocation::where('user_id', $ownerId)
-            ->where('product_variant_id', $stockTransfer->product_variant_id)
-            ->where('location', 'warehouse')
-            ->first();
-
-        if (!$warehouseStock || $warehouseStock->quantity < $stockTransfer->total_units) {
-            return back()->withErrors(['error' => 'Insufficient stock in warehouse.']);
-        }
+        // Fetch all transfers in this batch
+        $batchItems = StockTransfer::where('transfer_number', $stockTransfer->transfer_number)->get();
 
         DB::beginTransaction();
         try {
-            // Update transfer status to approved (stock stays in warehouse until transferred)
-            $stockTransfer->update([
-                'status' => 'approved',
-                'approved_by' => $ownerId,
-                'approved_at' => now(),
-            ]);
+            foreach ($batchItems as $item) {
+                // Check warehouse stock availability for each item
+                $warehouseStock = StockLocation::where('user_id', $ownerId)
+                    ->where('product_variant_id', $item->product_variant_id)
+                    ->where('location', 'warehouse')
+                    ->first();
+
+                if (!$warehouseStock || $warehouseStock->quantity < $item->total_units) {
+                    throw new \Exception("Insufficient stock in warehouse for " . ($item->productVariant->product->name ?? 'one of the items') . ".");
+                }
+
+                $item->update([
+                    'status' => 'approved',
+                    'approved_by' => $ownerId,
+                    'approved_at' => now(),
+                ]);
+            }
 
             DB::commit();
 
-            // Send SMS notification to counter staff
+            // Send batch SMS notification
             try {
                 $smsService = new StockTransferSmsService();
-                $smsService->sendTransferStatusNotification($stockTransfer, 'approved', $ownerId);
+                $smsService->sendBatchTransferStatusNotification($batchItems, 'approved', $ownerId);
             } catch (\Exception $smsException) {
-                \Log::error('Failed to send stock transfer approval SMS notification: ' . $smsException->getMessage());
+                \Log::error('Failed to send batch stock transfer approval SMS notification: ' . $smsException->getMessage());
             }
 
             return redirect()->route('bar.stock-transfers.index')
-                ->with('success', 'Stock transfer approved successfully. You can now mark it as prepared and then transfer to counter.');
+                ->with('success', 'Stock transfer batch approved successfully.');
         } catch (\Exception $e) {
             DB::rollBack();
-            \Log::error('Stock transfer approval failed: ' . $e->getMessage());
-            return back()->withErrors(['error' => 'Failed to approve stock transfer: ' . $e->getMessage()]);
+            \Log::error('Batch stock transfer approval failed: ' . $e->getMessage());
+            return back()->withErrors(['error' => 'Failed to approve batch: ' . $e->getMessage()]);
         }
     }
 
@@ -677,27 +722,35 @@ class StockTransferController extends Controller
             abort(403, 'You do not have permission to reject stock transfers.');
         }
 
-        // Check if already processed
-        if ($stockTransfer->status !== 'pending') {
-            return back()->withErrors(['error' => 'This transfer has already been processed.']);
-        }
+        // Fetch all transfers in this batch
+        $batchItems = StockTransfer::where('transfer_number', $stockTransfer->transfer_number)->get();
 
-        $stockTransfer->update([
-            'status' => 'rejected',
-            'approved_by' => $ownerId,
-            'approved_at' => now(),
-        ]);
-
-        // Send SMS notification to counter staff
+        DB::beginTransaction();
         try {
-            $smsService = new StockTransferSmsService();
-            $smsService->sendTransferStatusNotification($stockTransfer, 'rejected', $ownerId);
-        } catch (\Exception $smsException) {
-            \Log::error('Failed to send stock transfer rejection SMS notification: ' . $smsException->getMessage());
-        }
+            foreach ($batchItems as $item) {
+                $item->update([
+                    'status' => 'rejected',
+                    'approved_by' => $ownerId,
+                    'approved_at' => now(),
+                ]);
+            }
 
-        return redirect()->route('bar.stock-transfers.show', $stockTransfer)
-            ->with('success', 'Stock transfer rejected.');
+            DB::commit();
+
+            // Send batch SMS notification
+            try {
+                $smsService = new StockTransferSmsService();
+                $smsService->sendBatchTransferStatusNotification($batchItems, 'rejected', $ownerId);
+            } catch (\Exception $smsException) {
+                \Log::error('Failed to send batch stock transfer rejection SMS notification: ' . $smsException->getMessage());
+            }
+
+            return redirect()->route('bar.stock-transfers.index')
+                ->with('success', 'Stock transfer batch rejected.');
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return back()->withErrors(['error' => 'Failed to reject batch: ' . $e->getMessage()]);
+        }
     }
 
     /**
@@ -717,29 +770,31 @@ class StockTransferController extends Controller
             abort(403, 'You do not have permission to mark transfers as prepared.');
         }
 
-        // Check if transfer is approved
-        if ($stockTransfer->status !== 'approved') {
-            return back()->withErrors(['error' => 'Only approved transfers can be marked as prepared.']);
-        }
+        // Fetch all transfers in this batch
+        $batchItems = StockTransfer::where('transfer_number', $stockTransfer->transfer_number)->get();
 
         DB::beginTransaction();
         try {
-            $stockTransfer->update([
-                'status' => 'prepared',
-            ]);
+            foreach ($batchItems as $item) {
+                if ($item->status === 'approved') {
+                    $item->update([
+                        'status' => 'prepared',
+                    ]);
+                }
+            }
 
             DB::commit();
 
-            // Send SMS notification to counter staff that stock is prepared
+            // Send batch SMS notification
             try {
                 $smsService = new StockTransferSmsService();
-                $smsService->sendTransferStatusNotification($stockTransfer, 'prepared', $ownerId);
+                $smsService->sendBatchTransferStatusNotification($batchItems, 'prepared', $ownerId);
             } catch (\Exception $smsException) {
-                \Log::error('Failed to send stock transfer prepared SMS notification: ' . $smsException->getMessage());
+                \Log::error('Failed to send batch stock transfer prepared SMS notification: ' . $smsException->getMessage());
             }
 
             return redirect()->route('bar.stock-transfers.index')
-                ->with('success', 'Stock transfer marked as prepared successfully.');
+                ->with('success', 'Batch transfer marked as prepared successfully.');
         } catch (\Exception $e) {
             DB::rollBack();
             \Log::error('Mark as prepared failed: ' . $e->getMessage());
@@ -764,84 +819,95 @@ class StockTransferController extends Controller
             abort(403, 'You do not have permission to mark transfers as moved.');
         }
 
-        // Check if transfer is approved
-        if ($stockTransfer->status !== 'approved') {
-            return back()->withErrors(['error' => 'Only approved transfers can be transferred to counter.']);
-        }
-
-        // Check warehouse stock availability
-        $warehouseStock = StockLocation::where('user_id', $ownerId)
-            ->where('product_variant_id', $stockTransfer->product_variant_id)
-            ->where('location', 'warehouse')
-            ->first();
-
-        if (!$warehouseStock || $warehouseStock->quantity < $stockTransfer->total_units) {
-            return back()->withErrors(['error' => 'Insufficient stock in warehouse.']);
-        }
-
-        // Get or create counter stock location
-        $counterStock = StockLocation::firstOrCreate(
-            [
-                'user_id' => $ownerId,
-                'product_variant_id' => $stockTransfer->product_variant_id,
-                'location' => 'counter',
-            ],
-            [
-                'quantity' => 0,
-                'average_buying_price' => $warehouseStock->average_buying_price,
-                'selling_price' => $warehouseStock->selling_price,
-                'selling_price_per_tot' => $warehouseStock->selling_price_per_tot,
-            ]
-        );
+        // Fetch all transfers in this batch
+        $batchItems = StockTransfer::where('transfer_number', $stockTransfer->transfer_number)->get();
 
         DB::beginTransaction();
         try {
-            // Deduct from warehouse
-            $warehouseStock->decrement('quantity', $stockTransfer->total_units);
+            foreach ($batchItems as $item) {
+                // Skip if not approved (safety check)
+                if ($item->status !== 'approved' && $item->status !== 'prepared') continue;
 
-            // Add to counter and update prices
-            $counterStock->update([
-                'quantity' => $counterStock->quantity + $stockTransfer->total_units,
-                'selling_price' => $warehouseStock->selling_price,
-                'selling_price_per_tot' => $warehouseStock->selling_price_per_tot,
-            ]);
+                $warehouseStock = StockLocation::where('user_id', $ownerId)
+                    ->where('product_variant_id', $item->product_variant_id)
+                    ->where('location', 'warehouse')
+                    ->first();
 
-            // Update transfer status
-            $stockTransfer->update([
-                'status' => 'completed',
-            ]);
+                if (!$warehouseStock || $warehouseStock->quantity < $item->total_units) {
+                    throw new \Exception("Insufficient warehouse stock for " . ($item->productVariant->product->name ?? 'one of the items') . ".");
+                }
 
-            // Record stock movement
-            StockMovement::create([
-                'user_id' => $ownerId,
-                'product_variant_id' => $stockTransfer->product_variant_id,
-                'movement_type' => 'transfer',
-                'from_location' => 'warehouse',
-                'to_location' => 'counter',
-                'quantity' => $stockTransfer->total_units,
-                'unit_price' => $warehouseStock->average_buying_price,
-                'reference_type' => StockTransfer::class,
-                'reference_id' => $stockTransfer->id,
-                'created_by' => $ownerId,
-                'notes' => 'Stock moved from warehouse to counter',
-            ]);
+                // Get or create counter stock location
+                $counterStock = StockLocation::firstOrCreate(
+                    [
+                        'user_id' => $ownerId,
+                        'product_variant_id' => $item->product_variant_id,
+                        'location' => 'counter',
+                    ],
+                    [
+                        'quantity' => 0,
+                        'average_buying_price' => $warehouseStock->average_buying_price,
+                        'selling_price' => $warehouseStock->selling_price,
+                        'selling_price_per_tot' => $warehouseStock->selling_price_per_tot,
+                    ]
+                );
+
+                // Deduct from warehouse
+                $warehouseStock->decrement('quantity', $item->total_units);
+
+                // Weighted Average Costing for Counter
+                $existingCounterQty = $counterStock->quantity;
+                $currentCounterAve = $counterStock->average_buying_price;
+                $incomingQty = $item->total_units;
+                $warehouseAve = $warehouseStock->average_buying_price;
+
+                $newCounterAve = ($existingCounterQty + $incomingQty) > 0 
+                    ? (($existingCounterQty * $currentCounterAve) + ($incomingQty * $warehouseAve)) / ($existingCounterQty + $incomingQty)
+                    : $warehouseAve;
+
+                // Add to counter and update prices
+                $counterStock->update([
+                    'quantity' => $existingCounterQty + $incomingQty,
+                    'average_buying_price' => $newCounterAve,
+                    'selling_price' => $warehouseStock->selling_price,
+                    'selling_price_per_tot' => $warehouseStock->selling_price_per_tot,
+                ]);
+
+                // Update transfer status
+                $item->update(['status' => 'completed']);
+
+                // Record stock movement
+                StockMovement::create([
+                    'user_id' => $ownerId,
+                    'product_variant_id' => $item->product_variant_id,
+                    'movement_type' => 'transfer',
+                    'from_location' => 'warehouse',
+                    'to_location' => 'counter',
+                    'quantity' => $item->total_units,
+                    'unit_price' => $warehouseStock->average_buying_price,
+                    'reference_type' => StockTransfer::class,
+                    'reference_id' => $item->id,
+                    'created_by' => $ownerId,
+                    'notes' => 'Stock moved from warehouse to counter (Batch)',
+                ]);
+            }
 
             DB::commit();
 
-            // Send SMS notification to both stock keeper and counter staff
+            // Send batch SMS notification
             try {
                 $smsService = new StockTransferSmsService();
-                $smsService->sendTransferCompletedNotification($stockTransfer, $ownerId);
+                $smsService->sendBatchTransferStatusNotification($batchItems, 'completed', $ownerId);
             } catch (\Exception $smsException) {
-                \Log::error('Failed to send stock transfer completion SMS notification: ' . $smsException->getMessage());
+                \Log::error('Failed to send batch stock transfer completion SMS notification: ' . $smsException->getMessage());
             }
 
             return redirect()->route('bar.stock-transfers.index')
-                ->with('success', 'Stock transfer marked as moved successfully. Stock has been transferred to counter.');
+                ->with('success', 'Batch transfer completed. All items have been moved to counter stock.');
         } catch (\Exception $e) {
             DB::rollBack();
-            \Log::error('Mark as moved failed: ' . $e->getMessage());
-            return back()->withErrors(['error' => 'Failed to mark transfer as moved: ' . $e->getMessage()]);
+            \Log::error('Batch mark as moved failed: ' . $e->getMessage());
+            return back()->withErrors(['error' => 'Failed to complete batch movement: ' . $e->getMessage()]);
         }
     }
 
@@ -1175,19 +1241,11 @@ class StockTransferController extends Controller
                     ->where('product_variant_id', $transfer->product_variant_id)
                     ->where('location', 'counter')
                     ->first();
-                
-                // Get buying price from warehouse stock or variant
-                $warehouseStock = StockLocation::where('user_id', $ownerId)
-                    ->where('product_variant_id', $transfer->product_variant_id)
-                    ->where('location', 'warehouse')
-                    ->first();
-                
-                $sellingPrice = $counterStock->selling_price ?? $warehouseStock->selling_price ?? $transfer->productVariant->selling_price_per_unit ?? 0;
-                $buyingPrice = $warehouseStock->average_buying_price ?? $transfer->productVariant->buying_price_per_unit ?? 0;
-                
-                // Calculate expected revenue (expected amount)
-                $transfer->expected_amount = $transfer->total_units * $sellingPrice;
-                
+                $financials = $transfer->calculateFinancials();
+                $transfer->expected_amount = $financials['revenue'];
+                $transfer->expected_profit = $financials['profit'];
+                $transfer->is_tot_calculation = $financials['is_tot'];
+
                 // Calculate real-time generated revenue
                 $revenueData = $this->calculateRealTimeRevenue($transfer, $ownerId);
                 $transfer->real_time_amount = $revenueData['total'];
@@ -1243,3 +1301,4 @@ class StockTransferController extends Controller
         return view('bar.stock-transfers.history', compact('transfers'));
     }
 }
+

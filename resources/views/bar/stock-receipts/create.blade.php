@@ -438,42 +438,58 @@ $(document).ready(function() {
             if (lineTotRetail > 0) actualSellingTot += lineTotRetail;
             actualTotalSelling += lineRetail;
 
-            // Build dynamic breakdown item
             const itemUnitLabel = (item.unit || 'Tot').charAt(0).toUpperCase() + (item.unit || 'Tot').slice(1).toLowerCase();
             const avgCostPerUnit = units > 0 ? lineNetCost / units : 0;
-            const profitPerBottle = sellPrice - avgCostPerUnit;
-            const profitPerTot = (isDualSelling && sellTot > 0 && totalTotsPerUnit > 0)
-                ? sellTot - (avgCostPerUnit / totalTotsPerUnit) : null;
-            const profitBtlColor = profitPerBottle >= 0 ? 'text-success' : 'text-danger';
-            const profitTotColor = profitPerTot !== null ? (profitPerTot >= 0 ? 'text-success' : 'text-danger') : '';
-            const totProfitHtml = profitPerTot !== null
-                ? `<span class="${profitTotColor}">${itemUnitLabel} profit: ${profitPerTot >= 0 ? '+' : ''}${Math.round(profitPerTot).toLocaleString()}</span>`
-                : '';
+            
             // Only show units count if it differs from pkgQty (i.e. crate/case situation)
             const qtyDisplay = (conv > 1)
-                ? `${pkgQty} ${item.packaging} &bull; ${Math.round(units)} btl`
+                ? `${pkgQty} ${item.packaging} &bull; ${Math.round(units)} Units`
                 : `${pkgQty} ${item.packaging}`;
-            // Show both retail channels in breakdown
-            const totCountHtml = (lineTotRetail > 0 && totalTotsPerUnit > 0)
-                ? ` <span class="opacity-50">(${totalTotsPerUnit} ${itemUnitLabel}s/btl)</span>`
+
+            const totalLineBtlProfit = (sellPrice - avgCostPerUnit) * units;
+            const totalLineTotProfit = (isDualSelling && sellTot > 0 && totalTotsPerUnit > 0)
+                ? (units * totalTotsPerUnit * (sellTot - (avgCostPerUnit / totalTotsPerUnit))) : 0;
+
+            const profitBtlColor = totalLineBtlProfit >= 0 ? 'text-success' : 'text-danger';
+            const profitTotColor = totalLineTotProfit >= 0 ? 'text-success' : 'text-danger';
+
+            const totProfitHtml = (isDualSelling && sellTot > 0)
+                ? `<div class="d-flex justify-content-between smallest ${profitTotColor}">
+                        <span><i class="fa fa-glass mr-1"></i> ${itemUnitLabel} Profit (Tot):</span>
+                        <span class="font-weight-bold">+${Math.round(totalLineTotProfit).toLocaleString()}</span>
+                   </div>`
                 : '';
-            const retailDisplay = (lineTotRetail > 0)
-                ? `Btl: ${Math.round(lineBtlRetail).toLocaleString()} &bull; ${itemUnitLabel}: ${Math.round(lineTotRetail).toLocaleString()}${totCountHtml}`
-                : `Retail: ${Math.round(lineBtlRetail).toLocaleString()}`;
 
             const breakdownHtml = `
                 <div class="mb-3 pb-2 border-bottom border-light">
                     <div class="d-flex justify-content-between align-items-start mb-1">
-                        <span class="small font-weight-bold text-dark pr-2" style="max-width: 145px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${item.name}</span>
-                        <span class="small font-weight-bold">TSh ${Math.round(lineNetCost).toLocaleString()}</span>
+                        <span class="small font-weight-bold text-dark pr-2" style="max-width: 160px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${item.name}</span>
+                        <span class="small font-weight-bold badge badge-light border">Cost: ${Math.round(lineNetCost).toLocaleString()}</span>
                     </div>
-                    <div class="d-flex justify-content-between smallest text-muted mb-1">
-                        <span>${qtyDisplay}</span>
-                        <span>${retailDisplay}</span>
+                    
+                    <div class="smallest text-muted mb-2">
+                        <i class="fa fa-tag mr-1"></i> ${qtyDisplay} 
+                        ${totalTotsPerUnit > 0 ? `<span class="opacity-50 ml-1">(${totalTotsPerUnit} ${itemUnitLabel}s/btl)</span>` : ''}
                     </div>
-                    <div class="d-flex justify-content-between smallest font-weight-bold">
-                        <span class="${profitBtlColor}">Btl: +${Math.round(profitPerBottle).toLocaleString()}</span>
+
+                    <div class="bg-light p-1 rounded">
+                        <div class="d-flex justify-content-between smallest mb-1 px-1">
+                            <span class="text-muted"><i class="fa fa-shopping-cart mr-1"></i> Btl Sales:</span>
+                            <span class="font-weight-bold text-dark">${Math.round(lineBtlRetail).toLocaleString()}</span>
+                        </div>
+                        <div class="d-flex justify-content-between smallest ${profitBtlColor} mb-1 px-1">
+                            <span><i class="fa fa-arrow-up mr-1"></i> Btl Profit (Tot):</span>
+                            <span class="font-weight-bold">+${Math.round(totalLineBtlProfit).toLocaleString()}</span>
+                        </div>
+
+                        ${lineTotRetail > 0 ? `
+                        <div class="border-top my-1 mx-1" style="opacity: 0.2"></div>
+                        <div class="d-flex justify-content-between smallest mb-1 px-1">
+                            <span class="text-muted"><i class="fa fa-glass mr-1"></i> ${itemUnitLabel} Sales:</span>
+                            <span class="font-weight-bold text-dark">${Math.round(lineTotRetail).toLocaleString()}</span>
+                        </div>
                         ${totProfitHtml}
+                        ` : ''}
                     </div>
                 </div>
             `;
@@ -508,8 +524,8 @@ $(document).ready(function() {
         $('#summ_profit').text(Math.round(profit).toLocaleString());
         $('#summ_margin').text(margin.toFixed(1) + '%');
         $('#summ_roi').text(roi.toFixed(1) + '%');
-        $('#summ_unit_cost').text(Math.round(avgUnitCost).toLocaleString());
-        $('#items_badge').text(receiptItems.length + ' Items');
+        const activeItemsCount = receiptItems.filter(item => cleanNum(item.quantity_received) > 0).length;
+        $('#items_badge').text(activeItemsCount + ' Items');
 
         // D. Batch Status Badge
         const badge = $('#batch_status_badge');
@@ -536,22 +552,22 @@ $(document).ready(function() {
         const discType = $('#bulk_discount_type').val() || 'fixed';
 
         receiptItems.forEach(item => {
-            item.buying_price_per_unit = buy;
-            item.selling_price_per_unit = sell;
+            const ovr = item.overrides || {};
+            if (!ovr.buying_price) item.buying_price_per_unit = buy;
+            if (!ovr.selling_price) item.selling_price_per_unit = sell;
+            
+            // is_dual is a toggle, usually synced unless mixed logic applies
             item.is_dual = isDual;
-            item.selling_price_per_tot = sellTot;
-            item.expiry_date = $('#bulk_expiry').val();
-            item.discount_amount = discAmt;
-            item.discount_type = discType;
+            
+            if (!ovr.selling_tot) item.selling_price_per_tot = sellTot;
+            if (!ovr.expiry) item.expiry_date = $('#bulk_expiry').val();
+            if (!ovr.discount) {
+                item.discount_amount = discAmt;
+                item.discount_type = discType;
+            }
         });
         
-        $('.item-buy-price').val(buy > 0 ? buy : '');
-        $('.item-sell-price').val(sell > 0 ? sell : '');
-        $('.item-sell-tot').val(sellTot > 0 ? sellTot : '').prop('disabled', !isDual).css('opacity', isDual ? '1' : '0');
-        $('.item-expiry').val($('#bulk_expiry').val());
-        $('.item-discount-amount').val(discAmt);
-        $('.item-discount-type').val(discType);
-
+        renderTable();
     }
 
     function renderTable() {
@@ -568,10 +584,31 @@ $(document).ready(function() {
         const isBulk = isBulkEnabled();
 
         receiptItems.forEach((item, index) => {
+            const isMixed = item.selling_type === 'mixed';
+            const isGlassOnly = item.selling_type === 'glass';
+            const isBottleOnly = item.selling_type === 'bottle';
+            
+            // Should stay dual if it's mixed or glass-only
+            const showTotInput = isMixed || isGlassOnly;
+            const bottlePriceDisabled = isGlassOnly ? 'disabled style="background: #f0f0f0; opacity: 0.6;"' : '';
+            const bottlePriceLabel = isGlassOnly ? ' (Disabled)' : 'Btl';
+
             const tr = $(`
                 <tr>
                     <td class="px-3" style="max-width:300px;">
                         <div class="font-weight-bold text-dark mb-1" style="font-size:14px;">${item.name} ${item.packaging} (${item.conversion_qty} Btl/Pc)</div>
+                        
+                        <div class="d-flex align-items-center mb-1 smallest">
+                            <span class="badge badge-light border text-muted mr-2">
+                                <i class="fa fa-home"></i> Stock: ${item.existing_quantity || 0} unit(s)
+                            </span>
+                            ${item.buying_price_per_unit != item.last_known_buy ? `
+                                <span class="text-warning font-weight-bold" title="Price changed from previous reception">
+                                    <i class="fa fa-info-circle"></i> Price Change
+                                </span>
+                            ` : ''}
+                        </div>
+
                         <div class="input-group input-group-sm" style="max-width:140px;">
                            <div class="input-group-prepend"><span class="input-group-text p-0 px-1 bg-transparent border-0 opacity-50 smallest">EXP:</span></div>
                            <input type="date" class="form-control form-control-sm item-expiry border-0 p-0 h-auto bg-transparent smallest" data-index="${index}" value="${item.expiry_date || ''}">
@@ -582,13 +619,16 @@ $(document).ready(function() {
                     </td>
                     <td class="px-2">
                         <input type="number" class="form-control item-buy-price" data-index="${index}" value="${item.buying_price_per_unit}" step="0.01">
+                        <div class="smallest text-muted mt-1" style="font-size: 10px;">
+                            Last: TSh ${Math.round(item.last_known_buy).toLocaleString()}
+                        </div>
                     </td>
                     <td class="px-2">
                         <div class="d-flex align-items-center mb-1">
-                            <input type="number" class="form-control item-sell-price font-weight-bold text-primary mr-2" data-index="${index}" value="${item.selling_price_per_unit}" step="0.01" placeholder="Btl">
-                            <i class="fa ${item.is_dual ? 'fa-glass text-info' : 'fa-circle-thin opacity-25'} toggle-dual cursor-pointer" data-index="${index}" title="Toggle Retail Mode"></i>
+                            <input type="number" class="form-control item-sell-price font-weight-bold text-primary mr-2" data-index="${index}" value="${item.selling_price_per_unit}" step="0.01" placeholder="${bottlePriceLabel}" ${bottlePriceDisabled}>
+                            ${isMixed ? `<i class="fa ${item.is_dual ? 'fa-glass text-info' : 'fa-circle-thin opacity-25'} toggle-dual cursor-pointer" data-index="${index}" title="Toggle Retail Mode"></i>` : ''}
                         </div>
-                        <div class="input-group input-group-sm tot-input-wrapper" style="visibility: ${item.is_dual ? 'visible' : 'hidden'}; opacity: ${item.is_dual ? '1' : '0'}; transition: all 0.3s;">
+                        <div class="input-group input-group-sm tot-input-wrapper" style="visibility: ${showTotInput ? 'visible' : 'hidden'}; opacity: ${showTotInput ? '1' : '0'}; transition: all 0.3s;">
                            <div class="input-group-prepend"><span class="input-group-text p-0 px-1 bg-transparent border-0 opacity-50 smallest">${(item.unit || 'TOT').toUpperCase()}:</span></div>
                            <input type="number" class="form-control form-control-sm item-sell-tot text-info p-0 h-auto bg-transparent border-0 smallest" data-index="${index}" value="${item.selling_price_per_tot || ''}" step="0.01" placeholder="0">
                         </div>
@@ -634,23 +674,27 @@ $(document).ready(function() {
                 if(data.length > 0) {
                     data.forEach(item => {
                         if(!receiptItems.some(ri => ri.product_variant_id === item.id)) {
-                            // Smart auto-detection for dual selling (Spirits, Wine, Liquor)
-                            const dualKeywords = ['spirit', 'whisky', 'whiskey', 'vodka', 'gin', 'brandy', 'liquor', 'wine', 'vinywaji vikali', 'konyagi', 'smart'];
-                            const fullName = (item.name + ' ' + (item.brand || '') + ' ' + (item.packaging || '')).toLowerCase();
-                            const isDualDetected = dualKeywords.some(kw => fullName.includes(kw));
+                            // Strictly force configuration based on selling_type from catalog
+                            const sellingType = item.selling_type || 'bottle';
+                            const isDual = (sellingType === 'mixed' || sellingType === 'glass');
 
                             receiptItems.push({
                                 product_variant_id: item.id,
                                 name: item.name,
-                                brand: item.brand || item.product.brand,
+                                brand: item.brand || (item.product ? item.product.brand : ''),
                                 packaging: item.packaging || 'Piece',
-                                conversion_qty: item.conversion_qty || 1,
-                                quantity_received: 0,
+                                items_per_package: item.items_per_package || 1,
+                                conversion_qty: item.conversion_qty || item.items_per_package || 1,
+                                unit: item.unit || 'btl',
+                                selling_type: sellingType,
+                                is_dual: isDual,
                                 buying_price_per_unit: item.buying_price_per_unit || 0,
+                                last_known_buy: item.average_buying_price || item.buying_price_per_unit || 0,
                                 selling_price_per_unit: item.selling_price_per_unit || 0,
-                                is_dual: isDualDetected,
                                 total_tots: item.total_tots || 0,
                                 selling_price_per_tot: item.selling_price_per_tot || 0,
+                                quantity_received: 0,
+                                existing_quantity: item.existing_quantity || 0,
                                 expiry_date: '',
                                 discount_type: 'fixed',
                                 discount_amount: 0
@@ -687,7 +731,12 @@ $(document).ready(function() {
         if(this.id === 'bulk_dual_toggle') {
            $('#bulk_sell_tot').prop('disabled', !$(this).is(':checked')).focus();
         }
-        if(isBulkEnabled()) syncBulkToItems();
+        
+        // Restore auto-sync for speed as requested
+        if(isBulkEnabled()) {
+            syncBulkToItems();
+        }
+        
         updateSummaries();
     });
 
@@ -703,17 +752,38 @@ $(document).ready(function() {
         const idx = $(this).attr('data-index');
         const item = receiptItems[idx];
         if(!item) return;
+
+        // Initialize override tracking if not exists
+        if (!item.overrides) item.overrides = {};
         
         if($(this).hasClass('item-pkg')) {
             item.quantity_received = cleanNum($(this).val());
         }
         
-        if($(this).hasClass('item-buy-price')) item.buying_price_per_unit = cleanNum($(this).val());
-        if($(this).hasClass('item-sell-price')) item.selling_price_per_unit = cleanNum($(this).val());
-        if($(this).hasClass('item-sell-tot')) item.selling_price_per_tot = cleanNum($(this).val());
-        if($(this).hasClass('item-expiry')) item.expiry_date = $(this).val();
-        if($(this).hasClass('item-discount-amount')) item.discount_amount = cleanNum($(this).val());
-        if($(this).hasClass('item-discount-type')) item.discount_type = $(this).val();
+        if($(this).hasClass('item-buy-price')) {
+            item.buying_price_per_unit = cleanNum($(this).val());
+            item.overrides.buying_price = true;
+        }
+        if($(this).hasClass('item-sell-price')) {
+            item.selling_price_per_unit = cleanNum($(this).val());
+            item.overrides.selling_price = true;
+        }
+        if($(this).hasClass('item-sell-tot')) {
+            item.selling_price_per_tot = cleanNum($(this).val());
+            item.overrides.selling_tot = true;
+        }
+        if($(this).hasClass('item-expiry')) {
+            item.expiry_date = $(this).val();
+            item.overrides.expiry = true;
+        }
+        if($(this).hasClass('item-discount-amount')) {
+            item.discount_amount = cleanNum($(this).val());
+            item.overrides.discount = true;
+        }
+        if($(this).hasClass('item-discount-type')) {
+            item.discount_type = $(this).val();
+            item.overrides.discount = true;
+        }
         updateSummaries();
     });
 
@@ -747,6 +817,37 @@ $(document).ready(function() {
             btn.prop('disabled', false).html(oldHtml);
             return; 
         }
+
+        // --- STRICT VALIDATION ---
+        let validationError = null;
+        entriesToSubmit.forEach(item => {
+            const buyingPrice = cleanNum(item.buying_price_per_unit);
+            const sellingPrice = cleanNum(item.selling_price_per_unit);
+            const totPrice = cleanNum(item.selling_price_per_tot);
+            
+            if (buyingPrice <= 0) {
+                validationError = `Set buying price for: ${item.name}`;
+                return;
+            }
+
+            // Force based on selling type
+            if ((item.selling_type === 'bottle' || item.selling_type === 'mixed') && sellingPrice <= 0) {
+                validationError = `Set Bottle selling price for: ${item.name}`;
+                return;
+            }
+
+            if ((item.selling_type === 'glass' || item.selling_type === 'mixed') && totPrice <= 0) {
+                validationError = `Set Glass/Portion price for: ${item.name}`;
+                return;
+            }
+        });
+
+        if (validationError) {
+            showToast('error', validationError);
+            btn.prop('disabled', false).html(oldHtml);
+            return;
+        }
+        // -------------------------
 
         const formData = new FormData(myForm);
         formData.delete('items');

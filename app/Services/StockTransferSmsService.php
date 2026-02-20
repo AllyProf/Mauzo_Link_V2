@@ -16,6 +16,64 @@ class StockTransferSmsService
     }
 
     /**
+     * Send stock transfer status notification for a batch
+     */
+    public function sendBatchTransferStatusNotification($batchItems, $status, $ownerId)
+    {
+        if ($batchItems->isEmpty()) return false;
+        
+        $firstItem = $batchItems->first();
+        $statusUpper = strtoupper($status);
+        $transferNumber = $firstItem->transfer_number;
+
+        // Check if notifications are enabled
+        $settingKey = 'enable_auto_transfer_notification_' . $ownerId;
+        $enableNotifications = SystemSetting::get($settingKey, true);
+        if (!$enableNotifications) return false;
+
+        $message = "STOCK TRANSFER BATCH {$statusUpper}\n\n";
+        $message .= "Transfer #: {$transferNumber}\n";
+        $message .= "Items: " . $batchItems->count() . "\n\n";
+
+        foreach ($batchItems as $item) {
+            $item->load(['productVariant.product']);
+            $productName = $item->productVariant->product->name ?? 'N/A';
+            $message .= "- {$productName}: {$item->quantity_requested} " . ($item->productVariant->packaging ?? 'units') . " (" . number_format($item->total_units) . " total)\n";
+        }
+
+        $message .= "\nStatus: {$statusUpper}\n";
+        $message .= "Date: " . now()->format('M d, Y H:i') . "\n";
+
+        // Send to requester
+        $requesterId = $firstItem->requested_by;
+        if ($requesterId) {
+            $requesterStaff = Staff::where('user_id', $requesterId)->first();
+            $requesterPhone = $requesterStaff->phone_number ?? null;
+
+            if ($requesterPhone) {
+                $this->smsService->sendSms($requesterPhone, $message);
+            }
+        }
+
+        // Also send to Stock Keeper(s) as confirmation if approved
+        if ($status === 'approved') {
+            $stockKeepers = Staff::where('user_id', $ownerId)
+                ->where('is_active', true)
+                ->whereHas('role', function($query) {
+                    $query->whereIn('name', ['Stock Keeper', 'Stockkeeper']);
+                })->get();
+
+            foreach ($stockKeepers as $sk) {
+                if ($sk->phone_number) {
+                    $this->smsService->sendSms($sk->phone_number, $message);
+                }
+            }
+        }
+
+        return true;
+    }
+
+    /**
      * Send stock transfer request notification SMS to stock keeper
      */
     public function sendTransferRequestNotification(StockTransfer $stockTransfer, $ownerId)
@@ -94,7 +152,7 @@ class StockTransferSmsService
         $message .= "Product: {$product->name}\n";
         $message .= "Variant: {$variant->measurement} - {$variant->packaging}\n";
         $message .= "Quantity: {$stockTransfer->quantity_requested} {$variant->packaging}\n";
-        $message .= "Total Units: " . number_format($stockTransfer->total_units) . " bottle(s)\n";
+        $message .= "Total Btls/Pcs: " . number_format($stockTransfer->total_units) . "\n";
         $message .= "Requested By: {$requestedByName}\n";
         $message .= "Date: " . $stockTransfer->created_at->format('M d, Y H:i') . "\n";
         if ($stockTransfer->notes) {
@@ -217,7 +275,7 @@ class StockTransferSmsService
             $message .= "Product: {$product->name}\n";
             $message .= "Variant: {$variant->measurement} - {$variant->packaging}\n";
             $message .= "Quantity: {$stockTransfer->quantity_requested} {$variant->packaging}\n";
-            $message .= "Total Units: " . number_format($stockTransfer->total_units) . " bottle(s)\n";
+            $message .= "Total Btls/Pcs: " . number_format($stockTransfer->total_units) . "\n";
             $message .= "Approved By: " . ($approvedBy ? $approvedBy->name : 'Stock Keeper') . "\n";
             $message .= "Date: " . ($stockTransfer->approved_at ? $stockTransfer->approved_at->format('M d, Y H:i') : now()->format('M d, Y H:i')) . "\n";
             $message .= "\nStock is ready for transfer to counter.";
@@ -228,7 +286,7 @@ class StockTransferSmsService
             $message .= "Product: {$product->name}\n";
             $message .= "Variant: {$variant->measurement} - {$variant->packaging}\n";
             $message .= "Quantity: {$stockTransfer->quantity_requested} {$variant->packaging}\n";
-            $message .= "Total Units: " . number_format($stockTransfer->total_units) . " bottle(s)\n";
+            $message .= "Total Btls/Pcs: " . number_format($stockTransfer->total_units) . "\n";
             $message .= "Date: " . now()->format('M d, Y H:i') . "\n";
             $message .= "\nStock is prepared and ready to be moved to counter.";
         } else if ($status === 'rejected') {
@@ -324,7 +382,7 @@ class StockTransferSmsService
         $message .= "Product: {$product->name}\n";
         $message .= "Variant: {$variant->measurement} - {$variant->packaging}\n";
         $message .= "Quantity: {$stockTransfer->quantity_requested} {$variant->packaging}\n";
-        $message .= "Total Units: " . number_format($stockTransfer->total_units) . " bottle(s)\n";
+        $message .= "Total Btls/Pcs: " . number_format($stockTransfer->total_units) . "\n";
         $message .= "Date: " . now()->format('M d, Y H:i') . "\n";
         $message .= "\nStock has been successfully transferred to counter.";
 
@@ -410,7 +468,7 @@ class StockTransferSmsService
         $counterMessage .= "Transfer #: {$stockTransfer->transfer_number}\n";
         $counterMessage .= "Product: {$product->name}\n";
         $counterMessage .= "Variant: {$variant->measurement} - {$variant->packaging}\n";
-        $counterMessage .= "Quantity Sold: " . number_format($stockTransfer->total_units) . " bottle(s)\n";
+        $counterMessage .= "Quantity Sold: " . number_format($stockTransfer->total_units) . " Btls/Pcs\n";
         $counterMessage .= "Date: " . now()->format('M d, Y H:i') . "\n";
         $counterMessage .= "\nAll stock from this transfer has been sold.";
         $counterMessage .= "\nPlease submit payment for accountant reconciliation.";
@@ -420,7 +478,7 @@ class StockTransferSmsService
         $accountantMessage .= "Transfer #: {$stockTransfer->transfer_number}\n";
         $accountantMessage .= "Product: {$product->name}\n";
         $accountantMessage .= "Variant: {$variant->measurement} - {$variant->packaging}\n";
-        $accountantMessage .= "Quantity Sold: " . number_format($stockTransfer->total_units) . " bottle(s)\n";
+        $accountantMessage .= "Quantity Sold: " . number_format($stockTransfer->total_units) . " Btls/Pcs\n";
         $accountantMessage .= "Date: " . now()->format('M d, Y H:i') . "\n";
         $accountantMessage .= "\nAll stock from this transfer has been sold.";
         $accountantMessage .= "\nReady for reconciliation verification.";
@@ -430,7 +488,7 @@ class StockTransferSmsService
         $stockKeeperMessage .= "Transfer #: {$stockTransfer->transfer_number}\n";
         $stockKeeperMessage .= "Product: {$product->name}\n";
         $stockKeeperMessage .= "Variant: {$variant->measurement} - {$variant->packaging}\n";
-        $stockKeeperMessage .= "Quantity Sold: " . number_format($stockTransfer->total_units) . " bottle(s)\n";
+        $stockKeeperMessage .= "Quantity Sold: " . number_format($stockTransfer->total_units) . " Btls/Pcs\n";
         $stockKeeperMessage .= "Date: " . now()->format('M d, Y H:i') . "\n";
         $stockKeeperMessage .= "\nAll stock from this transfer has been sold.";
         $stockKeeperMessage .= "\nCounter will submit payment for reconciliation.";
@@ -521,6 +579,62 @@ class StockTransferSmsService
             'sent' => $sentCount,
             'failed' => $failedCount
         ]);
+
+        return $sentCount > 0;
+    }
+
+    /**
+     * Send a batch stock transfer request notification SMS to stock keeper
+     */
+    public function sendBatchTransferRequestNotification(array $transfers, $ownerId, $transferNumber)
+    {
+        if (empty($transfers)) return false;
+
+        // Check if notifications are enabled
+        $settingKey = 'enable_auto_transfer_notification_' . $ownerId;
+        $enableNotifications = SystemSetting::get($settingKey, true);
+        if (!$enableNotifications) return false;
+
+        // Build summary message
+        $message = "NEW BATCH STOCK TRANSFER REQUEST\n";
+        $message .= "Transfer #: {$transferNumber}\n\n";
+        
+        $totalItems = 0;
+        foreach ($transfers as $transfer) {
+            $transfer->load(['productVariant.product']);
+            $product = $transfer->productVariant->product;
+            $variant = $transfer->productVariant;
+            
+            $pkg = $transfer->quantity_requested == 1 ? $variant->packaging : ($variant->packaging . 's');
+            $message .= "- {$product->name} ({$variant->measurement}): {$transfer->quantity_requested} {$pkg}\n";
+            $totalItems++;
+        }
+
+        $notes = $transfers[0]->notes;
+        if ($notes) {
+            $message .= "\nNotes: {$notes}\n";
+        }
+        
+        $message .= "\nPlease review and approve the batch #{$transferNumber}.";
+
+        // Send to Stock Keepers
+        $sentCount = 0;
+        $stockKeepers = Staff::where('user_id', $ownerId)
+            ->where('is_active', true)
+            ->whereHas('role', function($query) {
+                $query->where(function($q) {
+                    $q->where('name', 'Stock Keeper')
+                      ->orWhere('name', 'Stockkeeper');
+                });
+            })
+            ->get();
+
+        foreach ($stockKeepers as $stockKeeper) {
+            if ($stockKeeper->phone_number) {
+                $result = $this->smsService->sendSms($stockKeeper->phone_number, $message);
+                if (isset($result['success']) && $result['success']) $sentCount++;
+            }
+        }
 
         return $sentCount > 0;
     }

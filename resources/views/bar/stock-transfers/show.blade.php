@@ -112,7 +112,15 @@
               <tr>
                 <th>Product:</th>
                 <td>
-                  <strong>{{ $stockTransfer->productVariant->product->name ?? 'N/A' }}</strong><br>
+                  @php
+                    $prodName = $stockTransfer->productVariant->product->name ?? 'N/A';
+                    $varName = $stockTransfer->productVariant->name ?? '';
+                    $displayName = $prodName;
+                    if ($varName && $varName !== $prodName) {
+                        $displayName = $prodName . ' (' . $varName . ')';
+                    }
+                  @endphp
+                  <strong>{{ $displayName }}</strong><br>
                   <small class="text-muted">
                     {{ $stockTransfer->productVariant->measurement ?? '' }} - 
                     {{ $stockTransfer->productVariant->packaging ?? '' }}

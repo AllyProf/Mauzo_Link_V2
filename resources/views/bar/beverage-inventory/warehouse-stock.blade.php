@@ -54,11 +54,11 @@
 <div class="row mt-3">
   <div class="col-md-12">
     <div class="tile">
-      <div class="d-flex justify-content-between align-items-center mb-3">
+      <div class="d-flex justify-content-between align-items-center mb-2">
         <h3 class="tile-title"><i class="fa fa-bolt"></i> Quick Actions</h3>
       </div>
       <div class="tile-body">
-        <div class="btn-group" role="group">
+        <div class="btn-group flex-wrap" role="group">
           <a href="{{ route('bar.stock-receipts.create') }}" class="btn btn-primary">
             <i class="fa fa-plus-circle"></i> Receive New Stock
           </a>
@@ -77,14 +77,12 @@
   </div>
 </div>
 
-{{-- Warehouse Stock Cards with Tabs --}}
-<div class="row mt-4">
+{{-- Warehouse Stock Cards --}}
+<div class="row mt-3">
   <div class="col-md-12">
     <div class="tile">
       <div class="d-flex justify-content-between align-items-center mb-3">
-        <h3 class="tile-title">
-          <i class="fa fa-archive"></i> Warehouse Stock
-        </h3>
+        <h3 class="tile-title"><i class="fa fa-archive"></i> Warehouse Inventory</h3>
         <div class="btn-group" role="group">
           <button type="button" class="btn btn-sm btn-primary active" id="tab-all" onclick="switchTab('all')">
             <i class="fa fa-list"></i> All Stock
@@ -97,121 +95,210 @@
 
       <div class="tile-body">
         @if($warehouseStock->count() > 0)
-          {{-- All Stock Cards --}}
-          <div id="cards-all" class="cards-container">
-            <div class="row">
-              @foreach($warehouseStock as $stock)
-                <div class="col-md-4 mb-3 warehouse-card" 
-                     data-is-low="{{ $stock['is_low_stock'] ? 'true' : 'false' }}">
-                  <div class="card h-100 {{ $stock['is_low_stock'] ? 'border-warning' : 'border-success' }}">
-                    @if(isset($stock['product_image']) && $stock['product_image'])
-                      <img src="{{ asset('storage/' . $stock['product_image']) }}" class="card-img-top" alt="{{ $stock['product_name'] }}" style="height: 150px; object-fit: cover;">
+
+          {{-- Category Tabs --}}
+          <ul class="nav wh-category-tabs mb-4" id="categoryTabs">
+            <li class="nav-item">
+              <a class="nav-link active" href="#" data-category="all">
+                <i class="fa fa-th"></i> All
+                <span class="badge badge-secondary ml-1">{{ $warehouseStock->count() }}</span>
+              </a>
+            </li>
+            @foreach($categories as $cat)
+              @php
+                $catSlug  = \Illuminate\Support\Str::slug($cat);
+                $catCount = $warehouseStock->where('category', $cat)->count();
+              @endphp
+              <li class="nav-item">
+                <a class="nav-link" href="#" data-category="{{ $catSlug }}">
+                  {{ ucfirst($cat) }}
+                  <span class="badge badge-secondary ml-1">{{ $catCount }}</span>
+                </a>
+              </li>
+            @endforeach
+          </ul>
+
+          {{-- Product Cards Grid --}}
+          <div class="row" id="warehouseContainer">
+            @foreach($warehouseStock as $stock)
+            @php
+              $catSlug     = \Illuminate\Support\Str::slug($stock['category']);
+              $isLow       = $stock['is_low_stock'];
+              $qty         = $stock['quantity'];
+              $ipp         = $stock['items_per_package'];
+              $pkgLabel    = ucfirst($stock['packaging_type']);
+              $crates      = $stock['packages'];
+              $extraBottles= $stock['extra_bottles'];
+              $borderColor = $isLow ? 'border-warning' : 'border-success';
+              $headerClass = $isLow ? 'bg-warning text-dark' : 'bg-success text-white';
+              $borderHex   = $isLow ? '#ffc107' : '#28a745';
+              $badgeColor  = $isLow ? 'warning' : 'success';
+            @endphp
+            <div class="col-6 col-md-4 col-lg-3 mb-3 warehouse-card"
+                 data-is-low="{{ $isLow ? 'true' : 'false' }}"
+                 data-category="{{ $catSlug }}">
+              <div class="card h-100 shadow-sm {{ $borderColor }}" style="border-width:2px;">
+
+                {{-- Product Image --}}
+                <div style="height:120px; overflow:hidden; background:#f8f9fa; display:flex; align-items:center; justify-content:center; border-bottom:2px solid {{ $borderHex }}; position:relative;">
+                  @if($stock['product_image'])
+                    <img src="{{ asset('storage/' . $stock['product_image']) }}"
+                         alt="{{ $stock['product_name'] }}"
+                         style="max-height:120px; width:100%; object-fit:contain; padding:6px;"
+                         onerror="this.src='{{ asset('default_images/default_drink.jpg') }}'">
+                  @else
+                    <img src="{{ asset('default_images/default_drink.jpg') }}"
+                         alt="Default"
+                         style="max-height:120px; width:100%; object-fit:contain; padding:6px;">
+                  @endif
+                  <span class="wh-cat-badge">{{ $stock['category'] }}</span>
+                  @if($isLow)
+                    <span class="wh-low-badge"><i class="fa fa-exclamation-triangle"></i> Low</span>
+                  @endif
+                </div>
+
+                {{-- Card Header --}}
+                <div class="card-header {{ $headerClass }} p-2" style="border-bottom:none;">
+                  <h6 class="card-title mb-0 font-weight-bold"
+                      title="{{ $stock['display_title'] }} — {{ $stock['measurement'] }}"
+                      style="font-size:0.8rem; line-height:1.3; word-break:break-word;">
+                    {{ $stock['display_title'] }}
+                    @if($isLow)
+                      <i class="fa fa-exclamation-triangle float-right mt-1"></i>
                     @else
-                      <div class="card-img-top bg-light d-flex align-items-center justify-content-center" style="height: 150px;">
-                        <i class="fa fa-cube fa-3x text-muted"></i>
-                      </div>
+                      <i class="fa fa-check-circle float-right mt-1"></i>
                     @endif
-                    <div class="card-header {{ $stock['is_low_stock'] ? 'bg-warning' : 'bg-success text-white' }}">
-                      <h5 class="card-title mb-0">
-                        <strong>{{ $stock['product_name'] }}</strong>
-                        @if($stock['is_low_stock'])
-                          <span class="badge badge-warning float-right">Low Stock</span>
-                        @else
-                          <span class="badge badge-light float-right">In Stock</span>
-                        @endif
-                      </h5>
+                  </h6>
+                  <small style="font-size:9px; opacity:0.8;">
+                    <i class="fa fa-flask"></i> {{ $stock['measurement'] }}
+                  </small>
+                </div>
+
+                {{-- Card Body --}}
+                <div class="card-body p-2">
+
+                  {{-- Quantity --}}
+                  <div class="qty-box mb-2">
+                    <div class="d-flex justify-content-between align-items-center">
+                      <small class="text-muted"><i class="fa fa-cubes"></i> Qty:</small>
+                      <span class="badge badge-{{ $badgeColor }}" style="font-size:0.78rem;">
+                        {{ number_format($qty) }} btl
+                      </span>
                     </div>
-                    <div class="card-body">
-                      <div class="p-3 bg-primary text-white rounded mb-3">
-                        <small class="d-block text-center mb-2"><strong>{{ $stock['variant'] }}</strong></small>
-                        <div class="row text-center">
-                          <div class="col-6 border-right border-white">
-                            @php
-                              $packagingCount = $stock['packages'];
-                              $packagingType = strtolower($stock['packaging_type']);
-                              $itemsPerPackage = $stock['items_per_package'];
-                              // Handle singular/plural for display
-                              $packagingTypeSingular = $packagingType;
-                              if ($packagingCount == 1) {
-                                // Remove 's' from end if plural (e.g., crates -> crate, boxes -> box)
-                                $packagingTypeSingular = rtrim($packagingType, 's');
-                                // Fix special cases
-                                if ($packagingTypeSingular == 'boxe') {
-                                  $packagingTypeSingular = 'box';
-                                }
-                              }
-                            @endphp
-                            @if($packagingCount > 0 && $itemsPerPackage > 1)
-                              <div class="h3 mb-0">{{ number_format($packagingCount) }}</div>
-                              <small>{{ $packagingCount == 1 ? $packagingTypeSingular : $packagingType }}</small>
-                              <div class="mt-1">
-                                <small>({{ number_format($itemsPerPackage) }} bottles per {{ $packagingTypeSingular }})</small>
-                              </div>
-                            @elseif($packagingCount > 0)
-                              <div class="h3 mb-0">{{ number_format($packagingCount) }}</div>
-                              <small>{{ $packagingType }}</small>
-                            @endif
-                          </div>
-                          <div class="col-6">
-                            <div class="h3 mb-0">{{ number_format($stock['quantity']) }}</div>
-                            <small>bottle(s)</small>
-                          </div>
-                        </div>
-                      </div>
-                      
-                      <div class="row text-center mb-2">
-                        <div class="col-6">
-                          <small class="text-muted">Buying Price</small>
-                          <div class="h6">TSh {{ number_format($stock['buying_price'], 2) }}</div>
-                        </div>
-                        <div class="col-6">
-                          <small class="text-muted">Selling Price</small>
-                          <div class="h6">TSh {{ number_format($stock['selling_price'], 2) }}</div>
-                        </div>
-                      </div>
-                      
-                      <hr>
-                      
-                      <div class="row text-center mb-2">
-                        <div class="col-6">
-                          <small class="text-muted"><strong>Total Cost Bought</strong></small>
-                          <div class="h5 text-primary mb-0">TSh {{ number_format($stock['value'], 2) }}</div>
-                        </div>
-                        <div class="col-6">
-                          <small class="text-muted"><strong>Total Revenue</strong></small>
-                          <div class="h5 text-info mb-0">TSh {{ number_format($stock['total_cost_sold'], 2) }}</div>
-                        </div>
-                      </div>
-                      
-                      <hr>
-                      
-                      <div class="text-center">
-                        <small class="text-muted"><strong>Expected Profit</strong></small>
-                        <div class="h4 text-success mb-1">TSh {{ number_format($stock['expected_profit'], 2) }}</div>
-                        @if($stock['total_cost_sold'] > 0)
-                          @php
-                            $profitMargin = ($stock['expected_profit'] / $stock['total_cost_sold']) * 100;
-                          @endphp
-                          <small class="text-muted">
-                            {{ number_format($profitMargin, 1) }}% profit margin
-                          </small>
+                    @if($ipp > 1 && $qty > 0)
+                    <div class="text-right mt-1">
+                      <small class="text-muted" style="font-size:10px;">
+                        @if($crates > 0)
+                          <b class="text-dark">{{ $crates }}</b> {{ $pkgLabel }}{{ $crates != 1 ? 's' : '' }}
+                          @if($extraBottles > 0) + <b class="text-dark">{{ $extraBottles }}</b> btl @endif
+                        @else
+                          <b class="text-dark">{{ $extraBottles }}</b> btl
                         @endif
-                      </div>
-                      
-                      <div class="mt-3">
-                        <a href="{{ route('bar.products.show', $stock['product_id']) }}" class="btn btn-sm btn-info btn-block" title="View Product Details">
-                          <i class="fa fa-eye"></i> View Details
-                        </a>
-                      </div>
+                      </small>
+                    </div>
+                    @endif
+                  </div>
+
+                  {{-- Pricing --}}
+                  <div class="d-flex justify-content-between align-items-center mb-1">
+                    <small class="text-muted"><i class="fa fa-download"></i> Buy:</small>
+                    <small class="font-weight-bold text-dark">TSh {{ number_format($stock['buying_price']) }}</small>
+                  </div>
+                  <div class="d-flex justify-content-between align-items-center mb-1">
+                    <small class="text-muted"><i class="fa fa-tag"></i> Sell:</small>
+                    <small class="font-weight-bold text-primary">TSh {{ number_format($stock['selling_price']) }}</small>
+                  </div>
+                  @if($stock['can_sell_in_tots'] && $stock['selling_price_per_tot'] > 0)
+                  <div class="d-flex justify-content-between align-items-center mb-1">
+                    <small class="text-muted"><i class="fa fa-glass"></i> Tot:</small>
+                    <small class="font-weight-bold text-info">TSh {{ number_format($stock['selling_price_per_tot']) }}</small>
+                  </div>
+                  @endif
+
+                  <hr class="my-1">
+
+                  {{-- Total Cost --}}
+                  <div class="d-flex justify-content-between align-items-center mb-1">
+                    <small class="text-muted"><i class="fa fa-shopping-cart"></i> Total Cost:</small>
+                    <small class="font-weight-bold text-dark">TSh {{ number_format($stock['value']) }}</small>
+                  </div>
+
+                  {{-- Bottle channel revenue/profit --}}
+                  <div class="channel-row {{ $stock['best_channel'] === 'bottle' ? 'best-channel' : '' }} mb-1">
+                    <div class="d-flex justify-content-between align-items-center">
+                      <small class="text-muted">
+                        <i class="fa fa-bottle-o fa-fw"></i>
+                        Bottle Rev:
+                        @if($stock['best_channel'] === 'bottle')
+                          <span class="badge badge-success" style="font-size:8px;">Best</span>
+                        @endif
+                      </small>
+                      <small class="font-weight-bold text-info">TSh {{ number_format($stock['bottle_revenue']) }}</small>
+                    </div>
+                    <div class="d-flex justify-content-between align-items-center">
+                      <small class="text-muted" style="padding-left:16px;">Profit:</small>
+                      <small class="font-weight-bold {{ $stock['bottle_profit'] >= 0 ? 'text-success' : 'text-danger' }}">
+                        TSh {{ number_format($stock['bottle_profit']) }}
+                      </small>
                     </div>
                   </div>
+
+                  {{-- Tot/Glass channel revenue/profit --}}
+                  @if($stock['can_sell_in_tots'])
+                  <div class="channel-row {{ $stock['best_channel'] === 'tot' ? 'best-channel' : '' }} mb-1">
+                    <div class="d-flex justify-content-between align-items-center">
+                      <small class="text-muted">
+                        <i class="fa fa-glass fa-fw"></i>
+                        Glass Rev:
+                        @if($stock['best_channel'] === 'tot')
+                          <span class="badge badge-success" style="font-size:8px;">Best</span>
+                        @endif
+                      </small>
+                      <small class="font-weight-bold text-info">TSh {{ number_format($stock['tot_revenue']) }}</small>
+                    </div>
+                    <div class="d-flex justify-content-between align-items-center">
+                      <small class="text-muted" style="padding-left:16px;">Profit:</small>
+                      <small class="font-weight-bold {{ $stock['tot_profit'] >= 0 ? 'text-success' : 'text-danger' }}">
+                        TSh {{ number_format($stock['tot_profit']) }}
+                      </small>
+                    </div>
+                    <div class="text-right">
+                      <small class="text-muted" style="font-size:9px;">
+                        ({{ $qty * $stock['total_tots_per_bottle'] }} glasses × TSh {{ number_format($stock['selling_price_per_tot']) }})
+                      </small>
+                    </div>
+                  </div>
+                  @endif
+
                 </div>
-              @endforeach
+
+                {{-- Card Footer --}}
+                <div class="card-footer p-1 text-center" style="border-top:2px solid {{ $borderHex }}; background:#fafafa;">
+                  <a href="{{ route('bar.products.show', $stock['product_id']) }}"
+                     class="btn btn-xs btn-outline-info px-2 py-1" style="font-size:11px;">
+                    <i class="fa fa-eye"></i> View
+                  </a>
+                  <a href="{{ route('bar.stock-transfers.create') }}"
+                     class="btn btn-xs btn-outline-success px-2 py-1" style="font-size:11px;">
+                    <i class="fa fa-exchange"></i> Transfer
+                  </a>
+                </div>
+
+              </div>
             </div>
+            @endforeach
           </div>
+
+          {{-- Total Bar --}}
+          <div class="mt-3 p-3 rounded d-flex justify-content-between align-items-center"
+               style="background: linear-gradient(135deg, #1a237e, #283593); color:white;">
+            <h5 class="mb-0"><i class="fa fa-calculator"></i> Total Warehouse Value</h5>
+            <h4 class="mb-0 text-success font-weight-bold">TSh {{ number_format($totalWarehouseValue, 2) }}</h4>
+          </div>
+
         @else
           <div class="alert alert-info">
-            <i class="fa fa-info-circle"></i> No stock available in warehouse. 
+            <i class="fa fa-info-circle"></i> No stock available in warehouse.
             <a href="{{ route('bar.stock-receipts.create') }}">Receive new stock</a> to get started.
           </div>
         @endif
@@ -222,92 +309,212 @@
 
 {{-- Products Summary --}}
 @if($productsWithWarehouseStock->count() > 0)
-<div class="row mt-4">
+<div class="row mt-3">
   <div class="col-md-12">
     <div class="tile">
       <div class="d-flex justify-content-between align-items-center mb-3">
-        <h3 class="tile-title">
-          <i class="fa fa-cube"></i> Products Summary
-        </h3>
+        <h3 class="tile-title"><i class="fa fa-cube"></i> Products Summary</h3>
       </div>
       <div class="tile-body">
-        <div class="row">
-          @foreach($productsWithWarehouseStock as $item)
-            <div class="col-md-4 mb-3">
-              <div class="card">
-                <div class="card-header bg-info text-white">
-                  <h5 class="card-title mb-0">{{ $item['product']->name }}</h5>
-                </div>
-                <div class="card-body">
-                  <div class="text-center mb-3">
-                    <div class="h4 text-primary">{{ number_format($item['total_quantity']) }}</div>
-                    <small class="text-muted">Total Bottle(s)</small>
-                  </div>
-                  <div class="text-center mb-3">
-                    <div class="h5 text-success">TSh {{ number_format($item['total_value'], 2) }}</div>
-                    <small class="text-muted">Total Value</small>
-                  </div>
-                  <div class="text-center">
-                    @php
-                      $variantCount = $warehouseStock->where('product_id', $item['product']->id)->count();
-                    @endphp
-                    <span class="badge badge-info">{{ $variantCount }} variant(s)</span>
-                  </div>
-                  <div class="mt-3">
-                    <a href="{{ route('bar.products.show', $item['product']->id) }}" class="btn btn-sm btn-info btn-block">
-                      <i class="fa fa-eye"></i> View Details
-                    </a>
-                  </div>
-                </div>
-              </div>
-            </div>
-          @endforeach
+        <div class="table-responsive">
+          <table class="table table-hover table-sm table-bordered align-middle mb-0">
+            <thead class="thead-dark">
+              <tr>
+                <th>Product</th>
+                <th class="text-center">Variants</th>
+                <th class="text-center">Total Bottles</th>
+                <th class="text-right">Total Cost Value</th>
+                <th class="text-center">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              @foreach($productsWithWarehouseStock as $item)
+              @php
+                $variantCount = $warehouseStock->where('product_id', $item['product']->id)->count();
+              @endphp
+              <tr>
+                <td>
+                  <div class="font-weight-bold">{{ $item['product']->name }}</div>
+                  <small class="text-muted">{{ $item['product']->category ?? 'General' }}</small>
+                </td>
+                <td class="text-center">
+                  <span class="badge badge-info">{{ $variantCount }}</span>
+                </td>
+                <td class="text-center">
+                  <span class="font-weight-bold">{{ number_format($item['total_quantity']) }}</span>
+                </td>
+                <td class="text-right">
+                  <span class="text-success font-weight-bold">TSh {{ number_format($item['total_value'], 2) }}</span>
+                </td>
+                <td class="text-center">
+                  <a href="{{ route('bar.products.show', $item['product']->id) }}"
+                     class="btn btn-sm btn-info">
+                    <i class="fa fa-eye"></i>
+                  </a>
+                </td>
+              </tr>
+              @endforeach
+            </tbody>
+            <tfoot class="table-dark">
+              <tr>
+                <th colspan="2">Totals</th>
+                <th class="text-center">{{ number_format($totalWarehouseStock) }} btl</th>
+                <th class="text-right">TSh {{ number_format($totalWarehouseValue, 2) }}</th>
+                <th></th>
+              </tr>
+            </tfoot>
+          </table>
         </div>
       </div>
     </div>
   </div>
 </div>
 @endif
+
 @endsection
 
-@push('scripts')
-<script type="text/javascript">
-  function switchTab(tab) {
-    // Update button states
-    $('#tab-all, #tab-low').removeClass('active btn-primary btn-warning');
-    $('#tab-all').addClass('btn-outline-primary');
-    $('#tab-low').addClass('btn-outline-warning');
-    
-    if (tab === 'all') {
-      $('#tab-all').removeClass('btn-outline-primary').addClass('active btn-primary');
-      $('.warehouse-card').show();
-    } else if (tab === 'low') {
-      $('#tab-low').removeClass('btn-outline-warning').addClass('active btn-warning');
-      $('.warehouse-card').each(function() {
-        var isLow = $(this).data('is-low') === 'true';
-        if (isLow) {
-          $(this).show();
-        } else {
-          $(this).hide();
-        }
-      });
-    }
-  }
-</script>
+@push('styles')
 <style>
-  .warehouse-card {
-    transition: all 0.3s ease;
+  /* Category tabs */
+  .wh-category-tabs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    border-bottom: 2px solid #e9ecef;
+    padding-bottom: 12px;
   }
-  .warehouse-card:hover {
-    transform: translateY(-5px);
-    box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+  .wh-category-tabs .nav-link {
+    border-radius: 20px;
+    color: #555;
+    background: #f0f2f5;
+    border: 1px solid #ddd;
+    padding: 5px 14px;
+    font-size: 0.82rem;
+    font-weight: 600;
+    transition: all 0.2s;
   }
+  .wh-category-tabs .nav-link:hover {
+    background: #e3f2fd;
+    border-color: #90caf9;
+    color: #1565c0;
+  }
+  .wh-category-tabs .nav-link.active {
+    background: #1565c0;
+    color: white !important;
+    border-color: #1565c0;
+  }
+
+  /* Image overlay badges */
+  .wh-cat-badge {
+    position: absolute;
+    top: 5px;
+    left: 5px;
+    background: rgba(0,0,0,0.45);
+    color: white;
+    font-size: 8px;
+    padding: 2px 6px;
+    border-radius: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    pointer-events: none;
+  }
+  .wh-low-badge {
+    position: absolute;
+    top: 5px;
+    right: 5px;
+    background: #e65100;
+    color: white;
+    font-size: 8px;
+    padding: 2px 6px;
+    border-radius: 10px;
+    pointer-events: none;
+  }
+
+  /* Quantity box */
+  .qty-box {
+    background: #f8f9fa;
+    border-radius: 6px;
+    padding: 4px 6px;
+  }
+
+  /* Card hover */
+  .warehouse-card .card {
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+  }
+  .warehouse-card .card:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 6px 18px rgba(0,0,0,0.12) !important;
+  }
+
+  /* Active tab button */
   .btn-group .btn.active {
     font-weight: bold;
     box-shadow: 0 2px 4px rgba(0,0,0,0.2);
   }
-  .btn-group .btn {
-    transition: all 0.2s ease;
+
+  /* Table summary */
+  .table td, .table th { vertical-align: middle !important; }
+
+  /* Channel revenue rows */
+  .channel-row {
+    background: #f8f9fa;
+    border-radius: 5px;
+    padding: 3px 5px;
+    border-left: 2px solid #dee2e6;
+  }
+  .channel-row.best-channel {
+    background: #e8f5e9;
+    border-left: 2px solid #28a745;
+  }
+
+  /* Animation */
+  .warehouse-card { animation: fadeIn 0.25s ease; }
+  @keyframes fadeIn {
+    from { opacity: 0; transform: scale(0.97); }
+    to   { opacity: 1; transform: scale(1); }
   }
 </style>
 @endpush
+
+@section('scripts')
+<script>
+$(document).ready(function () {
+
+  // Category tabs filter
+  $('#categoryTabs .nav-link').on('click', function (e) {
+    e.preventDefault();
+    var cat = $(this).data('category');
+    $('#categoryTabs .nav-link').removeClass('active');
+    $(this).addClass('active');
+    if (cat === 'all') {
+      $('.warehouse-card').fadeIn(200);
+    } else {
+      $('.warehouse-card').hide();
+      $('.warehouse-card[data-category="' + cat + '"]').fadeIn(200);
+    }
+  });
+
+});
+
+// All Stock / Low Stock tab toggle
+function switchTab(tab) {
+  $('#tab-all, #tab-low').removeClass('active btn-primary btn-warning');
+  $('#tab-all').addClass('btn-outline-primary');
+  $('#tab-low').addClass('btn-outline-warning');
+
+  if (tab === 'all') {
+    $('#tab-all').removeClass('btn-outline-primary').addClass('active btn-primary');
+    $('#categoryTabs .nav-link[data-category="all"]').trigger('click');
+    $('.warehouse-card').show();
+  } else {
+    $('#tab-low').removeClass('btn-outline-warning').addClass('active btn-warning');
+    // Reset category tab to all
+    $('#categoryTabs .nav-link').removeClass('active');
+    $('#categoryTabs .nav-link[data-category="all"]').addClass('active');
+    $('.warehouse-card').each(function () {
+      $(this).toggle($(this).data('is-low') === 'true');
+    });
+  }
+}
+</script>
+@endsection

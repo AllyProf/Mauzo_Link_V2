@@ -99,10 +99,14 @@
                   <tbody>
                     @foreach($product->variants as $variant)
                       @php
-                        $warehouseQty = $variant->warehouseStock->quantity ?? 0;
-                        $counterQty = $variant->counterStock->quantity ?? 0;
-                        $warehousePackages = $warehouseQty > 0 ? floor($warehouseQty / $variant->items_per_package) : 0;
-                        $counterPackages = $counterQty > 0 ? floor($counterQty / $variant->items_per_package) : 0;
+                        // Use the user-scoped stockLocations loaded by the controller
+                        $whLoc          = $variant->stockLocations->where('location', 'warehouse')->first();
+                        $ctrLoc         = $variant->stockLocations->where('location', 'counter')->first();
+                        $warehouseQty   = $whLoc->quantity ?? 0;
+                        $counterQty     = $ctrLoc->quantity ?? 0;
+                        $ipp            = $variant->items_per_package ?? 1;
+                        $warehousePackages = $warehouseQty > 0 && $ipp > 1 ? floor($warehouseQty / $ipp) : 0;
+                        $counterPackages   = $counterQty  > 0 && $ipp > 1 ? floor($counterQty  / $ipp) : 0;
                         $packagingType = strtolower($variant->packaging ?? 'packages');
                         $packagingTypeSingular = rtrim($packagingType, 's');
                         if ($packagingTypeSingular == 'boxe') {

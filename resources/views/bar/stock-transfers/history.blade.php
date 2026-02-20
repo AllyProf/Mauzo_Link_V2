@@ -87,87 +87,97 @@
                 </tr>
               </thead>
               <tbody>
+                @php $lastNum = null; @endphp
                 @foreach($transfers as $transfer)
+                  @php
+                    $isFirst = ($transfer->transfer_number !== $lastNum);
+                    $lastNum = $transfer->transfer_number;
+                  @endphp
                   <tr>
-                    <td><strong>{{ $transfer->transfer_number }}</strong></td>
+                    <td>
+                      @if($isFirst)
+                        <strong class="text-primary">{{ $transfer->transfer_number }}</strong>
+                      @else
+                        <span class="text-muted small" style="opacity: 0.6; font-size: 10px;">↳ batch item</span>
+                      @endif
+                    </td>
                     <td>
                       {{ $transfer->productVariant->product->name ?? 'N/A' }}<br>
                       <small class="text-muted">{{ $transfer->productVariant->measurement ?? '' }} - {{ $transfer->productVariant->packaging ?? '' }}</small>
                     </td>
                     <td>
                       @php
-                        $packagingType = strtolower($transfer->productVariant->packaging ?? 'packages');
-                        $packagingTypeSingular = rtrim($packagingType, 's');
-                        if ($packagingTypeSingular == 'boxe') {
-                          $packagingTypeSingular = 'box';
-                        }
-                        $packagingDisplay = $transfer->quantity_requested == 1 ? $packagingTypeSingular : $packagingType;
+                        $pkgType = strtolower($transfer->productVariant->packaging ?? 'packages');
+                        $pkgSing = rtrim($pkgType, 's');
+                        if ($pkgSing == 'boxe') $pkgSing = 'box';
+                        $pkgDisp = $transfer->quantity_requested == 1 ? $pkgSing : $pkgType;
                       @endphp
-                      {{ $transfer->quantity_requested }} {{ ucfirst($packagingDisplay) }}
-                    </td>
-                    <td>{{ number_format($transfer->total_units) }} bottle(s)</td>
-                    <td>
-                      <strong class="text-primary" id="expected-amount-{{ $transfer->id }}" data-expected="{{ $transfer->expected_amount }}">
-                        TSh {{ number_format($transfer->expected_amount, 2) }}
-                      </strong>
-                    </td>
-                    <td>
-                      <strong class="text-success" id="real-time-amount-{{ $transfer->id }}" data-real-time="{{ $transfer->real_time_amount }}">
-                        TSh {{ number_format($transfer->real_time_amount, 2) }}
-                      </strong>
-                      <br><small class="text-muted"><i class="fa fa-refresh fa-spin"></i> Live</small>
-                      <div id="real-time-breakdown-{{ $transfer->id }}">
-                        @if(isset($transfer->real_time_submitted) && isset($transfer->real_time_pending))
-                          <br><small class="text-info">
-                            <i class="fa fa-check-circle"></i> Submitted: TSh {{ number_format($transfer->real_time_submitted, 2) }}
-                          </small>
-                          @if($transfer->real_time_pending > 0)
-                            <br><small class="text-warning">
-                              <i class="fa fa-clock-o"></i> Pending: TSh {{ number_format($transfer->real_time_pending, 2) }}
-                            </small>
-                          @endif
-                        @endif
-                      </div>
+                      {{ $transfer->quantity_requested }} {{ ucfirst($pkgDisp) }}
                     </td>
                     <td>
                       @php
-                        $remaining = $transfer->expected_amount - $transfer->real_time_amount;
+                        $uLabel = strtolower($transfer->productVariant->unit ?? 'btl');
+                        if (in_array($uLabel, ['ml', 'cl', 'l'])) $uLabel = 'bottle';
+                        $uDisp = $transfer->total_units == 1 ? $uLabel : str_plural($uLabel);
                       @endphp
-                      <strong class="text-{{ $remaining > 0 ? 'warning' : 'success' }}" id="remaining-amount-{{ $transfer->id }}" data-remaining="{{ $remaining }}">
-                        TSh {{ number_format($remaining, 2) }}
-                      </strong>
+                      {{ number_format($transfer->total_units) }} {{ $uDisp }}
                     </td>
                     <td>
-                      <div class="progress" style="height: 25px;">
-                        @php
-                          $percentage = 100 - $transfer->percentage_remaining;
-                        @endphp
-                        <div class="progress-bar progress-bar-{{ $transfer->balance_status_class }} progress-bar-striped" 
-                             role="progressbar" 
-                             style="width: {{ $percentage }}%"
-                             id="progress-{{ $transfer->id }}"
-                             data-percentage="{{ $percentage }}"
-                             aria-valuenow="{{ $percentage }}" 
-                             aria-valuemin="0" 
-                             aria-valuemax="100">
-                          <span id="progress-text-{{ $transfer->id }}">{{ number_format($percentage, 1) }}%</span>
-                        </div>
-                      </div>
-                      <small class="text-muted" id="progress-detail-{{ $transfer->id }}">
-                        {{ number_format($percentage, 1) }}% of expected amount
-                      </small>
-                    </td>
-                    <td>
-                      <span class="badge badge-{{ $transfer->balance_status_class }}" id="status-badge-{{ $transfer->id }}" data-status="{{ $transfer->balance_status }}">
-                        {{ $transfer->balance_status_label }}
-                      </span>
-                      @if($transfer->balance_status === 'pending_reconciliation' && $transfer->real_time_pending > 0)
-                        <br><small class="text-muted">TSh {{ number_format($transfer->real_time_pending, 2) }} pending</small>
+                      @if($isFirst)
+                        <strong class="text-primary" id="expected-amount-{{ $transfer->id }}" data-expected="{{ $transfer->expected_amount }}">
+                          TSh {{ number_format($transfer->expected_amount) }}
+                        </strong>
+                      @else
+                        <span class="text-muted italic small">-</span>
                       @endif
                     </td>
                     <td>
-                      {{ $transfer->updated_at->format('M d, Y H:i') }}
+                      @if($isFirst)
+                        <strong class="text-success" id="real-time-amount-{{ $transfer->id }}" data-real-time="{{ $transfer->real_time_amount }}">
+                          TSh {{ number_format($transfer->real_time_amount, 2) }}
+                        </strong>
+                        <br><small class="text-muted"><i class="fa fa-refresh fa-spin"></i> Live</small>
+                        <div id="real-time-breakdown-{{ $transfer->id }}">
+                          @if(isset($transfer->real_time_submitted) && isset($transfer->real_time_pending))
+                            <br><small class="text-info"><i class="fa fa-check-circle"></i> Sub: TSh {{ number_format($transfer->real_time_submitted, 2) }}</small>
+                            @if($transfer->real_time_pending > 0)
+                              <br><small class="text-warning"><i class="fa fa-clock-o"></i> Pen: TSh {{ number_format($transfer->real_time_pending, 2) }}</small>
+                            @endif
+                          @endif
+                        </div>
+                      @else
+                        <span class="text-muted italic small">-</span>
+                      @endif
                     </td>
+                    <td>
+                      @if($isFirst)
+                        @php $remain = $transfer->expected_amount - $transfer->real_time_amount; @endphp
+                        <strong class="text-{{ $remain > 0 ? 'warning' : 'success' }}" id="remaining-amount-{{ $transfer->id }}" data-remaining="{{ $remain }}">
+                          TSh {{ number_format($remain, 2) }}
+                        </strong>
+                      @else
+                        <span class="text-muted italic small">-</span>
+                      @endif
+                    </td>
+                    <td>
+                      @if($isFirst)
+                        <div class="progress" style="height: 20px; font-size: 10px;">
+                          @php $perc = 100 - $transfer->percentage_remaining; @endphp
+                          <div class="progress-bar progress-bar-{{ $transfer->balance_status_class }} progress-bar-striped" 
+                               style="width: {{ $perc }}%" id="progress-{{ $transfer->id }}">
+                            {{ number_format($perc, 1) }}%
+                          </div>
+                        </div>
+                      @endif
+                    </td>
+                    <td>
+                      @if($isFirst)
+                        <span class="badge badge-{{ $transfer->balance_status_class }} text-uppercase" style="font-size: 10px;">
+                          {{ $transfer->balance_status_label }}
+                        </span>
+                      @endif
+                    </td>
+                    <td>{{ $transfer->updated_at->format('M d, Y H:i') }}</td>
                   </tr>
                 @endforeach
               </tbody>

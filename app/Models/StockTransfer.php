@@ -143,4 +143,42 @@ class StockTransfer extends Model
     {
         return $this->hasMany(TransferSale::class);
     }
+
+    /**
+     * Helper to calculate expected revenue and profit for this transfer.
+     * Respects Tot/Glass pricing if enabled.
+     */
+    public function calculateFinancials()
+    {
+        if (!$this->productVariant) {
+            return ['revenue' => 0, 'profit' => 0, 'selling_price' => 0, 'buying_price' => 0, 'is_tot' => false];
+        }
+
+        $variant = $this->productVariant;
+        $warehouseStock = \App\Models\StockLocation::where('user_id', $this->user_id)
+            ->where('product_variant_id', $this->product_variant_id)
+            ->where('location', 'warehouse')
+            ->first();
+
+        $buyingPrice = $warehouseStock->average_buying_price ?? $variant->buying_price_per_unit ?? 0;
+        $sellingPrice = $warehouseStock->selling_price ?? $variant->selling_price_per_unit ?? 0;
+        $totPrice = $warehouseStock->selling_price_per_tot ?? $variant->selling_price_per_tot ?? 0;
+        $canSellTots = $variant->can_sell_in_tots && ($variant->total_tots ?? 0) > 0 && $totPrice > 0;
+
+        $bottleRev = $this->total_units * $sellingPrice;
+        $glassRev = $canSellTots ? ($this->total_units * $variant->total_tots * $totPrice) : 0;
+
+        $revenue = max($bottleRev, $glassRev);
+        $isTot = ($glassRev > $bottleRev);
+
+        $profit = $revenue - ($this->total_units * $buyingPrice);
+
+        return [
+            'revenue' => $revenue,
+            'profit' => $profit,
+            'selling_price' => $sellingPrice,
+            'buying_price' => $buyingPrice,
+            'is_tot' => $isTot
+        ];
+    }
 }

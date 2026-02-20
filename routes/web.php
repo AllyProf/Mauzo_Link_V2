@@ -159,10 +159,12 @@ Route::middleware('allow.staff')->group(function () {
         // Stock Receipts
         Route::resource('stock-receipts', \App\Http\Controllers\Bar\StockReceiptController::class)->only(['index', 'create', 'store', 'show', 'edit', 'update', 'destroy']);
         Route::get('stock-receipts/print-batch/{receiptNumber}', [\App\Http\Controllers\Bar\StockReceiptController::class, 'printBatch'])->name('stock-receipts.print-batch');
+        Route::delete('stock-receipts/delete-batch/{receiptNumber}', [\App\Http\Controllers\Bar\StockReceiptController::class, 'deleteBatch'])->name('stock-receipts.delete-batch');
         // Stock Transfers - Specific routes must come before resource route
         Route::get('stock-transfers/available', [\App\Http\Controllers\Bar\StockTransferController::class, 'available'])->name('stock-transfers.available');
         Route::get('stock-transfers/history', [\App\Http\Controllers\Bar\StockTransferController::class, 'history'])->name('stock-transfers.history');
         Route::post('stock-transfers/real-time-profit', [\App\Http\Controllers\Bar\StockTransferController::class, 'getRealTimeProfit'])->name('stock-transfers.real-time-profit');
+        Route::post('stock-transfers/batch-store', [\App\Http\Controllers\Bar\StockTransferController::class, 'batchStore'])->name('stock-transfers.batch-store');
         Route::resource('stock-transfers', \App\Http\Controllers\Bar\StockTransferController::class)->only(['index', 'create', 'store', 'show']);
         Route::post('stock-transfers/{stockTransfer}/approve', [\App\Http\Controllers\Bar\StockTransferController::class, 'approve'])->name('stock-transfers.approve');
         Route::post('stock-transfers/{stockTransfer}/reject', [\App\Http\Controllers\Bar\StockTransferController::class, 'reject'])->name('stock-transfers.reject');

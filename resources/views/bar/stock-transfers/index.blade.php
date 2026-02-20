@@ -61,96 +61,113 @@
                 </tr>
               </thead>
               <tbody>
+                @php $lastNum = null; @endphp
                 @foreach($transfers as $transfer)
+                  @php
+                    $isNewBatch = ($transfer->transfer_number !== $lastNum);
+                    $lastNum = $transfer->transfer_number;
+                  @endphp
                   <tr>
-                    <td><strong>{{ $transfer->transfer_number }}</strong></td>
                     <td>
-                      {{ $transfer->productVariant->product->name ?? 'N/A' }}<br>
+                      @if($isNewBatch)
+                        <strong class="text-primary">{{ $transfer->transfer_number }}</strong>
+                      @else
+                        <span class="text-muted small" style="opacity: 0.6; font-size: 10px;">↳ batch item</span>
+                      @endif
+                    </td>
+                    <td>
+                      @php
+                        $prodName = $transfer->productVariant->product->name ?? 'N/A';
+                        $varName = $transfer->productVariant->name ?? '';
+                        $displayName = $prodName;
+                        if ($varName && $varName !== $prodName) {
+                            $displayName = $prodName . ' (' . $varName . ')';
+                        }
+                      @endphp
+                      {{ $displayName }}<br>
                       <small class="text-muted">{{ $transfer->productVariant->measurement ?? '' }} - {{ $transfer->productVariant->packaging ?? '' }}</small>
                     </td>
                     <td>
                       @php
-                        $packagingType = strtolower($transfer->productVariant->packaging ?? 'packages');
-                        $packagingTypeSingular = rtrim($packagingType, 's');
-                        if ($packagingTypeSingular == 'boxe') {
-                          $packagingTypeSingular = 'box';
-                        }
-                        $packagingDisplay = $transfer->quantity_requested == 1 ? $packagingTypeSingular : $packagingType;
+                        $pkg = strtolower($transfer->productVariant->packaging ?? 'packages');
+                        $pkgSing = rtrim($pkg, 's');
+                        if ($pkgSing == 'boxe') $pkgSing = 'box';
+                        $pkgDisp = $transfer->quantity_requested == 1 ? $pkgSing : $pkg;
                       @endphp
-                      {{ $transfer->quantity_requested }} {{ ucfirst($packagingDisplay) }}
+                      {{ $transfer->quantity_requested }} {{ ucfirst($pkgDisp) }}
                     </td>
-                    <td>{{ number_format($transfer->total_units) }} bottle(s)</td>
+                    <td>
+                      @php
+                        $unit = strtolower($transfer->productVariant->unit ?? 'btl');
+                        if (in_array($unit, ['ml', 'cl', 'l'])) $unit = 'bottle';
+                        $unitDisp = $transfer->total_units == 1 ? $unit : Str::plural($unit);
+                      @endphp
+                      {{ number_format($transfer->total_units) }} {{ $unitDisp }}
+                    </td>
                     <td>
                       @if(isset($transfer->expected_profit) && $transfer->expected_profit > 0)
-                        <strong class="text-primary">TSh {{ number_format($transfer->expected_profit, 2) }}</strong>
-                        @if($transfer->status === 'completed')
-                          <br><small class="text-muted">When all sold</small>
+                        <strong class="text-primary">TSh {{ number_format($transfer->expected_profit) }}</strong>
+                        @if($transfer->is_tot_calculation)
+                          <br><span class="badge badge-warning smallest" style="font-size: 8px;">PROFIT BY GLASS</span>
                         @endif
                       @else
                         <span class="text-muted">-</span>
                       @endif
                     </td>
                     <td>
-                      @if($transfer->status === 'pending')
-                        <span class="badge badge-warning">Pending</span>
-                      @elseif($transfer->status === 'approved')
-                        <span class="badge badge-success">Approved</span>
-                      @elseif($transfer->status === 'prepared')
-                        <span class="badge badge-info">Prepared</span>
-                      @elseif($transfer->status === 'rejected')
-                        <span class="badge badge-danger">Rejected</span>
-                      @elseif($transfer->status === 'completed')
-                        <span class="badge badge-primary">Completed</span>
+                      @if($isNewBatch)
+                        <span class="badge badge-{{ $transfer->status === 'pending' ? 'warning' : ($transfer->status === 'approved' ? 'success' : ($transfer->status === 'prepared' ? 'info' : ($transfer->status === 'completed' ? 'primary' : 'secondary'))) }} text-uppercase">
+                          {{ $transfer->status }}
+                        </span>
                       @else
-                        <span class="badge badge-info">{{ ucfirst($transfer->status) }}</span>
+                        <small class="text-muted italic" style="font-size: 10px;">{{ $transfer->status }}</small>
                       @endif
                     </td>
                     <td>{{ $transfer->requestedBy->name ?? 'N/A' }}</td>
                     <td>{{ $transfer->created_at->format('M d, Y H:i') }}</td>
+                    <td>{{ $transfer->approved_at ? $transfer->approved_at->format('M d, Y H:i') : '-' }}</td>
                     <td>
-                      @if($transfer->approved_at)
-                        {{ $transfer->approved_at->format('M d, Y H:i') }}
-                      @else
-                        <span class="text-muted">-</span>
-                      @endif
-                    </td>
-                    <td>
-                      @php
-                        $canApprove = false;
-                        if (session('is_staff')) {
-                          $staff = \App\Models\Staff::find(session('staff_id'));
-                          if ($staff && $staff->role) {
-                            $canApprove = $staff->role->hasPermission('stock_transfer', 'edit');
-                            // Allow stock keeper role even without explicit permission
-                            if (!$canApprove) {
-                              $roleName = strtolower(trim($staff->role->name ?? ''));
-                              if (in_array($roleName, ['stock keeper', 'stockkeeper'])) {
-                                $canApprove = true;
+                      @if($isNewBatch)
+                        @php
+                          $canEdit = false;
+                          if (session('is_staff')) {
+                            $staff = \App\Models\Staff::find(session('staff_id'));
+                            if ($staff && $staff->role) {
+                              $canEdit = $staff->role->hasPermission('stock_transfer', 'edit');
+                              if (!$canEdit) {
+                                $roleName = strtolower(trim($staff->role->name ?? ''));
+                                if (in_array($roleName, ['stock keeper', 'stockkeeper'])) $canEdit = true;
                               }
                             }
+                          } else {
+                            $user = Auth::user();
+                            $canEdit = $user && ($user->hasPermission('stock_transfer', 'edit') || $user->hasRole('owner'));
                           }
-                        } else {
-                          $user = Auth::user();
-                          $canApprove = $user && ($user->hasPermission('stock_transfer', 'edit') || $user->hasRole('owner'));
-                        }
-                      @endphp
-                      <div class="btn-group" role="group">
-                        <button type="button" class="btn btn-info btn-sm view-transfer-btn" data-transfer-id="{{ $transfer->id }}" title="View Details">
-                          <i class="fa fa-eye"></i>
-                        </button>
-                        @if($transfer->status === 'pending' && $canApprove)
-                          <button type="button" class="btn btn-success btn-sm approve-btn" data-transfer-id="{{ $transfer->id }}" data-transfer-number="{{ $transfer->transfer_number }}" title="Approve Transfer">
-                            <i class="fa fa-check"></i>
+                        @endphp
+                        <div class="btn-group" role="group">
+                          <button type="button" class="btn btn-primary btn-sm view-transfer-btn" data-transfer-id="{{ $transfer->id }}" title="View Batch Details">
+                             <i class="fa fa-eye"></i> View Batch
                           </button>
-                          <button type="button" class="btn btn-danger btn-sm reject-btn" data-transfer-id="{{ $transfer->id }}" data-transfer-number="{{ $transfer->transfer_number }}" title="Reject Transfer">
-                            <i class="fa fa-times-circle"></i>
-                          </button>
-                        @elseif($transfer->status === 'approved')
-                          <button type="button" class="btn btn-success btn-sm mark-moved-btn" data-transfer-id="{{ $transfer->id }}" title="Transfer to Counter">
-                            <i class="fa fa-truck"></i>
-                          </button>
-                        @endif
-                      </div>
+                          @if($canEdit)
+                            @if($transfer->status === 'pending')
+                              <button type="button" class="btn btn-success btn-sm approve-btn" data-transfer-id="{{ $transfer->id }}" data-transfer-number="{{ $transfer->transfer_number }}" title="Approve Batch">
+                                <i class="fa fa-check"></i>
+                              </button>
+                              <button type="button" class="btn btn-danger btn-sm reject-btn" data-transfer-id="{{ $transfer->id }}" data-transfer-number="{{ $transfer->transfer_number }}" title="Reject Batch">
+                                <i class="fa fa-times-circle"></i>
+                              </button>
+                            @elseif($transfer->status === 'approved')
+                              <button type="button" class="btn btn-info btn-sm prepare-btn" data-transfer-id="{{ $transfer->id }}" data-transfer-number="{{ $transfer->transfer_number }}" title="Mark Batch as Prepared">
+                                <i class="fa fa-cubes"></i>
+                              </button>
+                            @elseif($transfer->status === 'prepared')
+                              <button type="button" class="btn btn-success btn-sm mark-moved-btn" data-transfer-id="{{ $transfer->id }}" title="Transfer Batch to Counter">
+                                <i class="fa fa-truck"></i>
+                              </button>
+                            @endif
+                          @endif
+                        </div>
+                      @endif
                     </td>
                   </tr>
                 @endforeach
@@ -265,6 +282,33 @@
             'name': '_method',
             'value': 'POST'
           }));
+          $('body').append(form);
+          form.submit();
+        }
+      });
+    });
+
+    // Mark as Prepared handler
+    $(document).on('click', '.prepare-btn', function(e) {
+      e.preventDefault();
+      const transferId = $(this).data('transfer-id');
+      const transferNumber = $(this).data('transfer-number');
+      
+      Swal.fire({
+        title: 'Mark as Prepared?',
+        html: `<p>Batch <strong>${transferNumber}</strong> items are ready for transfer.</p>`,
+        icon: 'info',
+        showCancelButton: true,
+        confirmButtonColor: '#17a2b8',
+        confirmButtonText: 'Yes, Prepared',
+        cancelButtonText: 'Cancel'
+      }).then((result) => {
+        if (result.isConfirmed) {
+          const form = $('<form>', {
+            'method': 'POST',
+            'action': `/bar/stock-transfers/${transferId}/mark-as-prepared`
+          });
+          form.append($('<input>', { 'type': 'hidden', 'name': '_token', 'value': '{{ csrf_token() }}' }));
           $('body').append(form);
           form.submit();
         }
@@ -418,118 +462,89 @@
         },
         success: function(response) {
           const transfer = response.transfer;
-          const packagingDisplay = response.packagingDisplay;
           
+          // Group batch items info
+          let batchItemsHtml = '';
+          let totalBatchRevenue = 0;
+          let totalBatchProfit = 0;
+
+          if (response.batch_items) {
+            response.batch_items.forEach(item => {
+              totalBatchRevenue += item.expected_revenue;
+              totalBatchProfit += item.expected_profit;
+              
+              batchItemsHtml += `
+                <div class="p-2 border rounded mb-2 bg-light">
+                   <div class="d-flex justify-content-between font-weight-bold">
+                      <span>${item.product_name} (${item.variant_measurement})</span>
+                      <span class="text-primary">TSh ${item.expected_revenue.toLocaleString()}</span>
+                   </div>
+                   <div class="d-flex justify-content-between smallest text-muted">
+                      <span>Qty: ${item.quantity_requested} ${item.packaging_display} (${item.total_units} ${item.unit_display})</span>
+                      <span>Profit: TSh ${item.expected_profit.toLocaleString()} ${item.is_tot ? '<b class="text-warning">[GLASS]</b>' : ''}</span>
+                   </div>
+                </div>
+              `;
+            });
+          }
+
           // Determine status badge
           let statusBadge = '';
-          if (transfer.status === 'pending') {
-            statusBadge = '<span class="badge badge-warning">Pending</span>';
-          } else if (transfer.status === 'approved') {
-            statusBadge = '<span class="badge badge-success">Approved</span>';
-          } else if (transfer.status === 'rejected') {
-            statusBadge = '<span class="badge badge-danger">Rejected</span>';
-          } else if (transfer.status === 'prepared') {
-            statusBadge = '<span class="badge badge-info">Prepared</span>';
-          } else if (transfer.status === 'completed') {
-            statusBadge = '<span class="badge badge-primary">Completed</span>';
-          } else {
-            statusBadge = '<span class="badge badge-secondary">' + (transfer.status ? transfer.status.charAt(0).toUpperCase() + transfer.status.slice(1) : 'N/A') + '</span>';
-          }
+          const status = transfer.status;
+          if (status === 'pending') statusBadge = '<span class="badge badge-warning">Pending</span>';
+          else if (status === 'approved') statusBadge = '<span class="badge badge-success">Approved</span>';
+          else if (status === 'rejected') statusBadge = '<span class="badge badge-danger">Rejected</span>';
+          else if (status === 'prepared') statusBadge = '<span class="badge badge-info">Prepared</span>';
+          else if (status === 'completed') statusBadge = '<span class="badge badge-primary">Completed</span>';
           
           // Build HTML content
           let html = `
             <div class="row">
-              <div class="col-md-6">
-                <h5><i class="fa fa-info-circle"></i> Transfer Information</h5>
-                <table class="table table-borderless table-sm">
-                  <tr>
-                    <th width="40%">Transfer Number:</th>
-                    <td><strong>${transfer.transfer_number || 'N/A'}</strong></td>
-                  </tr>
-                  <tr>
-                    <th>Status:</th>
-                    <td>${statusBadge}</td>
-                  </tr>
-                  <tr>
-                    <th>Product:</th>
-                    <td>
-                      <strong>${transfer.product_variant?.product?.name || 'N/A'}</strong><br>
-                      <small class="text-muted">
-                        ${transfer.product_variant?.measurement || ''} - ${transfer.product_variant?.packaging || ''}
-                      </small>
-                    </td>
-                  </tr>
-                  <tr>
-                    <th>Quantity Requested:</th>
-                    <td>
-                      ${transfer.quantity_requested || 0} ${packagingDisplay || 'packages'}<br>
-                      <small class="text-muted">(${parseInt(transfer.total_units || 0).toLocaleString()} total bottle(s))</small>
-                    </td>
-                  </tr>
-                  <tr>
-                    <th>Requested By:</th>
-                    <td>${transfer.requested_by_user?.name || 'N/A'}</td>
-                  </tr>
-                  <tr>
-                    <th>Requested Date:</th>
-                    <td>${transfer.created_at ? new Date(transfer.created_at).toLocaleString() : 'N/A'}</td>
-                  </tr>
-          `;
-          
-          if (transfer.approved_by) {
-            html += `
-                  <tr>
-                    <th>Approved/Rejected By:</th>
-                    <td>${transfer.approved_by_user?.name || 'N/A'}</td>
-                  </tr>
-                  <tr>
-                    <th>Approved/Rejected Date:</th>
-                    <td>${transfer.approved_at ? new Date(transfer.approved_at).toLocaleString() : 'N/A'}</td>
-                  </tr>
-            `;
-          }
-          
-          if (transfer.rejection_reason) {
-            html += `
-                  <tr>
-                    <th>Rejection Reason:</th>
-                    <td><span class="text-danger">${transfer.rejection_reason}</span></td>
-                  </tr>
-            `;
-          }
-          
-          html += `
-                </table>
+              <div class="col-md-7 border-right">
+                <h6 class="font-weight-bold text-uppercase smallest text-muted mb-3"><i class="fa fa-list"></i> Itemized Batch Details</h6>
+                <div style="max-height: 400px; overflow-y: auto; padding-right: 10px;">
+                   ${batchItemsHtml}
+                </div>
               </div>
-              <div class="col-md-6">
-                <h5><i class="fa fa-calculator"></i> Financial Information</h5>
-                <table class="table table-borderless table-sm">
-                  <tr>
-                    <th width="40%">Expected Profit:</th>
-                    <td><strong class="text-primary">TSh ${parseFloat(transfer.expected_profit || 0).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</strong></td>
-                  </tr>
-          `;
-          
-          if (response.expectedRevenue) {
-            html += `
-                  <tr>
-                    <th>Expected Revenue:</th>
-                    <td><strong class="text-success">TSh ${parseFloat(response.expectedRevenue).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</strong></td>
-                  </tr>
-            `;
-          }
-          
-          if (transfer.notes) {
-            html += `
-                  <tr>
-                    <th>Notes:</th>
-                    <td>${transfer.notes}</td>
-                  </tr>
-            `;
-          }
-          
-          html += `
-                </table>
+              <div class="col-md-5">
+                <h6 class="font-weight-bold text-uppercase smallest text-muted mb-3"><i class="fa fa-info-circle"></i> Batch Summary</h6>
+                <div class="card bg-light border-0 mb-3">
+                  <div class="card-body p-3">
+                    <div class="d-flex justify-content-between mb-2">
+                      <span class="text-muted">Batch #:</span>
+                      <span class="font-weight-bold">${transfer.transfer_number}</span>
+                    </div>
+                    <div class="d-flex justify-content-between mb-2">
+                        <span class="text-muted">Status:</span>
+                        <span>${statusBadge}</span>
+                    </div>
+                    <div class="d-flex justify-content-between mb-2">
+                        <span class="text-muted">Requested By:</span>
+                        <span class="font-weight-bold text-dark">${transfer.requested_by_name}</span>
+                    </div>
+                     <div class="d-flex justify-content-between">
+                        <span class="text-muted">Date:</span>
+                        <small class="text-dark">${transfer.created_at}</small>
+                    </div>
+                  </div>
+                </div>
+
+                <h6 class="font-weight-bold text-uppercase smallest text-muted mb-2"><i class="fa fa-calculator"></i> Batch Financials</h6>
+                <div class="p-3 border rounded">
+                   <div class="d-flex justify-content-between mb-2">
+                      <span class="text-muted">Total Revenue:</span>
+                      <span class="text-success font-weight-bold">TSh ${totalBatchRevenue.toLocaleString()}</span>
+                   </div>
+                   <div class="d-flex justify-content-between">
+                      <span class="text-muted">Total Profit:</span>
+                      <span class="text-primary font-weight-bold">TSh ${totalBatchProfit.toLocaleString()}</span>
+                   </div>
+                </div>
+                
+                ${transfer.notes ? `
+                <div class="mt-3 p-2 bg-light rounded small">
+                  <strong>Notes:</strong><br>${transfer.notes}
+                </div>` : ''}
               </div>
             </div>
           `;

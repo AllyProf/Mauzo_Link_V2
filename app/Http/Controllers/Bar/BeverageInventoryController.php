@@ -237,17 +237,9 @@ class BeverageInventoryController extends Controller
         }
 
         $ownerId = $this->getOwnerId();
-        
-        // Get all beverage products with warehouse stock
+
+        // Get ALL products (not just beverages) that have warehouse stock
         $products = Product::where('user_id', $ownerId)
-            ->where(function($query) {
-                $query->where('category', 'like', '%beverage%')
-                      ->orWhere('category', 'like', '%drink%')
-                      ->orWhere('category', 'like', '%alcohol%')
-                      ->orWhere('category', 'like', '%beer%')
-                      ->orWhere('category', 'like', '%wine%')
-                      ->orWhere('category', 'like', '%spirit%');
-            })
             ->with(['variants.stockLocations' => function($query) use ($ownerId) {
                 $query->where('user_id', $ownerId)
                       ->where('location', 'warehouse');
@@ -265,63 +257,107 @@ class BeverageInventoryController extends Controller
             $productHasWarehouseStock = false;
             $productWarehouseTotal = 0;
             $productWarehouseValue = 0;
-            
+
             foreach ($product->variants as $variant) {
                 $warehouseStockLocation = $variant->stockLocations->where('location', 'warehouse')->first();
-                
+
                 if ($warehouseStockLocation && $warehouseStockLocation->quantity > 0) {
                     $productHasWarehouseStock = true;
-                    $quantity = $warehouseStockLocation->quantity;
-                    $value = $quantity * ($warehouseStockLocation->average_buying_price ?? $variant->buying_price_per_unit ?? 0);
-                    
+                    $quantity     = $warehouseStockLocation->quantity;
+                    $buyingPrice  = $warehouseStockLocation->average_buying_price ?? $variant->buying_price_per_unit ?? 0;
+                    $sellingPrice = $warehouseStockLocation->selling_price ?? $variant->selling_price_per_unit ?? 0;
+                    $totPrice     = $warehouseStockLocation->selling_price_per_tot ?? $variant->selling_price_per_tot ?? 0;
+                    $totalTots    = $variant->total_tots ?? 0;
+                    $canSellTots  = $variant->can_sell_in_tots && $totalTots > 0 && $totPrice > 0;
+                    $value        = $quantity * $buyingPrice; // total cost
+
+                    // Bottle channel revenue
+                    $bottleRevenue = $quantity * $sellingPrice;
+                    $bottleProfit  = $bottleRevenue - $value;
+
+                    // Glass/Tot channel revenue
+                    $totRevenue = $canSellTots ? ($quantity * $totalTots * $totPrice) : 0;
+                    $totProfit  = $canSellTots ? ($totRevenue - $value) : 0;
+
+                    // Best channel = whichever yields higher revenue
+                    $bestRevenue = max($bottleRevenue, $totRevenue);
+                    $bestProfit  = $bestRevenue - $value;
+                    $bestChannel = ($canSellTots && $totRevenue > $bottleRevenue) ? 'tot' : 'bottle';
+
                     $productWarehouseTotal += $quantity;
                     $productWarehouseValue += $value;
-                    $totalWarehouseStock += $quantity;
-                    $totalWarehouseValue += $value;
-                    
-                    $buyingPrice = $warehouseStockLocation->average_buying_price ?? $variant->buying_price_per_unit ?? 0;
-                    $sellingPrice = $warehouseStockLocation->selling_price ?? $variant->selling_price_per_unit ?? 0;
-                    $totalCostSold = $quantity * $sellingPrice;
-                    $expectedProfit = $totalCostSold - $value;
-                    
-                    // Get packaging type (e.g., Crates, Cartons, Boxes)
-                    $packagingType = $variant->packaging ?? 'Packages';
-                    $packagingCount = floor($quantity / $variant->items_per_package);
-                    
+                    $totalWarehouseStock   += $quantity;
+                    $totalWarehouseValue   += $value;
+
+                    $packagingType  = $variant->packaging ?? 'Packages';
+                    $ipp            = $variant->items_per_package ?? 1;
+                    $packagingCount = $ipp > 1 ? floor($quantity / $ipp) : 0;
+                    $extraBottles   = $ipp > 1 ? ($quantity % $ipp) : $quantity;
+
+                    // Build display title: "Wine Collection (Dodoma Red Dry)" or just product name
+                    $variantName  = $variant->name ?? '';
+                    $displayTitle = $product->name;
+                    if ($variantName && $variantName !== $product->name) {
+                        $displayTitle = $product->name . ' (' . $variantName . ')';
+                    }
+
                     $warehouseStock->push([
-                        'product_id' => $product->id,
-                        'product_name' => $product->name,
-                        'product_image' => $product->image,
-                        'variant_id' => $variant->id,
-                        'variant' => $variant->measurement . ' - ' . $variant->packaging,
-                        'quantity' => $quantity,
-                        'value' => $value,
-                        'buying_price' => $buyingPrice,
-                        'selling_price' => $sellingPrice,
-                        'total_cost_sold' => $totalCostSold,
-                        'expected_profit' => $expectedProfit,
-                        'items_per_package' => $variant->items_per_package,
-                        'packages' => $packagingCount,
-                        'packaging_type' => $packagingType,
-                        'is_low_stock' => $quantity < 10,
+                        'product_id'            => $product->id,
+                        'product_name'          => $product->name,
+                        'variant_name'          => $variantName,
+                        'display_title'         => $displayTitle,
+                        'product_image'         => $product->image,
+                        'category'              => $product->category ?? 'General',
+                        'variant_id'            => $variant->id,
+                        'variant'               => $variant->measurement . ' - ' . $variant->packaging,
+                        'measurement'           => $variant->measurement,
+                        'quantity'              => $quantity,
+                        'value'                 => $value,                    // total cost
+                        'buying_price'          => $buyingPrice,
+                        'selling_price'         => $sellingPrice,
+                        'selling_price_per_tot' => $totPrice,
+                        'can_sell_in_tots'      => $canSellTots,
+                        'total_tots_per_bottle' => $totalTots,
+                        // Bottle channel
+                        'bottle_revenue'        => $bottleRevenue,
+                        'bottle_profit'         => $bottleProfit,
+                        // Tot/Glass channel
+                        'tot_revenue'           => $totRevenue,
+                        'tot_profit'            => $totProfit,
+                        // Best channel (maximum revenue)
+                        'best_revenue'          => $bestRevenue,
+                        'best_profit'           => $bestProfit,
+                        'best_channel'          => $bestChannel,
+                        // Legacy field for backward compat
+                        'total_cost_sold'       => $bestRevenue,
+                        'expected_profit'       => $bestProfit,
+                        'items_per_package'     => $ipp,
+                        'packages'              => $packagingCount,
+                        'extra_bottles'         => $extraBottles,
+                        'packaging_type'        => $packagingType,
+                        'is_low_stock'          => $quantity < 10,
                     ]);
                 }
             }
-            
+
             if ($productHasWarehouseStock) {
                 $productsWithWarehouseStock->push([
-                    'product' => $product,
+                    'product'        => $product,
                     'total_quantity' => $productWarehouseTotal,
-                    'total_value' => $productWarehouseValue,
+                    'total_value'    => $productWarehouseValue,
                 ]);
             }
         }
+
+        // Unique categories for tabs
+        $categories = $warehouseStock->pluck('category')->unique()->sort()->values();
 
         return view('bar.beverage-inventory.warehouse-stock', compact(
             'warehouseStock',
             'productsWithWarehouseStock',
             'totalWarehouseStock',
-            'totalWarehouseValue'
+            'totalWarehouseValue',
+            'categories'
         ));
     }
     

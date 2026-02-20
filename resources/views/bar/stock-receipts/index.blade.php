@@ -40,36 +40,42 @@
             <table class="table table-hover table-bordered" id="receiptsTable">
               <thead>
                 <tr>
-                  <th>Receipt #</th>
-                  <th>Product</th>
+                  <th>Batch #</th>
                   <th>Supplier</th>
-                  <th>Quantity</th>
-                  <th>Total Bottles</th>
-                  <th>Buying Cost</th>
-                  <th>Total Profit</th>
-                  <th>Received Date</th>
-                  <th>Actions</th>
+                  <th class="text-center">Items</th>
+                  <th class="text-center">Tot Received</th>
+                  <th class="text-center">Tot Btls/Pcs</th>
+                  <th class="text-right">Total Cost</th>
+                  <th class="text-right">Exp. Profit</th>
+                  <th class="text-center">Received Date</th>
+                  <th class="text-center">Actions</th>
                 </tr>
               </thead>
               <tbody>
                 @foreach($receipts as $receipt)
                   <tr>
-                    <td><strong>{{ $receipt->receipt_number }}</strong></td>
                     <td>
-                      {{ $receipt->productVariant->product->name ?? 'N/A' }}<br>
-                      <small class="text-muted">{{ $receipt->productVariant->measurement ?? '' }} - {{ $receipt->productVariant->packaging ?? '' }}</small>
+                        <span class="badge badge-dark px-3 py-2" style="font-size: 0.9rem;">
+                            {{ $receipt->receipt_number }}
+                        </span>
                     </td>
-                    <td>{{ $receipt->supplier->company_name ?? 'N/A' }}</td>
-                    <td>{{ $receipt->quantity_received }} {{ $receipt->productVariant->packaging ?? 'packages' }}</td>
-                    <td>{{ $receipt->total_units }} bottle(s)</td>
-                    <td>TSh {{ number_format($receipt->total_buying_cost, 2) }}</td>
                     <td>
-                      <span class="badge badge-success">
-                        TSh {{ number_format($receipt->total_profit, 2) }}
-                      </span>
+                      <div class="font-weight-bold text-dark">{{ $receipt->supplier->company_name ?? 'N/A' }}</div>
+                      <small class="text-muted">{{ $receipt->supplier->phone ?? '' }}</small>
                     </td>
-                    <td>{{ $receipt->received_date->format('M d, Y') }}</td>
-                    <td>
+                    <td class="text-center">
+                        <span class="badge badge-pill badge-light border px-2">
+                            {{ $receipt->item_count }} types
+                        </span>
+                    </td>
+                    <td class="text-center">{{ number_format($receipt->total_packages_sum, 1) }}</td>
+                    <td class="text-center font-weight-bold">{{ number_format($receipt->total_units_sum) }}</td>
+                    <td class="text-right">TSh {{ number_format($receipt->total_cost_sum) }}</td>
+                    <td class="text-right font-weight-bold text-success">
+                        TSh {{ number_format($receipt->total_profit_sum) }}
+                    </td>
+                    <td class="text-center">{{ $receipt->received_date->format('d M, Y') }}</td>
+                    <td class="text-center">
                       @php
                         $canView = false;
                         $canEdit = false;
@@ -80,19 +86,6 @@
                             $canView = $staff->role->hasPermission('stock_receipt', 'view');
                             $canEdit = $staff->role->hasPermission('stock_receipt', 'edit');
                             $canDelete = $staff->role->hasPermission('stock_receipt', 'delete');
-                            // Allow edit/delete for stock keeper role
-                            if (!$canEdit) {
-                              $roleName = strtolower(trim($staff->role->name ?? ''));
-                              if (in_array($roleName, ['stock keeper', 'stockkeeper'])) {
-                                $canEdit = true;
-                              }
-                            }
-                            if (!$canDelete) {
-                              $roleName = strtolower(trim($staff->role->name ?? ''));
-                              if (in_array($roleName, ['stock keeper', 'stockkeeper'])) {
-                                $canDelete = true;
-                              }
-                            }
                           }
                         } else {
                           $user = \Illuminate\Support\Facades\Auth::user();
@@ -103,26 +96,27 @@
                           }
                         }
                       @endphp
-                      @if($canView)
-                        <a href="{{ route('bar.stock-receipts.show', $receipt) }}" class="btn btn-info btn-sm">
-                          <i class="fa fa-eye"></i> View
-                        </a>
-                      @endif
-                      @if($canEdit)
-                        <a href="{{ route('bar.stock-receipts.edit', $receipt) }}" class="btn btn-warning btn-sm">
-                          <i class="fa fa-pencil"></i> Edit
-                        </a>
-                      @endif
+                      
+                      <div class="btn-group btn-group-sm">
+                        @if($canView)
+                            <a href="{{ route('bar.stock-receipts.print-batch', $receipt->receipt_number) }}" class="btn btn-primary" title="Print Receipt" target="_blank">
+                                <i class="fa fa-print"></i>
+                            </a>
+                            <a href="{{ route('bar.stock-receipts.show', $receipt->receipt_number) }}" class="btn btn-info" title="View Details">
+                                <i class="fa fa-eye"></i>
+                            </a>
+                        @endif
+                        
+                        @if($canDelete)
+                            <button type="button" class="btn btn-danger delete-receipt-btn" 
+                                    data-receipt-number="{{ $receipt->receipt_number }}">
+                                <i class="fa fa-trash"></i>
+                            </button>
+                        @endif
+                      </div>
+
                       @if($canDelete)
-                        <button type="button" class="btn btn-danger btn-sm delete-receipt-btn" data-receipt-id="{{ $receipt->id }}" data-receipt-number="{{ $receipt->receipt_number }}">
-                          <i class="fa fa-trash"></i> Delete
-                        </button>
-                      @endif
-                      @if(!$canView && !$canEdit && !$canDelete)
-                        <span class="text-muted">No actions available</span>
-                      @endif
-                      @if($canDelete)
-                        <form id="delete-form-{{ $receipt->id }}" action="{{ route('bar.stock-receipts.destroy', $receipt) }}" method="POST" style="display: none;">
+                        <form id="delete-form-{{ $receipt->receipt_number }}" action="{{ url('bar/stock-receipts/delete-batch/'.$receipt->receipt_number) }}" method="POST" style="display: none;">
                           @csrf
                           @method('DELETE')
                         </form>
@@ -156,26 +150,25 @@
       e.preventDefault();
       e.stopPropagation();
       
-      const receiptId = $(this).data('receipt-id');
-      const receiptNumber = $(this).data('receipt-number') || 'this receipt';
-      const form = $('#delete-form-' + receiptId);
+      const receiptNumber = $(this).data('receipt-number');
+      const form = $('#delete-form-' + receiptNumber);
       
       Swal.fire({
-        title: 'Are you sure?',
-        html: `You are about to delete stock receipt <strong>${receiptNumber}</strong>.<br><br>This will also adjust warehouse stock. This action cannot be undone!`,
+        title: 'Delete Stock Receipt?',
+        html: `You are about to delete batch <strong>${receiptNumber}</strong>.<br><br><span class="text-danger">This will automatically reverse the stock from your Warehouse.</span>`,
         icon: 'warning',
         showCancelButton: true,
         confirmButtonColor: '#d33',
         cancelButtonColor: '#3085d6',
-        confirmButtonText: 'Yes, delete it!',
-        cancelButtonText: 'Cancel',
+        confirmButtonText: '<i class="fa fa-trash"></i> Yes, delete it!',
+        cancelButtonText: 'No, cancel',
         reverseButtons: true
       }).then((result) => {
         if (result.isConfirmed) {
           // Show loading state
           Swal.fire({
-            title: 'Deleting...',
-            text: 'Please wait while we delete the receipt.',
+            title: 'Processing...',
+            text: 'Reversing stock and deleting records...',
             allowOutsideClick: false,
             allowEscapeKey: false,
             showConfirmButton: false,

@@ -240,7 +240,7 @@ class ProductController extends Controller
     public function show(Product $product)
     {
         $ownerId = $this->getOwnerId();
-        
+
         // Check ownership
         if ($product->user_id !== $ownerId) {
             abort(403, 'You do not have access to this product.');
@@ -251,46 +251,51 @@ class ProductController extends Controller
             abort(403, 'You do not have permission to view products.');
         }
 
-        $product->load(['supplier', 'variants.stockLocations']);
+        // Load with user-scoped stock locations so warehouse/counter qtys are correct
+        $product->load([
+            'supplier',
+            'variants.stockLocations' => function ($query) use ($ownerId) {
+                $query->where('user_id', $ownerId);
+            },
+        ]);
 
         // If AJAX request, return JSON
         if (request()->ajax() || request()->wantsJson()) {
-            // Format variants with stock information
-            $variants = $product->variants->map(function($variant) use ($ownerId) {
+            $variants = $product->variants->map(function ($variant) {
                 $warehouseStock = $variant->stockLocations->where('location', 'warehouse')->first();
-                $counterStock = $variant->stockLocations->where('location', 'counter')->first();
+                $counterStock   = $variant->stockLocations->where('location', 'counter')->first();
                 return [
-                    'id' => $variant->id,
-                    'name' => $variant->name,
-                    'image' => $variant->image ? asset('storage/' . $variant->image) : null,
-                    'measurement' => $variant->measurement,
-                    'unit' => $variant->unit,
-                    'packaging' => $variant->packaging,
-                    'items_per_package' => $variant->items_per_package,
-                    'selling_type' => $variant->selling_type,
-                    'can_sell_in_tots' => $variant->can_sell_in_tots,
-                    'total_tots' => $variant->total_tots,
+                    'id'                    => $variant->id,
+                    'name'                  => $variant->name,
+                    'image'                 => $variant->image ? asset('storage/' . $variant->image) : null,
+                    'measurement'           => $variant->measurement,
+                    'unit'                  => $variant->unit,
+                    'packaging'             => $variant->packaging,
+                    'items_per_package'     => $variant->items_per_package,
+                    'selling_type'          => $variant->selling_type,
+                    'can_sell_in_tots'      => $variant->can_sell_in_tots,
+                    'total_tots'            => $variant->total_tots,
                     'selling_price_per_tot' => $variant->selling_price_per_tot,
-                    'is_active' => $variant->is_active,
-                    'warehouse_stock' => $warehouseStock ? ['quantity' => $warehouseStock->quantity] : null,
-                    'counter_stock' => $counterStock ? ['quantity' => $counterStock->quantity] : null,
+                    'is_active'             => $variant->is_active,
+                    'warehouse_stock'       => $warehouseStock ? ['quantity' => $warehouseStock->quantity] : null,
+                    'counter_stock'         => $counterStock  ? ['quantity' => $counterStock->quantity]  : null,
                 ];
             });
 
             return response()->json([
                 'product' => [
-                    'id' => $product->id,
-                    'name' => $product->name,
-                    'brand' => $product->brand,
-                    'category' => $product->category,
+                    'id'          => $product->id,
+                    'name'        => $product->name,
+                    'brand'       => $product->brand,
+                    'category'    => $product->category,
                     'description' => $product->description,
-                    'image' => $product->image,
-                    'is_active' => $product->is_active,
-                    'supplier' => $product->supplier ? [
+                    'image'       => $product->image,
+                    'is_active'   => $product->is_active,
+                    'supplier'    => $product->supplier ? [
                         'company_name' => $product->supplier->company_name,
                     ] : null,
                     'variants' => $variants,
-                ]
+                ],
             ]);
         }
 
@@ -561,6 +566,7 @@ class ProductController extends Controller
                     'measurement' => $variant->measurement,
                     'packaging' => $variant->packaging,
                     'unit' => $variant->unit,
+                    'selling_type' => $variant->selling_type,
                     'items_per_package' => $variant->items_per_package,
                     'buying_price_per_unit' => $variant->buying_price_per_unit ? (float)$variant->buying_price_per_unit : null,
                     'selling_price_per_unit' => $variant->selling_price_per_unit ? (float)$variant->selling_price_per_unit : null,
@@ -569,6 +575,7 @@ class ProductController extends Controller
                     'selling_price_per_tot' => $variant->selling_price_per_tot ? (float)$variant->selling_price_per_tot : null,
                     'existing_quantity' => $existingQuantity,
                     'existing_packages' => $existingPackages,
+                    'average_buying_price' => $warehouseStock ? (float)$warehouseStock->average_buying_price : ($variant->buying_price_per_unit ? (float)$variant->buying_price_per_unit : 0),
                     'conversion_qty' => $itemsPerPackage,
                 ];
             });

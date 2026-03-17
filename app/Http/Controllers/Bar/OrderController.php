@@ -36,6 +36,13 @@ class OrderController extends Controller
         $query = BarOrder::where('user_id', $ownerId)
             ->with(['table', 'items.productVariant.product', 'createdBy', 'servedBy']);
 
+        // Filter by active branch location if context is set
+        if (session('active_location')) {
+            $query->whereHas('table', function($q) {
+                $q->where('location', session('active_location'));
+            });
+        }
+
         // Filter by order type
         if ($type === 'food') {
             $query->where('notes', 'like', '%FOOD ITEMS:%');

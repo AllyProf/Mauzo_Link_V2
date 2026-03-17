@@ -70,22 +70,12 @@
               </td>
             </tr>
             <tr>
-              <th>Business Type:</th>
-              <td>
-                @if($staff->businessType)
-                  <span class="badge badge-primary">{{ $staff->businessType->name }}</span>
-                @else
-                  <span class="badge badge-secondary">Not Assigned</span>
-                @endif
-              </td>
-            </tr>
-            <tr>
               <th>Salary (TSh):</th>
               <td><strong>{{ number_format($staff->salary_paid, 2) }}</strong></td>
             </tr>
             <tr>
               <th>Location/Branch:</th>
-              <td>{{ $staff->location_branch ?? 'N/A' }}</td>
+              <td><span class="badge badge-secondary">{{ $staff->location_branch ?? 'Main Branch' }}</span></td>
             </tr>
             <tr>
               <th>Status:</th>

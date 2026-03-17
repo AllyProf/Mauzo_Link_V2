@@ -216,12 +216,25 @@ class StaffController extends Controller
             }
         }
 
-        $staff = Staff::where('user_id', $ownerId)
-            ->with('role')
-            ->orderBy('created_at', 'desc')
-            ->get();
+        $staffQuery = Staff::where('user_id', $ownerId)
+            ->with(['role', 'businessType']);
+            
+        // Filter by active location if context is set
+        if (session('active_location')) {
+            $staffQuery->where('location_branch', session('active_location'));
+        }
 
-        return view('staff.index', compact('staff'));
+        $staff = $staffQuery->orderBy('created_at', 'desc')->get();
+
+        // Calculate statistics
+        $stats = [
+            'total' => $staff->count(),
+            'active' => $staff->where('is_active', true)->count(),
+            'total_salary' => $staff->sum('salary_paid'),
+            'branches' => $staff->pluck('location_branch')->unique()->filter()->count() ?: 1
+        ];
+
+        return view('staff.index', compact('staff', 'stats'));
     }
 
     /**

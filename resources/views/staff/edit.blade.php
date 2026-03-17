@@ -118,32 +118,14 @@
           </div>
         </div>
 
+        <!-- Row: Role & Details -->
+        <input type="hidden" name="business_type_id" value="2">
         <div class="row">
           <div class="col-md-6">
             <div class="form-group">
-              <label>Business Type</label>
-              <select class="form-control @error('business_type_id') is-invalid @enderror" 
-                      name="business_type_id" id="business_type_id">
-                <option value="">Select Business Type</option>
-                @if(isset($businessTypes) && $businessTypes->count() > 0)
-                  @foreach($businessTypes as $businessType)
-                    <option value="{{ $businessType->id }}" {{ old('business_type_id', $staff->business_type_id) == $businessType->id ? 'selected' : '' }}>
-                      {{ $businessType->name }}
-                    </option>
-                  @endforeach
-                @endif
-              </select>
-              @error('business_type_id')
-                <div class="invalid-feedback">{{ $message }}</div>
-              @enderror
-            </div>
-          </div>
-          
-          <div class="col-md-6">
-            <div class="form-group">
-              <label>Role <span class="text-danger">*</span></label>
+              <label>Staff Role <span class="text-danger">*</span></label>
               <select class="form-control @error('role_id') is-invalid @enderror" name="role_id" id="role_id" required>
-                <option value="">Select Business Type First</option>
+                <option value="">Select Role</option>
                 @if($roles->count() > 0)
                   @foreach($roles as $role)
                     <option value="{{ $role->id }}" {{ old('role_id', $staff->role_id) == $role->id ? 'selected' : '' }}>
@@ -161,11 +143,10 @@
                 <div class="invalid-feedback">{{ $message }}</div>
               @enderror
               <small class="form-text text-muted">
-                <i class="fa fa-info-circle"></i> Roles will be filtered based on the selected business type.
+                <i class="fa fa-info-circle"></i> Assign a restaurant role to this staff member.
               </small>
             </div>
           </div>
-        </div>
 
         <div class="row">
           <div class="col-md-6">
@@ -355,68 +336,7 @@
           return;
         }
         
-        // Show loading state
-        var loadingOption = document.createElement('option');
-        loadingOption.textContent = 'Loading roles...';
-        loadingOption.disabled = true;
-        roleSelect.innerHTML = '';
-        roleSelect.appendChild(loadingOption);
-        roleSelect.disabled = true;
-        
-        // Fetch roles for selected business type
-        var url = '{{ route("staff.roles-by-business-type") }}?business_type_id=' + businessTypeId;
-        console.log('Fetching roles from:', url);
-        
-        fetch(url, {
-          method: 'GET',
-          headers: {
-            'X-Requested-With': 'XMLHttpRequest',
-            'Accept': 'application/json',
-          },
-          credentials: 'same-origin'
-        })
-        .then(response => {
-          console.log('Response status:', response.status);
-          if (!response.ok) {
-            throw new Error('Network response was not ok: ' + response.status);
-          }
-          return response.json();
-        })
-        .then(data => {
-          console.log('Received data:', data);
-          roleSelect.innerHTML = '<option value="">Select Role</option>';
-          
-          if (data.roles && data.roles.length > 0) {
-            console.log('Found ' + data.roles.length + ' roles');
-            data.roles.forEach(function(role) {
-              var option = document.createElement('option');
-              option.value = role.id;
-              option.textContent = role.name + (role.description ? ' - ' + role.description : '');
-              // Preserve current role selection
-              if (role.id == currentRoleId) {
-                option.selected = true;
-              }
-              roleSelect.appendChild(option);
-            });
-          } else {
-            console.log('No roles found in response');
-            // If no roles from API, restore initial roles as fallback
-            roleSelect.innerHTML = initialRolesHTML;
-          }
-          
-          roleSelect.disabled = false;
-        })
-        .catch(error => {
-          console.error('Error loading roles:', error);
-          // On error, restore initial roles as fallback
-          roleSelect.innerHTML = initialRolesHTML;
-          roleSelect.disabled = false;
-        });
-      });
-      
-      // Don't auto-trigger on page load - let user see initial roles first
-      // Only reload if they change the business type
-    }
+    // Business type filtering logic removed as it is now fixed to Restaurant
   });
 </script>
 @endpush

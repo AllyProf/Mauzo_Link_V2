@@ -105,91 +105,36 @@
 
         <hr class="my-4">
 
-        <!-- Business Types -->
-        <h3 class="mb-4"><i class="fa fa-tags"></i> Business Types</h3>
-        <p class="text-muted mb-3">Select the business types that apply to your business. You can leave all unchecked if none apply.</p>
-        <div class="row">
-          @foreach($businessTypes as $businessType)
-          <div class="col-md-4 mb-3">
-            <div class="card h-100">
-              <div class="card-body text-center">
-                <input type="checkbox" 
-                       class="business-type-checkbox" 
-                       name="business_types[]" 
-                       value="{{ $businessType->id }}" 
-                       id="business_type_{{ $businessType->id }}"
-                       {{ in_array($businessType->id, $selectedTypes) ? 'checked' : '' }}>
-                <label for="business_type_{{ $businessType->id }}" class="card-link" style="cursor: pointer; width: 100%;">
-                  <i class="fa {{ $businessType->icon }} fa-3x mb-2" style="color: #940000;"></i>
-                  <h5 class="card-title">{{ $businessType->name }}</h5>
-                  <p class="card-text text-muted small">{{ $businessType->description }}</p>
-                </label>
-              </div>
-            </div>
-          </div>
-          @endforeach
-        </div>
-        <div class="alert alert-info mt-3">
-          <i class="fa fa-info-circle"></i> <strong>Note:</strong> If you uncheck all business types, only common menus (Dashboard, Sales, Products, Customers, Reports, Settings) will be available.
-        </div>
+        <!-- Business Type (Fixed to Restaurant) -->
+        @foreach($businessTypes as $businessType)
+          <input type="hidden" name="business_types[]" value="{{ $businessType->id }}" checked>
+        @endforeach
 
         <hr class="my-4">
 
-        <!-- Roles & Permissions -->
-        <h3 class="mb-4"><i class="fa fa-users"></i> Roles & Permissions</h3>
-        <p class="text-muted mb-4">Select a business type from the dropdown to see suggested roles and their permissions, or create a custom role.</p>
-        
+        @if((auth()->check() && auth()->user()->role === 'admin') || (isset($user) && $user && $user->role === 'admin'))
         <div id="roles-container">
-          <!-- Business Type Selection Dropdown -->
-          <div class="card mb-4 border-primary">
-            <div class="card-header bg-primary text-white">
-              <h5 class="mb-0"><i class="fa fa-filter"></i> Select Business Type to View Suggested Roles</h5>
+          <!-- Simplified Header -->
+          <div class="d-flex justify-content-between align-items-center mb-4">
+            <div>
+              <h3 class="mb-0"><i class="fa fa-users"></i> Roles & Permissions</h3>
+              <p class="text-muted mb-0">Manage roles and their access levels for your restaurant.</p>
             </div>
-            <div class="card-body">
-              <div class="row">
-                <div class="col-md-6">
-                  <label><strong>Business Type:</strong></label>
-                  <select id="business-type-select" class="form-control form-control-lg">
-                    <option value="">-- Select a business type --</option>
-                    <!-- Options will be dynamically populated based on selected business types above -->
-                  </select>
-                  <small class="text-muted">Select a business type to see its suggested roles and permissions</small>
-                </div>
-                <div class="col-md-6">
-                  <label>&nbsp;</label>
-                  <div>
-                    <button type="button" class="btn btn-success btn-lg btn-block" onclick="addNewRole()">
-                      <i class="fa fa-plus"></i> Create Custom Role
-                    </button>
-                    <small class="text-muted d-block mt-2">Create a role with custom permissions</small>
-                  </div>
-                </div>
-              </div>
-            </div>
+            <button type="button" class="btn btn-success" onclick="addNewRole()">
+              <i class="fa fa-plus"></i> Create Custom Role
+            </button>
           </div>
 
-          <!-- Suggested Roles Section (shown when business type is selected) -->
-          <div id="suggested-roles-section" class="card mb-4 border-info" style="display: none;">
+          <!-- Suggested Roles Section (Always shown for restaurant) -->
+          <div id="suggested-roles-section" class="card mb-4 border-info">
             <div class="card-header bg-info text-white">
               <h5 class="mb-0">
-                <i class="fa fa-lightbulb-o"></i> Suggested Roles for: <span id="selected-business-type-name"></span>
+                <i class="fa fa-lightbulb-o"></i> Suggested Restaurant Roles
               </h5>
             </div>
             <div class="card-body">
               <div id="suggested-roles-list" class="row">
-                <!-- Suggested roles will be dynamically added here -->
-              </div>
-            </div>
-          </div>
-
-          <!-- Added Roles List (Visible roles added by user) -->
-          <div id="added-roles-section" class="card mb-4 border-success" style="display: none;">
-            <div class="card-header bg-success text-white">
-              <h5 class="mb-0"><i class="fa fa-check-circle"></i> Added Roles</h5>
-            </div>
-            <div class="card-body">
-              <div id="roles-list">
-                <!-- Roles added by user will appear here -->
+                <!-- Suggested roles will be dynamically added here by JS -->
               </div>
             </div>
           </div>
@@ -228,11 +173,6 @@
                   </div>
                   <div class="card-body role-permissions-body" style="display: block;">
                     <h6 class="mb-3"><i class="fa fa-key"></i> Permissions:</h6>
-                    @php
-                      // Debug: Show loaded permission IDs for this role
-                      $debugPermissionIds = $role->permissions->pluck('id')->toArray();
-                    @endphp
-                    <!-- Debug: Role {{ $role->id }} ({{ $role->name }}) has {{ count($debugPermissionIds) }} permissions: {{ implode(', ', $debugPermissionIds) }} -->
                     <div class="row">
                       @foreach($permissions as $module => $modulePermissions)
                       <div class="col-md-3 mb-3">
@@ -280,6 +220,24 @@
             </div>
           </div>
           @endif
+          
+          <!-- Added Roles List (Visible roles added by user via JS) -->
+          <div id="added-roles-section" class="card mb-4 border-success" style="display: none;">
+            <div class="card-header bg-success text-white">
+              <h5 class="mb-0"><i class="fa fa-check-circle"></i> New Roles</h5>
+            </div>
+            <div class="card-body">
+              <div id="roles-list">
+                <!-- Roles added by user will appear here -->
+              </div>
+            </div>
+          </div>
+        </div>
+        @else
+        <div class="alert alert-info">
+          <i class="fa fa-info-circle"></i> <strong>Note:</strong> Role and Permission configuration is managed by the Super Admin. Please contact support if you need changes to your staff access levels.
+        </div>
+        @endif
         </div>
 
         <div class="mt-4">
@@ -300,88 +258,23 @@ let roleCounter = {{ ($existingRoles && $existingRoles->count() > 0) ? $existing
 const permissions = @json($permissions->toArray());
 const suggestedRoles = @json(isset($suggestedRoles) ? $suggestedRoles : []);
 
-// Update business type dropdown and suggested roles
+// Initialization
 document.addEventListener('DOMContentLoaded', function() {
-  const businessTypeCheckboxes = document.querySelectorAll('.business-type-checkbox');
-  const businessTypeSelect = document.getElementById('business-type-select');
-  
-  // Update dropdown when business types are selected/deselected
-  businessTypeCheckboxes.forEach(checkbox => {
-    checkbox.addEventListener('change', function() {
-      updateBusinessTypeDropdown();
-    });
-  });
-  
-  // Show suggested roles when business type is selected from dropdown
-  businessTypeSelect.addEventListener('change', function() {
-    updateSuggestedRoles();
-  });
-  
-  // Initialize - show all role permissions by default (user needs to see them to edit)
+  // Show all role permissions by default (user needs to see them to edit)
   document.querySelectorAll('.role-permissions-body').forEach(body => {
     body.style.display = 'block';
   });
   
-  // Initial update
-  updateBusinessTypeDropdown();
+  // Directly show suggested roles for restaurant
+  updateSuggestedRoles();
 });
 
-function updateBusinessTypeDropdown() {
-  const selectedBusinessTypes = Array.from(document.querySelectorAll('.business-type-checkbox:checked'));
-  const businessTypeSelect = document.getElementById('business-type-select');
-  const businessTypeData = @json($businessTypes->map(function($bt) { 
-    return ['id' => $bt->id, 'slug' => $bt->slug, 'name' => $bt->name]; 
-  })->toArray());
-  
-  // Clear existing options (except the first placeholder)
-  businessTypeSelect.innerHTML = '<option value="">-- Select a business type --</option>';
-  
-  if (selectedBusinessTypes.length === 0) {
-    businessTypeSelect.innerHTML += '<option disabled>Select business types above first</option>';
-    return;
-  }
-  
-  // Add selected business types to dropdown
-  selectedBusinessTypes.forEach(checkbox => {
-    const checkedId = parseInt(checkbox.value);
-    const businessType = businessTypeData.find(bt => bt.id === checkedId);
-    if (businessType) {
-      const option = document.createElement('option');
-      option.value = businessType.slug;
-      option.textContent = businessType.name;
-      businessTypeSelect.appendChild(option);
-    }
-  });
-}
-
 function updateSuggestedRoles() {
-  const businessTypeSelect = document.getElementById('business-type-select');
-  const selectedSlug = businessTypeSelect.value;
-  
   const suggestedRolesSection = document.getElementById('suggested-roles-section');
   const suggestedRolesList = document.getElementById('suggested-roles-list');
-  const selectedBusinessTypeName = document.getElementById('selected-business-type-name');
   
-  if (!selectedSlug) {
-    suggestedRolesSection.style.display = 'none';
-    return;
-  }
-  
-  // Get business type name
-  const businessTypeData = @json($businessTypes->map(function($bt) { 
-    return ['id' => $bt->id, 'slug' => $bt->slug, 'name' => $bt->name]; 
-  })->toArray());
-  const businessType = businessTypeData.find(bt => bt.slug === selectedSlug);
-  selectedBusinessTypeName.textContent = businessType ? businessType.name : selectedSlug;
-  
-  // Map business type slugs to their suggested roles
-  const businessTypeRoleMap = {
-    'bar': ['Manager', 'Stock Keeper', 'Counter', 'Waiter'],
-    'restaurant': ['Manager', 'Chef', 'Waiter', 'Cashier'],
-    'juice': ['Manager', 'Juice Maker', 'Counter']
-  };
-  
-  const rolesForType = businessTypeRoleMap[selectedSlug] || [];
+  // Directly filter for restaurant roles
+  const rolesForType = ['Manager', 'Chef', 'Waiter', 'Cashier'];
   
   // Filter suggested roles for this business type
   const filteredRoles = suggestedRoles.filter(role => rolesForType.includes(role.name));

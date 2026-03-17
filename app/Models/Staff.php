@@ -87,9 +87,8 @@ class Staff extends Model
         $year = date('Y');
         $month = date('m');
         
-        // Get last staff ID for this user
-        $lastStaff = self::where('user_id', $userId)
-            ->where('staff_id', 'like', $prefix . $year . $month . '%')
+        // Get last staff ID across all users for this month/year to ensure global uniqueness
+        $lastStaff = self::where('staff_id', 'like', $prefix . $year . $month . '%')
             ->orderBy('staff_id', 'desc')
             ->first();
         

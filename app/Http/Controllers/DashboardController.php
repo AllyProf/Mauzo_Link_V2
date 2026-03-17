@@ -72,9 +72,10 @@ class DashboardController extends Controller
                 return redirect()->route('dashboard.role', ['role' => $roleSlug]);
             }
             
-            // Get statistics for stock keepers
+            // Get statistics for Managers and Stock Keepers
             $statistics = [];
-            if (strtolower($staff->role->name ?? '') === 'stock keeper' || ($staff->role && $staff->role->hasPermission('inventory', 'view'))) {
+            $roleName = strtolower($staff->role->name ?? '');
+            if ($roleName === 'stock keeper' || $roleName === 'manager' || ($staff->role && $staff->role->hasPermission('inventory', 'view'))) {
                 $ownerId = $owner->id;
                 
                 // Warehouse stock statistics
@@ -249,5 +250,21 @@ class DashboardController extends Controller
             'upgradePlans',
             'pendingSubscription'
         ));
+    }
+
+    /**
+     * Switch active location/branch context
+     */
+    public function switchLocation(Request $request)
+    {
+        $location = $request->input('active_location');
+        
+        if ($location === 'all') {
+            session()->forget('active_location');
+        } else {
+            session(['active_location' => $location]);
+        }
+        
+        return back()->with('success', 'Location switched to: ' . ($location === 'all' ? 'All Locations' : $location));
     }
 }

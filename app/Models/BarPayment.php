@@ -35,8 +35,8 @@ class BarPayment extends Model
         $year = date('Y');
         $month = date('m');
         
-        $lastPayment = self::where('user_id', $userId)
-            ->where('payment_number', 'like', $prefix . $year . $month . '%')
+        // Get last payment number across all users to ensure global uniqueness
+        $lastPayment = self::where('payment_number', 'like', $prefix . $year . $month . '%')
             ->orderBy('payment_number', 'desc')
             ->first();
         

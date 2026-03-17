@@ -65,12 +65,7 @@ class MenuService
                     continue; // Skip Bar menus for Chef
                 }
                 
-                // For Stock Keeper role, exclude Restaurant business type menus
-                $isStockKeeper = strtolower($staffRole->name ?? '') === 'stock keeper' || 
-                                strtolower($staffRole->slug ?? '') === 'stock-keeper';
-                if ($isStockKeeper && $businessType->slug === 'restaurant') {
-                    continue; // Skip Restaurant menus for Stock Keeper
-                }
+                // Stock Keeper needs access to both Bar and Restaurant stock features
                 
                 // For Counter role, exclude Restaurant business type menus
                 $isCounter = strtolower($staffRole->name ?? '') === 'counter' || 
@@ -133,12 +128,7 @@ class MenuService
                     continue; // Skip Bar placeholder for Chef
                 }
                 
-                // For Stock Keeper role, skip Restaurant business type placeholders
-                $isStockKeeper = strtolower($staffRole->name ?? '') === 'stock keeper' || 
-                                strtolower($staffRole->slug ?? '') === 'stock-keeper';
-                if ($isStockKeeper && $businessType->slug === 'restaurant') {
-                    continue; // Skip Restaurant placeholder for Stock Keeper
-                }
+                // Stock Keeper needs access to both Bar and Restaurant stock features
                 
                 // For Counter role, skip Restaurant business type placeholders
                 $isCounter = strtolower($staffRole->name ?? '') === 'counter' || 
@@ -212,9 +202,10 @@ class MenuService
                     return true;
                 }
                 
-                // For Counter role, hide the common 'Products' menu (they use Bar-specific products)
+                // For Counter and Stock Keeper roles, hide the common 'Products' menu (they use specific products menus)
                 // This must be checked BEFORE the children check
-                if ($isCounter && $menu->slug === 'products') {
+                $isStockKeeper = strtolower($staffRole->name ?? '') === 'stock keeper' || strtolower($staffRole->slug ?? '') === 'stock-keeper';
+                if (($isCounter || $isStockKeeper) && $menu->slug === 'products') {
                     return false;
                 }
                 

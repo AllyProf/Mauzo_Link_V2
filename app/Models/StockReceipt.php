@@ -60,8 +60,8 @@ class StockReceipt extends Model
         $year = date('Y');
         $month = date('m');
         
-        $lastReceipt = self::where('user_id', $userId)
-            ->where('receipt_number', 'like', $prefix . $year . $month . '%')
+        // Get last receipt number across all users to ensure global uniqueness
+        $lastReceipt = self::where('receipt_number', 'like', $prefix . $year . $month . '%')
             ->orderBy('receipt_number', 'desc')
             ->first();
         

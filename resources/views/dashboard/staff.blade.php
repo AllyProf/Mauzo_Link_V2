@@ -108,7 +108,7 @@
             </a>
           </div>
         </div>
-        @elseif($staff->role && ($staff->role->hasPermission('inventory', 'view') || strtolower($staff->role->name ?? '') === 'stock keeper'))
+        @elseif($staff->role && ($staff->role->hasPermission('inventory', 'view') || in_array(strtolower($staff->role->name ?? ''), ['stock keeper', 'manager'])))
         {{-- Stock Keeper Quick Actions --}}
         <div class="row">
           <div class="col-md-3">

@@ -28,6 +28,7 @@ class AdminUserSeeder extends Seeder
                 'address' => 'Ben Bella Street, Moshi',
                 'city' => 'Moshi',
                 'country' => 'Tanzania',
+                'is_configured' => true,
             ]
         );
 

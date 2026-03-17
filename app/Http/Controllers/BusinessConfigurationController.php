@@ -14,6 +14,7 @@ use App\Models\RolePermission;
 use App\Models\BusinessTypeMenuItem;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
+use Illuminate\Support\Facades\Log;
 
 class BusinessConfigurationController extends Controller
 {
@@ -255,7 +256,7 @@ class BusinessConfigurationController extends Controller
                     // Assign permissions
                     if (isset($roleData['permissions']) && is_array($roleData['permissions']) && count($roleData['permissions']) > 0) {
                         // Sync the selected permissions
-                        \Log::info('Syncing permissions for role', [
+                        Log::info('Syncing permissions for role', [
                             'role_id' => $role->id,
                             'role_name' => $role->name,
                             'permissions_count' => count($roleData['permissions']),
@@ -265,7 +266,7 @@ class BusinessConfigurationController extends Controller
                         
                         // Verify sync worked
                         $syncedCount = $role->permissions()->count();
-                        \Log::info('Permissions synced', [
+                        Log::info('Permissions synced', [
                             'role_id' => $role->id,
                             'synced_count' => $syncedCount
                         ]);
@@ -276,7 +277,7 @@ class BusinessConfigurationController extends Controller
                         } else {
                             // For other roles, clear permissions if none selected
                             $role->permissions()->sync([]);
-                            \Log::warning('No permissions selected for role', [
+                            Log::warning('No permissions selected for role', [
                                 'role_id' => $role->id,
                                 'role_name' => $role->name
                             ]);
@@ -364,7 +365,7 @@ class BusinessConfigurationController extends Controller
      */
     public function edit()
     {
-        \Log::info('BusinessConfigurationController@edit called', [
+        Log::info('BusinessConfigurationController@edit called', [
             'is_staff' => session('is_staff'),
             'staff_id' => session('staff_id'),
             'staff_role_id' => session('staff_role_id'),
@@ -375,11 +376,11 @@ class BusinessConfigurationController extends Controller
         $user = $this->getCurrentUser();
         
         if (!$user) {
-            \Log::warning('No user found in BusinessConfigurationController@edit');
+            Log::warning('No user found in BusinessConfigurationController@edit');
             return redirect()->route('login');
         }
         
-        \Log::info('User found in BusinessConfigurationController@edit', [
+        Log::info('User found in BusinessConfigurationController@edit', [
             'user_id' => $user->id,
             'user_email' => $user->email,
             'is_staff' => session('is_staff')
@@ -389,7 +390,7 @@ class BusinessConfigurationController extends Controller
         if (session('is_staff')) {
             // Get staff details for logging
             $staff = \App\Models\Staff::with('role')->find(session('staff_id'));
-            \Log::info('Staff member accessing edit', [
+            Log::info('Staff member accessing edit', [
                 'staff_id' => $staff->id ?? null,
                 'staff_name' => $staff->full_name ?? null,
                 'role_id' => $staff->role_id ?? null,
@@ -400,14 +401,14 @@ class BusinessConfigurationController extends Controller
             // Staff members need settings.edit permission to access business configuration
             // Manager role has all permissions, so this check will pass for managers
             $hasPermission = $this->hasPermission('settings', 'edit');
-            \Log::info('Permission check result', [
+            Log::info('Permission check result', [
                 'module' => 'settings',
                 'action' => 'edit',
                 'has_permission' => $hasPermission
             ]);
             
             if (!$hasPermission) {
-                \Log::warning('Staff member denied access to business configuration', [
+                Log::warning('Staff member denied access to business configuration', [
                     'staff_id' => session('staff_id'),
                     'role_id' => session('staff_role_id'),
                     'role_name' => $staff->role->name ?? null,
@@ -417,14 +418,14 @@ class BusinessConfigurationController extends Controller
                     ->with('error', 'You do not have permission to edit business configuration.');
             }
             
-            \Log::info('Staff member granted access to business configuration');
+            Log::info('Staff member granted access to business configuration');
             
             // For staff members, skip the isConfigured check - they can edit even if owner hasn't completed initial setup
             // The owner's configuration status doesn't prevent staff from managing roles/permissions
         } else {
-            // Only check isConfigured for regular users (owners), not staff
-            if (!$user->isConfigured()) {
-                \Log::info('User not configured, redirecting to configuration index', [
+            // Only check isConfigured for regular users (owners), not staff or admins
+            if (!$user->isConfigured() && $user->role !== 'admin') {
+                Log::info('User not configured and not admin, redirecting to configuration index', [
                     'user_id' => $user->id
                 ]);
                 return redirect()->route('business-configuration.index')
@@ -432,8 +433,8 @@ class BusinessConfigurationController extends Controller
             }
         }
 
-        // Get current configuration data
-        $businessTypes = BusinessType::where('is_active', true)->orderBy('sort_order')->get();
+        // Get only restaurant configuration data
+        $businessTypes = BusinessType::where('slug', 'restaurant')->where('is_active', true)->orderBy('sort_order')->get();
         $selectedTypes = $user->businessTypes()->pluck('business_types.id')->toArray();
         
         // Load roles with permissions - ensure fresh data (no cache)
@@ -451,7 +452,7 @@ class BusinessConfigurationController extends Controller
         
         // Debug: Log permissions for each role
         foreach ($existingRoles as $role) {
-            \Log::info('Role permissions loaded in edit', [
+            Log::info('Role permissions loaded in edit', [
                 'role_id' => $role->id,
                 'role_name' => $role->name,
                 'permissions_count' => $role->permissions->count(),
@@ -489,6 +490,12 @@ class BusinessConfigurationController extends Controller
         if (!$user) {
             return redirect()->route('login');
         }
+
+        Log::info('BusinessConfiguration update request started', [
+            'user_id' => $user->id,
+            'is_staff' => session('is_staff'),
+            'request_data' => $request->all()
+        ]);
         
         // Check permission for staff members
         if (session('is_staff')) {
@@ -500,54 +507,71 @@ class BusinessConfigurationController extends Controller
         }
 
         if (!$user->isConfigured()) {
-            return redirect()->route('business-configuration.index');
+            Log::warning('User not fully configured but attempting update. Allowing update to proceed.', [
+                'user_id' => $user->id,
+                'email' => $user->email
+            ]);
         }
 
-        // Update business information
+        // Update business information (Allowed for all)
         if ($request->has('business_name')) {
-            $user->update($request->only([
-                'business_name', 'phone', 'address', 'city', 'country'
-            ]));
-        }
-
-        // Update business types (allow 0 business types)
-        // Always process business types - if not in request, it means all are unchecked
-        $validated = $request->validate([
-            'business_types' => 'nullable|array',
-            'business_types.*' => 'exists:business_types,id',
-        ]);
-
-        // Remove all existing business types
-        $user->businessTypes()->detach();
-
-        // If business types are provided and not empty, attach them
-        $businessTypes = $validated['business_types'] ?? [];
-        if (!empty($businessTypes) && is_array($businessTypes)) {
-            $primaryBusinessTypeId = $businessTypes[0];
-
-            foreach ($businessTypes as $businessTypeId) {
-                $isPrimary = $businessTypeId == $primaryBusinessTypeId;
-                $user->businessTypes()->attach($businessTypeId, [
-                    'is_primary' => $isPrimary,
-                    'is_enabled' => true,
-                ]);
-            }
-
-            // Regenerate menu items only if business types exist
-            $this->generateMenuItems($user);
+            Log::info('Updating business information', [
+                'user_id' => $user->id,
+                'data' => $request->only(['business_name', 'phone', 'address', 'city', 'country'])
+            ]);
             
-            // Auto-create default roles for selected business types
-            $this->autoCreateDefaultRoles($user, $businessTypes);
+            $user->business_name = $request->input('business_name');
+            $user->phone = $request->input('phone');
+            $user->address = $request->input('address');
+            $user->city = $request->input('city');
+            $user->country = $request->input('country');
+            
+            // Default to restaurant if not set
+            if (empty($user->business_type)) {
+                $user->business_type = 'restaurant';
+            }
+            
+            $user->is_configured = true;
+            $saved = $user->save();
+            
+            Log::info('Business information save result', ['success' => $saved, 'user_id' => $user->id]);
         }
 
-        // Update roles (same logic as step 3)
-        if ($request->has('roles')) {
+        // Only super admin can update business types and roles/permissions
+        if ($user->role === 'admin') {
+            Log::info('User is admin, processing business types and roles');
+            // Update business types
+            $validated = $request->validate([
+                'business_types' => 'nullable|array',
+                'business_types.*' => 'exists:business_types,id',
+            ]);
+
+            // Detach and re-attach business types
+            $user->businessTypes()->detach();
+            $businessTypesRequested = $validated['business_types'] ?? [];
+            if (!empty($businessTypesRequested)) {
+                $primaryBusinessTypeId = $businessTypesRequested[0];
+                foreach ($businessTypesRequested as $businessTypeId) {
+                    $user->businessTypes()->attach($businessTypeId, [
+                        'is_primary' => $businessTypeId == $primaryBusinessTypeId,
+                        'is_enabled' => true,
+                    ]);
+                }
+                $this->generateMenuItems($user);
+                $this->autoCreateDefaultRoles($user, $businessTypesRequested);
+            }
+        } else {
+            Log::info('User is NOT admin, skipping business types and roles update', ['user_role' => $user->role]);
+        }
+
+        // Update roles (only if admin)
+        if ($user->role === 'admin' && $request->has('roles')) {
             $plan = $user->currentPlan();
             $isBasicPlan = $plan && $plan->slug === 'basic';
 
             if (!$isBasicPlan) {
                 // Log the raw request data for debugging
-                \Log::info('Update roles request data', [
+                Log::info('Update roles request data', [
                     'roles_data' => $request->input('roles'),
                     'all_request' => $request->all()
                 ]);
@@ -569,12 +593,12 @@ class BusinessConfigurationController extends Controller
                     foreach ($validated['roles'] as $roleKey => $roleData) {
                     // Skip roles marked for deletion
                     if (isset($roleData['_delete']) && $roleData['_delete'] == '1') {
-                        \Log::info('Skipping role marked for deletion', ['role_key' => $roleKey]);
+                        Log::info('Skipping role marked for deletion', ['role_key' => $roleKey]);
                         continue;
                     }
                     
                     // Debug: Log everything about this role
-                    \Log::info('=== Processing role ===', [
+                    Log::info('=== Processing role ===', [
                         'role_key' => $roleKey,
                         'role_data_keys' => array_keys($roleData),
                         'has_permissions_key' => isset($roleData['permissions']),
@@ -596,7 +620,7 @@ class BusinessConfigurationController extends Controller
                             ]);
                             $submittedRoleIds[] = $role->id;
                         } else {
-                            \Log::warning('Role not found', ['role_id' => $roleKey, 'user_id' => $user->id]);
+                            Log::warning('Role not found', ['role_id' => $roleKey, 'user_id' => $user->id]);
                             continue;
                         }
                     } else {
@@ -628,7 +652,7 @@ class BusinessConfigurationController extends Controller
                         $permissionIds = array_values($permissionIds);
                     }
                     
-                    \Log::info('Permission IDs to sync', [
+                    Log::info('Permission IDs to sync', [
                         'role_id' => $role->id,
                         'role_name' => $role->name,
                         'permission_ids' => $permissionIds,
@@ -644,7 +668,7 @@ class BusinessConfigurationController extends Controller
                             ->toArray();
                         
                         if (count($validPermissionIds) !== count($permissionIds)) {
-                            \Log::warning('Some permission IDs are invalid', [
+                            Log::warning('Some permission IDs are invalid', [
                                 'role_id' => $role->id,
                                 'submitted_ids' => $permissionIds,
                                 'valid_ids' => $validPermissionIds
@@ -652,7 +676,7 @@ class BusinessConfigurationController extends Controller
                         }
                     }
                     
-                    \Log::info('Syncing permissions for role (update)', [
+                    Log::info('Syncing permissions for role (update)', [
                         'role_id' => $role->id,
                         'role_name' => $role->name,
                         'permissions_count' => count($validPermissionIds),
@@ -664,7 +688,7 @@ class BusinessConfigurationController extends Controller
 
                     // Always sync permissions (even if empty array to clear them)
                     try {
-                        \Log::info('About to sync permissions', [
+                        Log::info('About to sync permissions', [
                             'role_id' => $role->id,
                             'valid_permission_ids' => $validPermissionIds,
                             'count' => count($validPermissionIds)
@@ -679,12 +703,12 @@ class BusinessConfigurationController extends Controller
                             ->pluck('permission_id')
                             ->toArray();
                         
-                        \Log::info('Before sync', ['permissions' => $beforeSync]);
+                        Log::info('Before sync', ['permissions' => $beforeSync]);
                         
                         // Use sync which handles attach/detach automatically
                         $syncResult = $role->permissions()->sync($validPermissionIds);
                         
-                        \Log::info('Sync result', ['result' => $syncResult]);
+                        Log::info('Sync result', ['result' => $syncResult]);
                         
                         // Immediately verify in database
                         $afterSync = DB::table('role_permissions')
@@ -692,7 +716,7 @@ class BusinessConfigurationController extends Controller
                             ->pluck('permission_id')
                             ->toArray();
                         
-                        \Log::info('After sync (database)', [
+                        Log::info('After sync (database)', [
                             'permissions' => $afterSync,
                             'count' => count($afterSync),
                             'expected' => $validPermissionIds,
@@ -704,7 +728,7 @@ class BusinessConfigurationController extends Controller
                         $role->load('permissions');
                         
                         $relationshipIds = $role->permissions->pluck('id')->toArray();
-                        \Log::info('After sync (relationship)', [
+                        Log::info('After sync (relationship)', [
                             'permissions' => $relationshipIds,
                             'count' => count($relationshipIds)
                         ]);
@@ -715,7 +739,7 @@ class BusinessConfigurationController extends Controller
                         
                         // Verify they match
                         if ($afterSync !== $validPermissionIds) {
-                            \Log::error('PERMISSION SYNC MISMATCH', [
+                            Log::error('PERMISSION SYNC MISMATCH', [
                                 'role_id' => $role->id,
                                 'role_name' => $role->name,
                                 'expected' => $validPermissionIds,
@@ -725,16 +749,16 @@ class BusinessConfigurationController extends Controller
                             ]);
                             // Try to re-sync one more time
                             $role->permissions()->sync($validPermissionIds);
-                            \Log::info('Re-synced permissions after mismatch');
+                            Log::info('Re-synced permissions after mismatch');
                         }
                         
-                        \Log::info('Permissions synced successfully', [
+                        Log::info('Permissions synced successfully', [
                             'role_id' => $role->id,
                             'role_name' => $role->name,
                             'permissions' => $afterSync
                         ]);
                     } catch (\Exception $e) {
-                        \Log::error('Failed to sync permissions', [
+                        Log::error('Failed to sync permissions', [
                             'role_id' => $role->id,
                             'role_name' => $role->name,
                             'error' => $e->getMessage(),
@@ -765,7 +789,7 @@ class BusinessConfigurationController extends Controller
                                 ->pluck('permission_id')
                                 ->toArray();
                             
-                            \Log::info('Final verification for role', [
+                            Log::info('Final verification for role', [
                                 'role_id' => $roleId,
                                 'role_name' => $role->name,
                                 'database_permissions' => $finalPermissions,
@@ -774,7 +798,7 @@ class BusinessConfigurationController extends Controller
                         }
                     }
                     
-                    \Log::info('Roles and permissions updated successfully', [
+                    Log::info('Roles and permissions updated successfully', [
                         'user_id' => $user->id,
                         'roles_updated' => count($submittedRoleIds),
                         'role_ids' => $submittedRoleIds
@@ -782,7 +806,7 @@ class BusinessConfigurationController extends Controller
                 } catch (\Exception $e) {
                     // Rollback transaction on error
                     DB::rollBack();
-                    \Log::error('Failed to update roles and permissions', [
+                    Log::error('Failed to update roles and permissions', [
                         'user_id' => $user->id,
                         'error' => $e->getMessage(),
                         'trace' => $e->getTraceAsString()

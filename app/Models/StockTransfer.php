@@ -41,8 +41,8 @@ class StockTransfer extends Model
         $year = date('Y');
         $month = date('m');
         
-        $lastTransfer = self::where('user_id', $userId)
-            ->where('transfer_number', 'like', $prefix . $year . $month . '%')
+        // Get last transfer number across all users to ensure global uniqueness
+        $lastTransfer = self::where('transfer_number', 'like', $prefix . $year . $month . '%')
             ->orderBy('transfer_number', 'desc')
             ->first();
         

@@ -123,6 +123,63 @@
           <input class="app-search__input" type="search" placeholder="Search">
           <button class="app-search__button"><i class="fa fa-search"></i></button>
         </li>
+        @php
+            $isOwner = Auth::check() && !session('is_staff');
+            $isManager = false;
+            $ownerId = null;
+
+            if ($isOwner) {
+                $ownerId = Auth::id();
+            } elseif (session('is_staff')) {
+                $ownerId = session('staff_user_id');
+                $staff = \App\Models\Staff::with('role')->find(session('staff_id'));
+                if ($staff && $staff->role) {
+                    $roleName = strtolower(trim($staff->role->name ?? ''));
+                    $roleSlug = strtolower(trim($staff->role->slug ?? ''));
+                    if ($roleName === 'manager' || $roleSlug === 'manager' || $staff->role->hasPermission('branch_management', 'view')) {
+                        $isManager = true;
+                    }
+                }
+            }
+        @endphp
+
+        @if($isOwner || $isManager)
+        @php
+            $staffLocations = \App\Models\Staff::where('user_id', $ownerId)->whereNotNull('location_branch')->pluck('location_branch')->unique();
+            $tableLocations = \App\Models\BarTable::where('user_id', $ownerId)->whereNotNull('location')->pluck('location')->unique();
+            $userLocations = $staffLocations->merge($tableLocations)->unique()->filter()->sort();
+            $activeLocation = session('active_location', 'all');
+        @endphp
+        
+        @if($userLocations->count() > 0)
+        <!-- Branch Context Switcher -->
+        <li class="dropdown">
+          <a class="app-nav__item" href="#" data-toggle="dropdown" aria-label="Switch Branch" style="background-color: rgba(255,255,255,0.1); border-radius: 4px; padding: 5px 15px; margin: 8px 10px; font-size: 13px;">
+            <i class="fa fa-map-marker mr-2"></i> 
+            <span class="d-none d-md-inline">{{ $activeLocation == 'all' ? 'All Branches' : $activeLocation }}</span>
+            <i class="fa fa-caret-down ml-2"></i>
+          </a>
+          <ul class="dropdown-menu settings-menu dropdown-menu-right">
+            <li>
+              <a class="dropdown-item {{ $activeLocation == 'all' ? 'active' : '' }}" href="javascript:void(0)" onclick="switchLocation('all')">
+                <i class="fa fa-globe fa-lg"></i> All Branches
+              </a>
+            </li>
+            @foreach($userLocations as $location)
+            <li>
+              <a class="dropdown-item {{ $activeLocation == $location ? 'active' : '' }}" href="javascript:void(0)" onclick="switchLocation('{{ $location }}')">
+                <i class="fa fa-map-marker fa-lg"></i> {{ $location }}
+              </a>
+            </li>
+            @endforeach
+          </ul>
+        </li>
+        <form id="location-switch-form" action="{{ route('location.switch') }}" method="POST" style="display: none;">
+          @csrf
+          <input type="hidden" name="active_location" id="location-switch-input">
+        </form>
+        @endif
+        @endif
         <!--Notification Menu-->
         <li class="dropdown">
           <a class="app-nav__item" href="#" data-toggle="dropdown" aria-label="Show notifications">
@@ -240,7 +297,7 @@
             
             // Calculate pending stock transfers for badge notification
             $pendingTransfersCount = 0;
-            if ($owner && (strtolower($staffRole->name ?? '') === 'stock keeper' || $staffRole->hasPermission('inventory', 'view'))) {
+            if ($owner && $staff && $staff->role && ($staff->role->hasPermission('inventory', 'view') || in_array(strtolower($staff->role->name ?? ''), ['stock keeper', 'manager']))) {
               $pendingTransfersCount = \App\Models\StockTransfer::where('user_id', $owner->id)
                 ->where('status', 'pending')
                 ->count();
@@ -299,37 +356,11 @@
                 }
               @endphp
 
-              {{-- Main Navigation Header --}}
-              @if($showGeneralHeader)
-                <li class="menu-separator">
-                  <div class="menu-separator-content">
-                    <i class="fa fa-navicon"></i>
-                    <span class="menu-separator-label">Main Navigation</span>
-                  </div>
-                </li>
-              @endif
+              {{-- Main Navigation Header (Removed) --}}
               
-              {{-- Business Modules Header (if switching from common to business-specific for the first time) --}}
-              @if($showSeparator && $hasShownCommonMenus && $currentBusinessType !== null && !isset($hasShownBusinessHeader))
-                @php $hasShownBusinessHeader = true; @endphp
-                <li class="menu-separator" style="border-top: 2px solid #666; margin-top: 15px;">
-                  <div class="menu-separator-content">
-                    <i class="fa fa-briefcase"></i>
-                    <span class="menu-separator-label" style="color: #666; font-weight: 800;">Business Modules</span>
-                  </div>
-                </li>
-              @endif
+              {{-- Business Modules Header (Removed) --}}
 
-              
-              {{-- Business Type Separator (show before first business-specific menu or placeholder) --}}
-              @if($showSeparator && $hasShownCommonMenus && ($isBusinessSpecific || $isPlaceholder))
-                <li class="menu-separator">
-                  <div class="menu-separator-content">
-                    <i class="fa {{ $menu->business_type_icon ?? 'fa-building' }}"></i>
-                    <span class="menu-separator-label">{{ $menu->business_type_name }}</span>
-                  </div>
-                </li>
-              @endif
+              {{-- Business Type Separator (Removed) --}}
               
               @if($menu->children && $menu->children->count() > 0)
                 <li class="treeview {{ request()->routeIs($menu->route ?? '') || ($menu->children && $menu->children->contains(function($child) { return request()->routeIs($child->route ?? ''); })) ? 'is-expanded' : '' }}">
@@ -369,6 +400,7 @@
                   </a>
                 </li>
               @endif
+              <li style="border-bottom: 1px solid rgba(255, 255, 255, 0.1); margin: 2px 15px;"></li>
             @endforeach
           @else
             {{-- Fallback: Show only Dashboard if no menus available --}}
@@ -460,36 +492,11 @@
               @endphp
               
               {{-- Main Navigation Header --}}
-              @if($showGeneralHeader)
-                <li class="menu-separator">
-                  <div class="menu-separator-content">
-                    <i class="fa fa-navicon"></i>
-                    <span class="menu-separator-label">Main Navigation</span>
-                  </div>
-                </li>
-              @endif
+              {{-- Main Navigation Header (Removed) --}}
 
-              {{-- Business Modules Header --}}
-              @if($showSeparator && $hasShownCommonMenus && $currentBusinessType !== null && !isset($hasShownBusinessHeaderUser))
-                @php $hasShownBusinessHeaderUser = true; @endphp
-                <li class="menu-separator" style="border-top: 2px solid #666; margin-top: 15px;">
-                  <div class="menu-separator-content">
-                    <i class="fa fa-briefcase"></i>
-                    <span class="menu-separator-label" style="color: #666; font-weight: 800;">Business Modules</span>
-                  </div>
-                </li>
-              @endif
+              {{-- Business Modules Header (Removed) --}}
 
-              
-              {{-- Business Type Separator (show before first business-specific menu or placeholder) --}}
-              @if($showSeparator && $hasShownCommonMenus && ($isBusinessSpecific || $isPlaceholder))
-                <li class="menu-separator">
-                  <div class="menu-separator-content">
-                    <i class="fa {{ $menu->business_type_icon ?? 'fa-building' }}"></i>
-                    <span class="menu-separator-label">{{ $menu->business_type_name }}</span>
-                  </div>
-                </li>
-              @endif
+              {{-- Business Type Separator (Removed) --}}
               
               {{-- Skip placeholder menus (they're just for separators) --}}
               @if($isPlaceholder)
@@ -557,6 +564,7 @@
                   </a>
                 </li>
               @endif
+              <li style="border-bottom: 1px solid rgba(255, 255, 255, 0.1); margin: 2px 15px;"></li>
             @endforeach
           @else
             {{-- Fallback to default menu if no configuration --}}
@@ -764,6 +772,25 @@
       @if(session('alert_info'))
         showAlert('info', '{{ session('alert_info') }}', 'Info');
       @endif
+
+      function switchLocation(location) {
+        document.getElementById('location-switch-input').value = location;
+        document.getElementById('location-switch-form').submit();
+      }
+
+      // Real-time Staff Search
+      const searchInput = document.getElementById('staffSearch');
+      if (searchInput) {
+        searchInput.addEventListener('keyup', function() {
+          const value = this.value.toLowerCase();
+          const rows = document.querySelectorAll('tbody tr');
+          
+          rows.forEach(row => {
+            const text = row.textContent.toLowerCase();
+            row.style.display = text.includes(value) ? '' : 'none';
+          });
+        });
+      }
     </script>
     @yield('scripts')
     @stack('scripts')

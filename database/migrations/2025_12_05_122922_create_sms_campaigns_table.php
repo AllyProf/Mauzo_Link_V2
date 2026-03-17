@@ -17,7 +17,7 @@ return new class extends Migration
             $table->string('name'); // Campaign name
             $table->text('message'); // SMS message content
             $table->enum('type', ['template', 'custom', 'ab_test'])->default('custom');
-            $table->foreignId('template_id')->nullable()->constrained('sms_templates')->onDelete('set null');
+            $table->unsignedBigInteger('template_id')->nullable();
             $table->enum('status', ['draft', 'scheduled', 'sending', 'completed', 'cancelled'])->default('draft');
             $table->integer('total_recipients')->default(0);
             $table->integer('sent_count')->default(0);

@@ -49,7 +49,7 @@ Route::post('/resend-otp', [OtpVerificationController::class, 'resend'])->name('
 // Business Configuration Routes (Must be before require.configuration middleware)
 // Allow both regular users and staff to access (but staff should only view, not edit)
 Route::middleware('allow.staff')->group(function () {
-    Route::prefix('business-configuration')->name('business-configuration.')->group(function () {
+    Route::group(['prefix' => 'business-configuration', 'as' => 'business-configuration.'], function () {
         Route::get('/', [\App\Http\Controllers\BusinessConfigurationController::class, 'index'])->name('index');
         Route::match(['get', 'post'], '/step1', [\App\Http\Controllers\BusinessConfigurationController::class, 'step1'])->name('step1');
         Route::match(['get', 'post'], '/step2', [\App\Http\Controllers\BusinessConfigurationController::class, 'step2'])->name('step2');
@@ -72,6 +72,9 @@ Route::middleware('allow.staff')->group(function () {
     Route::get('/dashboard', [DashboardController::class, 'index'])->name('dashboard');
     // Role-specific dashboard route (for staff members) - must come after base route
     Route::get('/dashboard/{role}', [DashboardController::class, 'index'])->name('dashboard.role')->where('role', '[a-z0-9-]+');
+    
+    // Branch Context Switching
+    Route::post('/switch-location', [DashboardController::class, 'switchLocation'])->name('location.switch');
     
     // Invoice Routes
     Route::get('/invoices/{invoice}', [InvoiceController::class, 'show'])->name('invoices.show');

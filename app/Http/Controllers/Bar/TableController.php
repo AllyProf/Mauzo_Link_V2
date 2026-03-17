@@ -24,9 +24,14 @@ class TableController extends Controller
         // Get owner ID (for staff, get their owner)
         $ownerId = $this->getOwnerId();
 
-        $tables = BarTable::where('user_id', $ownerId)
-            ->orderBy('table_number')
-            ->get();
+        $query = BarTable::where('user_id', $ownerId);
+
+        // Filter by active branch location if context is set
+        if (session('active_location')) {
+            $query->where('location', session('active_location'));
+        }
+
+        $tables = $query->orderBy('table_number')->get();
 
         return view('bar.tables.index', compact('tables'));
     }

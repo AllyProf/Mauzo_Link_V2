@@ -134,38 +134,14 @@
           </div>
         </div>
 
-        <!-- Row: Business Type & Role -->
+        <!-- Row: Role & Details -->
+        <input type="hidden" name="business_type_id" value="2">
         <div class="row">
           <div class="col-md-6">
             <div class="form-group">
-              <label>Business Type <span class="text-danger">*</span></label>
-              <select class="form-control @error('business_type_id') is-invalid @enderror" 
-                      name="business_type_id" id="business_type_id" required>
-                <option value="">Select Business Type</option>
-                @if(isset($businessTypes) && $businessTypes->count() > 0)
-                  @foreach($businessTypes as $businessType)
-                    <option value="{{ $businessType->id }}" {{ old('business_type_id') == $businessType->id ? 'selected' : '' }}>
-                      {{ $businessType->name }}
-                    </option>
-                  @endforeach
-                @else
-                  <option value="" disabled>No business types configured. Please configure your business types first.</option>
-                @endif
-              </select>
-              @error('business_type_id')
-                <div class="invalid-feedback">{{ $message }}</div>
-              @enderror
-              <small class="form-text text-muted">
-                <i class="fa fa-info-circle"></i> Select the business type this staff member will work in.
-              </small>
-            </div>
-          </div>
-          
-          <div class="col-md-6">
-            <div class="form-group">
-              <label>Role <span class="text-danger">*</span></label>
+              <label>Staff Role <span class="text-danger">*</span></label>
               <select class="form-control @error('role_id') is-invalid @enderror" name="role_id" id="role_id" required>
-                <option value="">Select Business Type First</option>
+                <option value="">Select Role</option>
                 @if($roles->count() > 0)
                   @foreach($roles as $role)
                     <option value="{{ $role->id }}" {{ old('role_id') == $role->id ? 'selected' : '' }}>
@@ -183,19 +159,16 @@
                 <div class="invalid-feedback">{{ $message }}</div>
               @enderror
               <small class="form-text text-muted">
-                <i class="fa fa-info-circle"></i> Roles will be filtered based on the selected business type.
+                <i class="fa fa-info-circle"></i> Assign a restaurant role to this staff member to define their permissions.
               </small>
             </div>
           </div>
-        </div>
 
-        <!-- Row: Salary -->
-        <div class="row">
           <div class="col-md-6">
             <div class="form-group">
               <label>Salary Paid (TSh) <span class="text-danger">*</span></label>
               <input type="number" step="0.01" class="form-control @error('salary_paid') is-invalid @enderror" 
-                     name="salary_paid" value="{{ old('salary_paid') }}" required min="0">
+                     name="salary_paid" value="{{ old('salary_paid') }}" required min="0" placeholder="e.g., 500000">
               @error('salary_paid')
                 <div class="invalid-feedback">{{ $message }}</div>
               @enderror
@@ -356,70 +329,7 @@
       });
     });
 
-    // Business Type and Role dynamic loading
-    var businessTypeSelect = document.getElementById('business_type_id');
-    var roleSelect = document.getElementById('role_id');
-    
-    if (businessTypeSelect && roleSelect) {
-      businessTypeSelect.addEventListener('change', function() {
-        var businessTypeId = this.value;
-        
-        // Clear and disable role select
-        roleSelect.innerHTML = '<option value="">Loading roles...</option>';
-        roleSelect.disabled = true;
-        
-        if (!businessTypeId) {
-          roleSelect.innerHTML = '<option value="">Select Business Type First</option>';
-          roleSelect.disabled = false;
-          return;
-        }
-        
-        // Fetch roles for selected business type
-        fetch('{{ route("staff.roles-by-business-type") }}?business_type_id=' + businessTypeId, {
-          method: 'GET',
-          headers: {
-            'X-Requested-With': 'XMLHttpRequest',
-            'Accept': 'application/json',
-            'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]') ? document.querySelector('meta[name="csrf-token"]').getAttribute('content') : ''
-          }
-        })
-        .then(response => {
-          if (!response.ok) {
-            throw new Error('HTTP error! status: ' + response.status);
-          }
-          return response.json();
-        })
-        .then(data => {
-          roleSelect.innerHTML = '<option value="">Select Role</option>';
-          
-          if (data.error) {
-            console.error('Server error:', data.error);
-            roleSelect.innerHTML = '<option value="">Error: ' + data.error + '</option>';
-          } else if (data.roles && data.roles.length > 0) {
-            data.roles.forEach(function(role) {
-              var option = document.createElement('option');
-              option.value = role.id;
-              option.textContent = role.name + (role.description ? ' - ' + role.description : '');
-              roleSelect.appendChild(option);
-            });
-          } else {
-            roleSelect.innerHTML = '<option value="">No roles available for this business type</option>';
-          }
-          
-          roleSelect.disabled = false;
-        })
-        .catch(error => {
-          console.error('Error loading roles:', error);
-          roleSelect.innerHTML = '<option value="">Error loading roles. Please refresh the page and try again.</option>';
-          roleSelect.disabled = false;
-        });
-      });
-      
-      // Trigger change if business type is pre-selected (from old input)
-      if (businessTypeSelect.value) {
-        businessTypeSelect.dispatchEvent(new Event('change'));
-      }
-    }
+    // No custom scripts needed for business type filtering anymore as it is fixed to Restaurant
   });
 </script>
 @endpush

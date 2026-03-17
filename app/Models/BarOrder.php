@@ -52,9 +52,8 @@ class BarOrder extends Model
     {
         $prefix = 'ORD';
         
-        // Get the last order number for this user
-        $lastOrder = self::where('user_id', $userId)
-            ->where('order_number', 'like', $prefix . '-%')
+        // Get the last order number across all users to ensure global uniqueness
+        $lastOrder = self::where('order_number', 'like', $prefix . '-%')
             ->orderByRaw('CAST(SUBSTRING(order_number, 5) AS UNSIGNED) DESC')
             ->first();
         

@@ -1,0 +1,162 @@
+@extends('layouts.dashboard')
+
+@section('title', 'Stock-to-Cash Audit')
+
+@section('content')
+<div class="app-title">
+  <div>
+    <h1><i class="fa fa-line-chart"></i> Stock-to-Cash Audit</h1>
+    <p>Financial Reconciliation per Stock Batch (Managers Only)</p>
+  </div>
+  <ul class="app-breadcrumb breadcrumb">
+    <li class="breadcrumb-item"><i class="fa fa-home fa-lg"></i></li>
+    <li class="breadcrumb-item"><a href="{{ route('dashboard') }}">Dashboard</a></li>
+    <li class="breadcrumb-item">Stock Audit</li>
+  </ul>
+</div>
+
+<!-- Manager Summary Cards -->
+<div class="row mb-4">
+    <div class="col-md-3">
+        <div class="widget-small primary coloured-icon"><i class="icon fa fa-shopping-cart fa-3x"></i>
+            <div class="info">
+                <p class="text-uppercase small font-weight-bold">Batch Expected Value</p>
+                <p><b>TSh {{ number_format($totalExpected) }}</b></p>
+                <small class="text-muted">Total value of transfers</small>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="widget-small success coloured-icon"><i class="icon fa fa-money fa-3x"></i>
+            <div class="info">
+                <p class="text-uppercase small font-weight-bold" style="color: #000 !important;">Batch Collected Cash</p>
+                <p><b style="color: #000 !important;">TSh {{ number_format($totalCollected) }}</b></p>
+                <small class="text-muted">Sales revenue received</small>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="widget-small info coloured-icon"><i class="icon fa fa-check-circle fa-3x"></i>
+            <div class="info">
+                <p class="text-uppercase small font-weight-bold">Sold Out Batches</p>
+                <p><b>{{ $fullySoldBatchCount }} Batches</b></p>
+                <small class="text-muted">Ready for final audit</small>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        @php $payoutDiff = $totalExpected - $totalCollected; @endphp
+        <div class="widget-small {{ $payoutDiff > 0 ? 'danger' : 'info' }} coloured-icon"><i class="icon fa fa-arrow-down fa-3x"></i>
+            <div class="info">
+                <p class="text-uppercase small font-weight-bold">Pending Revenue</p>
+                <p><b>TSh {{ number_format(max(0, $payoutDiff)) }}</b></p>
+                <small class="text-muted">Remaining stock value</small>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Filters -->
+<div class="row mb-3">
+  <div class="col-md-12">
+    <div class="tile">
+      <form method="GET" action="{{ route('manager.stock-audit') }}" class="form-inline">
+        <div class="form-group mr-3">
+          <label for="start_date" class="mr-2 small font-weight-bold">Start Date:</label>
+          <input type="date" name="start_date" id="start_date" class="form-control form-control-sm" value="{{ $startDate }}" required>
+        </div>
+        <div class="form-group mr-3">
+          <label for="end_date" class="mr-2 small font-weight-bold">End Date:</label>
+          <input type="date" name="end_date" id="end_date" class="form-control form-control-sm" value="{{ $endDate }}" required>
+        </div>
+        <div class="form-group mr-3">
+          <label for="status" class="mr-2 small font-weight-bold">Status:</label>
+          <select name="status" class="form-control form-control-sm">
+            <option value="all" {{ $statusFilter == 'all' ? 'selected' : '' }}>All Batches</option>
+            <option value="selling" {{ $statusFilter == 'selling' ? 'selected' : '' }}>Still Selling</option>
+            <option value="sold_out" {{ $statusFilter == 'sold_out' ? 'selected' : '' }}>Sold Out</option>
+          </select>
+        </div>
+        <button type="submit" class="btn btn-primary btn-sm px-4">
+          <i class="fa fa-refresh"></i> Update Report
+        </button>
+      </form>
+    </div>
+  </div>
+</div>
+
+<div class="row">
+    <div class="col-md-12">
+        <div class="tile">
+            <h3 class="tile-title"><i class="fa fa-list"></i> Batch Progress Audit</h3>
+            <div class="table-responsive">
+                <table class="table table-hover table-bordered">
+                    <thead class="bg-light">
+                        <tr>
+                            <th>Transfer Info</th>
+                            <th>Product Details</th>
+                            <th>Batch Qty</th>
+                            <th>Sold Qty</th>
+                            <th>Sales Progress</th>
+                            <th>Expected Revenue</th>
+                            <th>Collected (Actual)</th>
+                            <th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @forelse($auditData as $row)
+                        <tr class="{{ $row['is_fully_sold'] ? 'table-success-light' : '' }}">
+                            <td>
+                                <strong>{{ $row['number'] }}</strong><br>
+                                <small class="text-muted">{{ $row['date'] }}</small>
+                            </td>
+                            <td>{{ $row['product'] }}</td>
+                            <td>{{ $row['qty'] }} units</td>
+                            <td>{{ $row['sold_qty'] }} units</td>
+                            <td style="width: 200px;">
+                                <div class="progress" style="height: 15px;">
+                                    <div class="progress-bar progress-bar-striped {{ $row['is_fully_sold'] ? 'bg-success' : 'progress-bar-animated bg-info' }}" 
+                                         role="progressbar" 
+                                         style="width: {{ $row['progress'] }}%;" 
+                                         aria-valuenow="{{ $row['progress'] }}" 
+                                         aria-valuemin="0" 
+                                         aria-valuemax="100">
+                                        {{ $row['progress'] }}%
+                                    </div>
+                                </div>
+                                @if($row['is_fully_sold'])
+                                    <small class="text-success font-weight-bold"><i class="fa fa-check"></i> 100% Sold - Received Amount</small>
+                                @endif
+                            </td>
+                            <td><strong>TSh {{ number_format($row['expected_revenue']) }}</strong></td>
+                            <td>
+                                <strong class="{{ $row['actual_revenue'] >= $row['expected_revenue'] ? 'text-success' : 'text-primary' }}">
+                                    TSh {{ number_format($row['actual_revenue']) }}
+                                </strong>
+                            </td>
+                            <td>
+                                @if($row['is_fully_sold'])
+                                    <span class="badge badge-success p-2 px-3">COMPLETED</span>
+                                @else
+                                    <span class="badge badge-info p-2 px-3">ACTIVE (SELLING)</span>
+                                @endif
+                            </td>
+                        </tr>
+                        @empty
+                        <tr>
+                            <td colspan="8" class="text-center py-5">No batch transfers found for this period.</td>
+                        </tr>
+                        @endforelse
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+@endsection
+
+@section('scripts')
+<style>
+.table-success-light { background-color: rgba(40, 167, 69, 0.05); }
+</style>
+@endsection

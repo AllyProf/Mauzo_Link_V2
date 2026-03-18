@@ -321,6 +321,11 @@ Route::middleware('allow.staff')->group(function () {
             Route::get('reports/stock-transfers', [\App\Http\Controllers\Accountant\AccountantController::class, 'stockTransfersReport'])->name('reports.stock-transfers');
             Route::get('reports/pdf', [\App\Http\Controllers\Accountant\AccountantController::class, 'exportReportsPdf'])->name('reports.pdf');
         });
+
+    // Manager Routes (Require Payment & Configuration)
+    Route::middleware(['require.payment', 'require.configuration'])->prefix('manager')->name('manager.')->group(function () {
+        Route::get('stock-audit', [\App\Http\Controllers\Manager\StockAuditController::class, 'index'])->name('stock-audit');
+    });
     
     // Marketing Routes (Require Payment & Configuration)
     Route::middleware(['require.payment', 'require.configuration'])->prefix('marketing')->name('marketing.')->group(function () {

@@ -309,7 +309,8 @@ class MenuService
                 'bar.chef.reconciliation'
             ],
             'manager' => [
-                'accountant.reconciliations'
+                'accountant.reconciliations',
+                'manager.stock-audit'
             ]
         ];
 

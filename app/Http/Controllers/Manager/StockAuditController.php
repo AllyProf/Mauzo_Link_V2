@@ -100,12 +100,17 @@ class StockAuditController extends Controller
         }
 
         $sales = TransferSale::where('stock_transfer_id', $transfer->id)
-            ->with(['orderItem.order.waiter'])
+            ->with(['orderItem.order.waiter', 'orderItem.order.owner'])
             ->get()
             ->map(function($ts) {
+                // Determine waiter name (fallback to owner name, then 'System')
+                $waiterName = $ts->orderItem->order->waiter->full_name 
+                    ?? $ts->orderItem->order->owner->name 
+                    ?? 'System';
+
                 return [
                     'order_number' => $ts->orderItem->order->order_number ?? 'N/A',
-                    'waiter' => $ts->orderItem->order->waiter->name ?? 'System',
+                    'waiter' => $waiterName,
                     'qty' => $ts->quantity,
                     'unit_price' => $ts->unit_price,
                     'total_price' => $ts->total_price,

@@ -14,7 +14,7 @@ class MenuService
      */
     protected const COMMON_SLUGS = [
         'dashboard', 'sales', 'products', 'customers', 'staff', 
-        'hr', 'reports', 'marketing', 'settings', 'accountant', 'stock-audit', 'counter-reconciliation'
+        'hr', 'reports', 'marketing', 'settings', 'accountant', 'stock-audit', 'counter-reconciliation', 'targets', 'purchase-requests'
     ];
 
     /**
@@ -283,10 +283,12 @@ class MenuService
         
         $isCounter = in_array($roleName, ['counter', 'bar counter', 'waiter', 'counter supervisor']) || 
                      in_array($roleSlug, ['counter', 'waiter']);
-        $isStockKeeper = in_array($roleName, ['stock keeper', 'stockkeeper']) || 
-                         in_array($roleSlug, ['stock-keeper', 'stockkeeper']);
+        $isStockKeeper = in_array($roleName, ['stock keeper', 'stockkeeper', 'store keeper']) || 
+                         in_array($roleSlug, ['stock-keeper', 'stockkeeper', 'store-keeper']);
         $isChef = in_array($roleName, ['chef', 'head chef', 'cook']) || 
                   in_array($roleSlug, ['chef']);
+        $isAccountant = in_array($roleName, ['accountant', 'finance officer']) || 
+                        in_array($roleSlug, ['accountant', 'finance']);
 
         // Role-based route overrides for core functionality
         $overrides = [
@@ -306,30 +308,36 @@ class MenuService
                 'bar.beverage-inventory.index', 'bar.beverage-inventory.stock-levels', 'bar.beverage-inventory.warehouse-stock',
                 'reports.index'
             ],
-            'stock_keeper' => [
+            'stock-keeper' => [
                 'bar.beverage-inventory.warehouse-stock', 'bar.stock-receipts.index', 'bar.stock-receipts.create',
                 'bar.stock-receipts.store', 'bar.stock-receipts.show',
                 'bar.stock-transfers.index', 'bar.stock-transfers.create', 'bar.stock-transfers.store',
                 'bar.products.index', 'bar.products.create', 'bar.suppliers.index',
-                'products.inventory', 'products.index'
+                'products.inventory', 'products.index', 'purchase-requests.index'
             ],
             'chef' => [
                 'bar.chef.dashboard', 'bar.chef.kds', 'bar.chef.update-item-status', 'bar.chef.latest-orders',
                 'bar.chef.food-items', 'bar.chef.ingredients', 'bar.chef.ingredient-receipts',
                 'bar.chef.ingredient-batches', 'bar.chef.ingredient-stock-movements', 'bar.chef.reports',
-                'bar.chef.reconciliation', 'accountant.reconciliations'
+                'bar.chef.reconciliation', 'purchase-requests.index'
+            ],
+            'accountant' => [
+                'accountant.reconciliations', 'purchase-requests.index'
             ],
             'manager' => [
                 'accountant.reconciliations',
-                'manager.stock-audit'
+                'manager.stock-audit',
+                'manager.targets.index',
+                'purchase-requests.index'
             ]
         ];
 
         $isManager = in_array($roleName, ['manager', 'general manager', 'administrator']) || in_array($roleSlug, ['manager', 'admin']);
 
         if ($isCounter && in_array($menu->route, $overrides['counter'])) return true;
-        if ($isStockKeeper && in_array($roleSlug, ['stock_keeper']) && in_array($menu->route, $overrides['stock_keeper'])) return true;
+        if ($isStockKeeper && (in_array($roleSlug, ['stock-keeper', 'stock_keeper', 'store-keeper'])) && in_array($menu->route, $overrides['stock-keeper'])) return true;
         if ($isChef && in_array($menu->route, $overrides['chef'])) return true;
+        if ($isAccountant && in_array($menu->route, $overrides['accountant'])) return true;
         if ($isManager && in_array($menu->route, $overrides['manager'])) return true;
 
         // Map routes to permissions

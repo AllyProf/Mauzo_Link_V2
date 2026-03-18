@@ -338,6 +338,28 @@ class DashboardController extends Controller
                 ->orderByDesc('total_sold')
                 ->get();
 
+                // ── Monthly Targets Progress
+                $monthlyTargets = \App\Models\SalesTarget::where('user_id', $ownerId)
+                    ->where('month', now()->month)
+                    ->where('year', now()->year)
+                    ->get()
+                    ->keyBy('target_type');
+                
+                $barMonthlyTarget = $monthlyTargets['monthly_bar']->target_amount ?? 0;
+                $foodMonthlyTarget = $monthlyTargets['monthly_food']->target_amount ?? 0;
+                
+                $barTargetProgress = $barMonthlyTarget > 0 ? min(100, round(($monthRevenue / $barMonthlyTarget) * 100)) : 0;
+                // Note: food actual needs to be calculated if not already. 
+                // For now, let's use a combined progress or show separately if possible.
+                // Re-calculating food actual for dashboard
+                $foodMonthRevenue = \App\Models\KitchenOrderItem::whereHas('order', function($q) use ($ownerId, $location) {
+                        $q->where('user_id', $ownerId)
+                          ->where('status', 'served')
+                          ->whereMonth('created_at', now()->month);
+                        // Apply location filters... (simulated for now as KitchenOrderItem usually tied to orders)
+                    })->sum('total_price');
+                $foodTargetProgress = $foodMonthlyTarget > 0 ? min(100, round(($foodMonthRevenue / $foodMonthlyTarget) * 100)) : 0;
+
                 return view('dashboard.manager', compact(
                     'staff', 'owner',
                     'todayRevenue', 'monthRevenue', 'todayOrders', 'pendingOrders',
@@ -346,7 +368,8 @@ class DashboardController extends Controller
                     'recentReceipts', 'recentTransfers',
                     'revenueTrend', 'topProducts',
                     'warehouseStockItems', 'counterStockItems',
-                    'lowStockList', 'categoryDistribution'
+                    'lowStockList', 'categoryDistribution',
+                    'barMonthlyTarget', 'foodMonthlyTarget', 'barTargetProgress', 'foodTargetProgress', 'foodMonthRevenue'
                 ));
             }
 

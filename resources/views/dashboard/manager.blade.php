@@ -69,6 +69,42 @@
   </div>
 </div>
 
+{{-- ═══════════════════════════════════════╗
+     ROW 1.5 – Monthly Targets Progress     ║
+══════════════════════════════════════════--}}
+<div class="row">
+  <div class="col-md-6 mb-4">
+    <div class="tile pb-2">
+      <div class="d-flex justify-content-between">
+        <h6 class="text-muted small font-weight-bold"><i class="fa fa-glass mr-1"></i> BAR MONTHLY GOAL</h6>
+        <span class="badge badge-primary">{{ $barTargetProgress }}%</span>
+      </div>
+      <div class="product-bar-track mt-2">
+        <div class="product-bar-fill bg-info" style="width: {{ $barTargetProgress }}%; background-color: #36b9cc !important;"></div>
+      </div>
+      <div class="d-flex justify-content-between mt-1 tiny text-muted">
+        <span>TSh {{ number_format($monthRevenue) }}</span>
+        <span>Target: TSh {{ number_format($barMonthlyTarget) }}</span>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-6 mb-4">
+    <div class="tile pb-2">
+      <div class="d-flex justify-content-between">
+        <h6 class="text-muted small font-weight-bold"><i class="fa fa-cutlery mr-1"></i> FOOD MONTHLY GOAL</h6>
+        <span class="badge badge-warning">{{ $foodTargetProgress }}%</span>
+      </div>
+      <div class="product-bar-track mt-2">
+        <div class="product-bar-fill bg-warning" style="width: {{ $foodTargetProgress }}%; background-color: #f6c23e !important;"></div>
+      </div>
+      <div class="d-flex justify-content-between mt-1 tiny text-muted">
+        <span>TSh {{ number_format($foodMonthRevenue) }}</span>
+        <span>Target: TSh {{ number_format($foodMonthlyTarget) }}</span>
+      </div>
+    </div>
+  </div>
+</div>
+
 {{-- ═══════════════════════════════════════════════════
      ROW 2 – Revenue Trend Chart  |  Category Distribution ║
 ═══════════════════════════════════════════════════--}}

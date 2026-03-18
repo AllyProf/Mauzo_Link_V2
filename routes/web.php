@@ -327,6 +327,11 @@ Route::middleware('allow.staff')->group(function () {
         Route::get('stock-audit', [\App\Http\Controllers\Manager\StockAuditController::class, 'index'])->name('stock-audit');
         Route::get('stock-audit/details/{transfer}', [\App\Http\Controllers\Manager\StockAuditController::class, 'getDetails'])->name('stock-audit.details');
         Route::post('stock-audit/audit/{transfer}', [\App\Http\Controllers\Manager\StockAuditController::class, 'auditBatch'])->name('stock-audit.audit');
+        
+        // Target Management
+        Route::get('targets', [\App\Http\Controllers\Manager\TargetController::class, 'index'])->name('targets.index');
+        Route::post('targets/monthly', [\App\Http\Controllers\Manager\TargetController::class, 'storeMonthly'])->name('targets.monthly.store');
+        Route::post('targets/staff', [\App\Http\Controllers\Manager\TargetController::class, 'storeStaff'])->name('staff-targets.store');
     });
     
     // Marketing Routes (Require Payment & Configuration)
@@ -383,5 +388,13 @@ Route::middleware('allow.staff')->group(function () {
         
         // Analytics
         Route::get('/analytics', [\App\Http\Controllers\Admin\AnalyticsController::class, 'index'])->name('analytics.index');
+    });
+
+    // Purchase Requests Workflow
+    Route::prefix('purchase-requests')->name('purchase-requests.')->group(function () {
+        Route::get('/', [\App\Http\Controllers\PurchaseRequestController::class, 'index'])->name('index');
+        Route::post('/store', [\App\Http\Controllers\PurchaseRequestController::class, 'store'])->name('store');
+        Route::post('/{id}/update', [\App\Http\Controllers\PurchaseRequestController::class, 'update'])->name('update');
+        Route::post('/{id}/process', [\App\Http\Controllers\PurchaseRequestController::class, 'process'])->name('process');
     });
 });

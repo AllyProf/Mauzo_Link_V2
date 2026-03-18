@@ -128,32 +128,34 @@ class CounterReconciliationController extends Controller
                 });
                 $hasUnpaidOrders = $unpaidBarOrders->count() > 0;
                 
-                // Calculate total recorded amount from OrderPayments (recorded by waiters)
-                // This shows what waiters have recorded, regardless of reconciliation status
-                $totalRecordedAmount = $barOrders->filter(function($order) {
-                    return $order->status === 'served' && $order->orderPayments && $order->orderPayments->count() > 0;
-                })->sum(function($order) {
-                    // Sum all OrderPayments for this order (recorded payments)
-                    return $order->orderPayments->sum('amount');
-                });
-                
                 // Calculate total paid amount (only orders that have been reconciled/submitted)
                 $totalPaidAmount = $barOrders->filter(function($order) {
                     return $order->status === 'served' && $order->payment_status === 'paid';
                 })->sum(function($order) {
-                    // Only sum the bar items (drinks) amount, not the total order amount
                     return $order->items->sum('total_price');
                 });
+
+                // Payment collection from bar orders only (Avoiding double counting)
+                $cashCollected = 0;
+                $mobileMoneyCollected = 0;
                 
-                // Payment collection from bar orders only
-                $cashCollected = $barOrders->where('payment_method', 'cash')->sum('paid_amount') + 
-                               $barOrders->sum(function($order) {
-                                   return $order->orderPayments->where('payment_method', 'cash')->sum('amount');
-                               });
-                $mobileMoneyCollected = $barOrders->where('payment_method', 'mobile_money')->sum('paid_amount') + 
-                                      $barOrders->sum(function($order) {
-                                          return $order->orderPayments->where('payment_method', 'mobile_money')->sum('amount');
-                                      });
+                foreach ($barOrders as $order) {
+                    if ($order->orderPayments->count() > 0) {
+                        // Use OrderPayments if they exist
+                        $cashCollected += $order->orderPayments->where('payment_method', 'cash')->sum('amount');
+                        $mobileMoneyCollected += $order->orderPayments->where('payment_method', 'mobile_money')->sum('amount');
+                    } else {
+                        // Fallback to order fields
+                        if ($order->payment_method === 'cash') {
+                            $cashCollected += $order->paid_amount;
+                        } elseif ($order->payment_method === 'mobile_money') {
+                            $mobileMoneyCollected += $order->paid_amount;
+                        }
+                    }
+                }
+                
+                // Re-calculate Total Recorded to match the above logic
+                $totalRecordedAmount = $cashCollected + $mobileMoneyCollected;
                 
                 $reconciliation = $waiter->dailyReconciliations->first();
                 

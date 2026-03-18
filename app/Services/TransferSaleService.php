@@ -23,6 +23,15 @@ class TransferSaleService
         $productVariantId = $orderItem->product_variant_id;
         $quantityNeeded = $orderItem->quantity;
         
+        // --- GUARD: PREVENT DUPLICATE ATTRIBUTION ---
+        $alreadyAttributedQty = TransferSale::where('order_item_id', $orderItem->id)->sum('quantity');
+        if ($alreadyAttributedQty >= $quantityNeeded) {
+            return; // Already fully handled
+        }
+        
+        $quantityNeeded -= $alreadyAttributedQty; // Only attribute what remains
+        // -------------------------------------------
+        
         // If it's a tot sale, calculate fractional bottle quantity for transfer attribution
         if (($orderItem->sell_type ?? 'unit') === 'tot') {
             $variant = $orderItem->productVariant ?: \App\Models\ProductVariant::find($productVariantId);

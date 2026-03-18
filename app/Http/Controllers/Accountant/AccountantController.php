@@ -1465,7 +1465,7 @@ class AccountantController extends Controller
             'date' => 'required|date',
             'type' => 'required|string|in:bar,food',
             'amount' => 'required|numeric|min:1',
-            'method' => 'required|string|in:cash,mobile_money,bank_transfer,pos_card',
+            // 'method' removed as requested, we will auto-detect
         ]);
 
         $ownerId = $this->getOwnerId();
@@ -1480,11 +1480,39 @@ class AccountantController extends Controller
                 ->get();
 
             foreach ($reconciliations as $recon) {
-                // Tracking total and breakdown
-                $method = $validated['method'];
+                // AMOUNT TO APPLY
                 $amount = (int)$validated['amount'];
                 
-                // 1. Total Tracking
+                // 1. AUTO-DETECT THE BEST CHANNEL
+                // We re-query the original system-recorded payments to find where the gap is
+                $query = ($type === 'bar') ? \App\Models\BarOrder::query() : \App\Models\FoodOrder::query();
+                $orders = $query->where('reconciliation_date', $date)
+                               ->where('status', '!=', 'cancelled')
+                               ->with('orderPayments')
+                               ->get();
+                               
+                $systemTotals = ['cash' => 0, 'mobile_money' => 0, 'bank_transfer' => 0, 'pos_card' => 0];
+                foreach ($orders as $o) {
+                    foreach ($o->orderPayments as $p) {
+                        $m = $p->payment_method;
+                        if(isset($systemTotals[$m])) $systemTotals[$m] += $p->amount;
+                    }
+                }
+                
+                // Find where the Submitted < System Recorded (the gap)
+                $gaps = [
+                    'cash' => max(0, $systemTotals['cash'] - $recon->cash_collected),
+                    'mobile_money' => max(0, $systemTotals['mobile_money'] - $recon->mobile_money_collected),
+                    'bank_transfer' => max(0, $systemTotals['bank_transfer'] - $recon->bank_collected),
+                    'pos_card' => max(0, $systemTotals['pos_card'] - $recon->card_collected),
+                ];
+                
+                // Sort gaps descending so we fill the biggest hole first
+                arsort($gaps);
+                reset($gaps);
+                $detectedMethod = key($gaps) ?: 'cash'; // Fallback to cash if no clear gap
+                
+                // 2. Update breakdown Tracking
                 $totalPaidSoFar = 0;
                 preg_match('/\[ShortagePaidTotal:(\d+)\]/', $recon->notes, $tm);
                 if (isset($tm[1])) {
@@ -1493,7 +1521,6 @@ class AccountantController extends Controller
                 }
                 $newTotal = $totalPaidSoFar + $amount;
                 
-                // 2. Breakdown Tracking (cash=100,mobile=200)
                 $breakdown = [];
                 preg_match('/\[ShortagePaidBreakdown:([^\]]+)\]/', $recon->notes, $bm);
                 if (isset($bm[1])) {
@@ -1504,17 +1531,17 @@ class AccountantController extends Controller
                     }
                     $recon->notes = preg_replace('/\[ShortagePaidBreakdown:[^\]]+\]/', '', $recon->notes);
                 }
-                $breakdown[$method] = ($breakdown[$method] ?? 0) + $amount;
+                $breakdown[$detectedMethod] = ($breakdown[$detectedMethod] ?? 0) + $amount;
                 
                 $breakdownStr = "";
                 foreach($breakdown as $k => $v) $breakdownStr .= ($breakdownStr ? ',' : '') . "{$k}={$v}";
 
-                $recon->notes .= " | [ShortagePaidTotal:{$newTotal}] [ShortagePaidBreakdown:{$breakdownStr}] - TSh " . number_format($amount) . " received via " . strtoupper($method) . " by Accountant on " . now()->toDateTimeString();
+                $recon->notes .= " | [ShortagePaidTotal:{$newTotal}] [ShortagePaidBreakdown:{$breakdownStr}] - TSh " . number_format($amount) . " auto-allocated to " . strtoupper($detectedMethod) . " based on identified deficit.";
                 $recon->save();
             }
 
             DB::commit();
-            return response()->json(['success' => true, 'message' => 'Payment recorded successfuly.']);
+            return response()->json(['success' => true, 'message' => "Payment of TSh " . number_format($validated['amount']) . " recorded and auto-allocated to " . strtoupper($detectedMethod) . "."]);
         } catch (\Exception $e) {
             DB::rollBack();
             return response()->json(['success' => false, 'message' => 'Failed to pay shortage: ' . $e->getMessage()], 500);

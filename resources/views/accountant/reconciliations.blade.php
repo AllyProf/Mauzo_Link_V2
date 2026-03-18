@@ -743,14 +743,7 @@ $(document).ready(function() {
             <div class="text-left">
                 <label class="small font-weight-bold">Amount Received (TSh ${shortage.toLocaleString()})</label>
                 <input type="number" id="pay_amt" class="swal2-input m-0 w-100" value="${shortage}">
-                
-                <label class="small font-weight-bold mt-3">Payment Method</label>
-                <select id="pay_method" class="swal2-input m-0 w-100">
-                    <option value="cash">Actual Cash</option>
-                    <option value="mobile_money">Mobile Money</option>
-                    <option value="bank_transfer">Bank Transfer</option>
-                    <option value="pos_card">Card/POS</option>
-                </select>
+                <p class="mt-2 text-muted small"><i class="fa fa-info-circle"></i> Method will be auto-detected based on the discrepancy.</p>
             </div>
           `,
           showCancelButton: true,
@@ -758,7 +751,6 @@ $(document).ready(function() {
           showLoaderOnConfirm: true,
           preConfirm: () => {
               const amount = $('#pay_amt').val();
-              const method = $('#pay_method').val();
               
               if (!amount || amount <= 0) {
                   Swal.showValidationMessage('Please enter a valid amount');
@@ -772,8 +764,7 @@ $(document).ready(function() {
                       _token: "{{ csrf_token() }}",
                       date: date,
                       type: type,
-                      amount: amount,
-                      method: method
+                      amount: amount
                   }
               }).catch(error => {
                   Swal.showValidationMessage(`Request failed: ${error.responseJSON.message}`);

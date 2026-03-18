@@ -1465,6 +1465,7 @@ class AccountantController extends Controller
             'date' => 'required|date',
             'type' => 'required|string|in:bar,food',
             'amount' => 'required|numeric|min:1',
+            'method' => 'required|string|in:cash,mobile_money,bank_transfer,pos_card',
         ]);
 
         $ownerId = $this->getOwnerId();
@@ -1479,17 +1480,36 @@ class AccountantController extends Controller
                 ->get();
 
             foreach ($reconciliations as $recon) {
-                // Better parsing for total paid so far
+                // Tracking total and breakdown
+                $method = $validated['method'];
+                $amount = (int)$validated['amount'];
+                
+                // 1. Total Tracking
                 $totalPaidSoFar = 0;
-                preg_match('/\[ShortagePaidTotal:(\d+)\]/', $recon->notes, $matches);
-                if (isset($matches[1])) {
-                    $totalPaidSoFar = (int)$matches[1];
-                    // Remove old tag to replace it
+                preg_match('/\[ShortagePaidTotal:(\d+)\]/', $recon->notes, $tm);
+                if (isset($tm[1])) {
+                    $totalPaidSoFar = (int)$tm[1];
                     $recon->notes = preg_replace('/\[ShortagePaidTotal:\d+\]/', '', $recon->notes);
                 }
+                $newTotal = $totalPaidSoFar + $amount;
+                
+                // 2. Breakdown Tracking (cash=100,mobile=200)
+                $breakdown = [];
+                preg_match('/\[ShortagePaidBreakdown:([^\]]+)\]/', $recon->notes, $bm);
+                if (isset($bm[1])) {
+                    $parts = explode(',', $bm[1]);
+                    foreach($parts as $p) {
+                        list($k, $v) = explode('=', $p);
+                        $breakdown[$k] = (int)$v;
+                    }
+                    $recon->notes = preg_replace('/\[ShortagePaidBreakdown:[^\]]+\]/', '', $recon->notes);
+                }
+                $breakdown[$method] = ($breakdown[$method] ?? 0) + $amount;
+                
+                $breakdownStr = "";
+                foreach($breakdown as $k => $v) $breakdownStr .= ($breakdownStr ? ',' : '') . "{$k}={$v}";
 
-                $newTotal = $totalPaidSoFar + (int)$validated['amount'];
-                $recon->notes .= " | [ShortagePaidTotal:{$newTotal}] - TSh " . number_format($validated['amount']) . " received by Accountant on " . now()->toDateTimeString();
+                $recon->notes .= " | [ShortagePaidTotal:{$newTotal}] [ShortagePaidBreakdown:{$breakdownStr}] - TSh " . number_format($amount) . " received via " . strtoupper($method) . " by Accountant on " . now()->toDateTimeString();
                 $recon->save();
             }
 

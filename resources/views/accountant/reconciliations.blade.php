@@ -121,6 +121,14 @@
                       $rowTotalPaid = 0;
                       if(preg_match('/\[ShortagePaidTotal:(\d+)\]/', $fr->notes ?? '', $m)) $rowTotalPaid = (int)$m[1];
                       $hasActiveShortage = $rowDiff < 0 && $rowTotalPaid < abs($rowDiff);
+
+                      $breakdown = [];
+                      if(preg_match('/\[ShortagePaidBreakdown:([^\]]+)\]/', $fr->notes ?? '', $bm)) {
+                          foreach(explode(',', $bm[1]) as $p) {
+                              $kv = explode('=', $p);
+                              if(count($kv) == 2) $breakdown[$kv[0]] = (int)$kv[1];
+                          }
+                      }
                   @endphp
                   <tr class="{{ $hasActiveShortage ? 'table-danger' : ($rowDiff < 0 ? 'table-success-light' : '') }}" style="{{ $hasActiveShortage ? 'background-color: #fff5f5;' : '' }}">
                     <td>{{ \Carbon\Carbon::parse($fr->reconciliation_date)->format('M d, Y') }}</td>
@@ -138,10 +146,10 @@
                             <br><small class="text-muted">(Incl. TSh {{ number_format($rowTotalPaid) }} paid)</small>
                         @endif
                     </td>
-                    <td>TSh {{ number_format($fr->total_cash) }}</td>
-                    <td>TSh {{ number_format($fr->total_mobile) }}</td>
-                    <td>TSh {{ number_format($fr->total_bank ?? 0) }}</td>
-                    <td>TSh {{ number_format($fr->total_card ?? 0) }}</td>
+                    <td>TSh {{ number_format($fr->total_cash + ($breakdown['cash'] ?? 0)) }}</td>
+                    <td>TSh {{ number_format($fr->total_mobile + ($breakdown['mobile_money'] ?? 0)) }}</td>
+                    <td>TSh {{ number_format(($fr->total_bank ?? 0) + ($breakdown['bank_transfer'] ?? 0)) }}</td>
+                    <td>TSh {{ number_format(($fr->total_card ?? 0) + ($breakdown['pos_card'] ?? 0)) }}</td>
                     <td>
                       @php 
                         $netSubmitted = $fr->total_submitted + $rowTotalPaid;
@@ -731,17 +739,32 @@ $(document).ready(function() {
 
       Swal.fire({
           title: 'Mark Shortage as Paid?',
-          text: `Enter the amount received (Full amount is TSh ${shortage.toLocaleString()})`,
-          input: 'number',
-          inputAttributes: {
-              min: 1,
-              step: 1
-          },
-          inputValue: shortage,
+          html: `
+            <div class="text-left">
+                <label class="small font-weight-bold">Amount Received (TSh ${shortage.toLocaleString()})</label>
+                <input type="number" id="pay_amt" class="swal2-input m-0 w-100" value="${shortage}">
+                
+                <label class="small font-weight-bold mt-3">Payment Method</label>
+                <select id="pay_method" class="swal2-input m-0 w-100">
+                    <option value="cash">Actual Cash</option>
+                    <option value="mobile_money">Mobile Money</option>
+                    <option value="bank_transfer">Bank Transfer</option>
+                    <option value="pos_card">Card/POS</option>
+                </select>
+            </div>
+          `,
           showCancelButton: true,
           confirmButtonText: 'Record Payment',
           showLoaderOnConfirm: true,
-          preConfirm: (amount) => {
+          preConfirm: () => {
+              const amount = $('#pay_amt').val();
+              const method = $('#pay_method').val();
+              
+              if (!amount || amount <= 0) {
+                  Swal.showValidationMessage('Please enter a valid amount');
+                  return false;
+              }
+
               return $.ajax({
                   url: "{{ route('accountant.reconciliations.pay-shortage') }}",
                   type: "POST",
@@ -749,7 +772,8 @@ $(document).ready(function() {
                       _token: "{{ csrf_token() }}",
                       date: date,
                       type: type,
-                      amount: amount
+                      amount: amount,
+                      method: method
                   }
               }).catch(error => {
                   Swal.showValidationMessage(`Request failed: ${error.responseJSON.message}`);

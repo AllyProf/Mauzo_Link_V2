@@ -407,6 +407,9 @@ class AccountantController extends Controller
         $tab = $request->get('tab', 'financial'); // 'financial' or 'waiters' or 'payments'
         $canReconcile = $this->hasPermission('finance', 'edit');
         
+        // Is user a manager/accountant who can see performance charts?
+        $isManagerView = $this->hasPermission('finance', 'view') || $this->hasPermission('reports', 'view');
+        
         // Determine if we should filter by department (Counter = bar, Chef = food)
         $currentStaff = $this->getCurrentStaff();
         $roleSlug = strtolower(trim($currentStaff->role->slug ?? ''));
@@ -665,7 +668,8 @@ class AccountantController extends Controller
             'staffMembers',
             'canReconcile',
             'chartData',
-            'summaryProfit'
+            'summaryProfit',
+            'isManagerView'
         ));
     }
 

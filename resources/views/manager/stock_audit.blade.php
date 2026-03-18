@@ -74,7 +74,8 @@
           <select name="status" class="form-control form-control-sm">
             <option value="all" {{ $statusFilter == 'all' ? 'selected' : '' }}>All Batches</option>
             <option value="selling" {{ $statusFilter == 'selling' ? 'selected' : '' }}>Still Selling</option>
-            <option value="sold_out" {{ $statusFilter == 'sold_out' ? 'selected' : '' }}>Sold Out</option>
+            <option value="sold_out" {{ $statusFilter == 'sold_out' ? 'selected' : '' }}>Ready to Audit (100% Sold)</option>
+            <option value="audited" {{ $statusFilter == 'audited' ? 'selected' : '' }}>Finalized (Audited)</option>
           </select>
         </div>
         <button type="submit" class="btn btn-primary btn-sm px-4">
@@ -135,8 +136,14 @@
                                 </strong>
                             </td>
                             <td>
-                                @if($row['is_fully_sold'])
-                                    <span class="badge badge-success p-2 px-3">COMPLETED</span>
+                                @if($row['is_audited'])
+                                    <span class="badge badge-success p-2 px-3"><i class="fa fa-check-circle"></i> AUDITED & RECEIVED</span>
+                                @elseif($row['is_fully_sold'])
+                                    <button class="btn btn-primary btn-sm btn-block audit-batch-btn" 
+                                            data-id="{{ $row['id'] }}" 
+                                            data-number="{{ $row['number'] }}">
+                                        <i class="fa fa-money"></i> Verify & Receive Cash
+                                    </button>
                                 @else
                                     <span class="badge badge-info p-2 px-3">ACTIVE (SELLING)</span>
                                 @endif
@@ -159,4 +166,46 @@
 <style>
 .table-success-light { background-color: rgba(40, 167, 69, 0.05); }
 </style>
+
+<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+<script>
+$(document).ready(function() {
+    $('.audit-batch-btn').on('click', function() {
+        const batchId = $(this).data('id');
+        const batchNumber = $(this).data('number');
+        
+        Swal.fire({
+            title: 'Verify Batch Revenue?',
+            html: `Confirm that you have received all the generated cash for batch <b>${batchNumber}</b> and want to finalize this transfer as audited.`,
+            icon: 'question',
+            showCancelButton: true,
+            confirmButtonColor: '#28a745',
+            cancelButtonColor: '#d33',
+            confirmButtonText: 'Yes, Verify & Receive',
+            showLoaderOnConfirm: true,
+            preConfirm: () => {
+                return $.ajax({
+                    url: `/manager/stock-audit/audit/${batchId}`,
+                    method: 'POST',
+                    data: {
+                        _token: '{{ csrf_token() }}'
+                    }
+                }).then(response => {
+                    if (!response.success) throw new Error(response.message);
+                    return response;
+                }).catch(error => {
+                    Swal.showValidationMessage(`Request failed: ${error.message}`);
+                });
+            },
+            allowOutsideClick: () => !Swal.isLoading()
+        }).then((result) => {
+            if (result.isConfirmed) {
+                Swal.fire('Success!', result.value.message, 'success').then(() => {
+                    location.reload();
+                });
+            }
+        });
+    });
+});
+</script>
 @endsection

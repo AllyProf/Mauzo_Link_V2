@@ -325,6 +325,7 @@ Route::middleware('allow.staff')->group(function () {
     // Manager Routes (Require Payment & Configuration)
     Route::middleware(['require.payment', 'require.configuration'])->prefix('manager')->name('manager.')->group(function () {
         Route::get('stock-audit', [\App\Http\Controllers\Manager\StockAuditController::class, 'index'])->name('stock-audit');
+        Route::post('stock-audit/audit/{transfer}', [\App\Http\Controllers\Manager\StockAuditController::class, 'auditBatch'])->name('stock-audit.audit');
     });
     
     // Marketing Routes (Require Payment & Configuration)

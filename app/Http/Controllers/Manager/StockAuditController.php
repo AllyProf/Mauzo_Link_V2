@@ -9,6 +9,7 @@ use App\Models\TransferSale;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Carbon\Carbon;
+use Illuminate\Support\Facades\DB;
 
 class StockAuditController extends Controller
 {
@@ -27,9 +28,9 @@ class StockAuditController extends Controller
         $ownerId = $this->getOwnerId();
         $startDate = $request->get('start_date', now()->startOfMonth()->format('Y-m-d'));
         $endDate = $request->get('end_date', now()->format('Y-m-d'));
-        $statusFilter = $request->get('status', 'all'); // 'all', 'selling', 'sold_out'
+        $statusFilter = $request->get('status', 'all'); // 'all', 'selling', 'sold_out', 'audited'
 
-        // Get completed transfers
+        // Get completed/approved/prepared transfers
         $query = StockTransfer::where('user_id', $ownerId)
             ->whereIn('status', ['completed', 'verified', 'approved', 'prepared'])
             ->whereBetween('created_at', [Carbon::parse($startDate)->startOfDay(), Carbon::parse($endDate)->endOfDay()])
@@ -52,11 +53,13 @@ class StockAuditController extends Controller
             
             $progressPercent = $transfer->total_units > 0 ? round(($soldQty / $transfer->total_units) * 100, 1) : 0;
             $isFullySold = $progressPercent >= 100;
+            $isAudited = (bool)$transfer->audited_at;
 
-            if ($statusFilter === 'selling' && $isFullySold) continue;
-            if ($statusFilter === 'sold_out' && !$isFullySold) continue;
+            if ($statusFilter === 'selling' && ($isFullySold || $isAudited)) continue;
+            if ($statusFilter === 'sold_out' && (!$isFullySold || $isAudited)) continue;
+            if ($statusFilter === 'audited' && !$isAudited) continue;
 
-            if ($isFullySold) $fullySoldBatchCount++;
+            if ($isFullySold && !$isAudited) $fullySoldBatchCount++;
             $totalExpected += $expectedRevenue;
             $totalCollected += $actualRevenue;
 
@@ -71,7 +74,8 @@ class StockAuditController extends Controller
                 'actual_revenue' => $actualRevenue,
                 'progress' => $progressPercent,
                 'is_fully_sold' => $isFullySold,
-                'status' => $isFullySold ? 'Fully Sold' : 'Selling...',
+                'is_audited' => $isAudited,
+                'status' => $isAudited ? 'Audited & Received' : ($isFullySold ? 'Fully Sold' : 'Selling...'),
             ];
         }
 
@@ -84,5 +88,40 @@ class StockAuditController extends Controller
             'endDate',
             'statusFilter'
         ));
+    }
+
+    /**
+     * Audit and Finalize a Stock Batch (Manager only)
+     */
+    public function auditBatch(StockTransfer $transfer)
+    {
+        // Check permission - restricted to Manager/Owner
+        if (!$this->hasPermission('reports', 'edit') && !$this->hasPermission('finance', 'edit')) {
+            return response()->json(['success' => false, 'message' => 'Unauthorized'], 403);
+        }
+
+        if ($transfer->audited_at) {
+            return response()->json(['success' => false, 'message' => 'Batch already audited.']);
+        }
+
+        try {
+            DB::beginTransaction();
+
+            $transfer->update([
+                'audited_at' => now(),
+                'audited_by' => auth()->id(),
+                'status' => 'verified' // Move to verified if not already
+            ]);
+
+            DB::commit();
+
+            return response()->json([
+                'success' => true, 
+                'message' => 'Batch audited successfully. Revenue collection verified.'
+            ]);
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return response()->json(['success' => false, 'message' => 'Error: ' . $e->getMessage()]);
+        }
     }
 }

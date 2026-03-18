@@ -31,11 +31,11 @@ class StockAuditController extends Controller
 
         // Get completed transfers
         $query = StockTransfer::where('user_id', $ownerId)
-            ->whereIn('status', ['completed', 'verified'])
-            ->whereBetween('verified_at', [Carbon::parse($startDate)->startOfDay(), Carbon::parse($endDate)->endOfDay()])
+            ->whereIn('status', ['completed', 'verified', 'approved', 'prepared'])
+            ->whereBetween('created_at', [Carbon::parse($startDate)->startOfDay(), Carbon::parse($endDate)->endOfDay()])
             ->with(['productVariant.product', 'transferSales']);
 
-        $transfers = $query->orderBy('verified_at', 'desc')->get();
+        $transfers = $query->orderBy('created_at', 'desc')->get();
 
         $auditData = [];
         $totalExpected = 0;
@@ -63,7 +63,7 @@ class StockAuditController extends Controller
             $auditData[] = [
                 'id' => $transfer->id,
                 'number' => $transfer->transfer_number,
-                'date' => $transfer->verified_at->format('M d, Y'),
+                'date' => $transfer->created_at->format('M d, Y'),
                 'product' => $transfer->productVariant->product->name . ' (' . $transfer->productVariant->measurement . ')',
                 'qty' => $transfer->total_units,
                 'sold_qty' => $soldQty,

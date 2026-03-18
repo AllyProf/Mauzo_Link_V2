@@ -108,7 +108,9 @@
                         @forelse($auditData as $row)
                         <tr class="{{ $row['is_fully_sold'] ? 'table-success-light' : '' }}">
                             <td>
-                                <strong>{{ $row['number'] }}</strong><br>
+                                <strong class="text-primary details-link" style="cursor: pointer;" data-id="{{ $row['id'] }}">
+                                    <i class="fa fa-search-plus"></i> {{ $row['number'] }}
+                                </strong><br>
                                 <small class="text-muted">{{ $row['date'] }}</small>
                             </td>
                             <td>{{ $row['product'] }}</td>
@@ -162,14 +164,85 @@
 </div>
 @endsection
 
+@endsection
+
+<!-- Sales Details Modal -->
+<div class="modal fade" id="saleDetailsModal" tabindex="-1" role="dialog" aria-hidden="true">
+    <div class="modal-dialog modal-lg" role="document">
+        <div class="modal-content">
+            <div class="modal-header bg-primary text-white">
+                <h5 class="modal-title"><i class="fa fa-list"></i> Sales Attribution Details: <span id="modalTransferNumber"></span></h5>
+                <button type="button" class="close text-white" data-dismiss="modal" aria-label="Close">
+                    <span aria-hidden="true">&times;</span>
+                </button>
+            </div>
+            <div class="modal-body">
+                <div class="table-responsive">
+                    <table class="table table-sm table-hover table-bordered">
+                        <thead class="bg-light">
+                            <tr>
+                                <th>Order #</th>
+                                <th>Waiter</th>
+                                <th>Qty</th>
+                                <th>UnitPrice</th>
+                                <th>Total</th>
+                                <th>Timestamp</th>
+                            </tr>
+                        </thead>
+                        <tbody id="saleDetailsTableBody">
+                            <!-- JS populated -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+
 @section('scripts')
 <style>
 .table-success-light { background-color: rgba(40, 167, 69, 0.05); }
+.details-link:hover { text-decoration: underline; color: #0056b3 !important; }
 </style>
 
 <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 <script>
 $(document).ready(function() {
+    // Show Details Modal
+    $('.details-link').on('click', function() {
+        const batchId = $(this).data('id');
+        $('#modalTransferNumber').text('Loading...');
+        $('#saleDetailsTableBody').html('<tr><td colspan="6" class="text-center">Fetching details...</td></tr>');
+        $('#saleDetailsModal').modal('show');
+        
+        $.get(`/manager/stock-audit/details/${batchId}`, function(response) {
+            if (response.success) {
+                $('#modalTransferNumber').text(response.transfer_number);
+                let html = '';
+                if (response.sales.length > 0) {
+                    response.sales.forEach(sale => {
+                        html += `
+                            <tr>
+                                <td><b>${sale.order_number}</b></td>
+                                <td>${sale.waiter}</td>
+                                <td>${sale.qty}</td>
+                                <td>TSh ${parseInt(sale.unit_price).toLocaleString()}</td>
+                                <td><b>TSh ${parseInt(sale.total_price).toLocaleString()}</b></td>
+                                <td><small>${sale.date}</small></td>
+                            </tr>
+                        `;
+                    });
+                } else {
+                    html = '<tr><td colspan="6" class="text-center text-muted">No sales attributed to this batch yet.</td></tr>';
+                }
+                $('#saleDetailsTableBody').html(html);
+            }
+        });
+    });
+
     $('.audit-batch-btn').on('click', function() {
         const batchId = $(this).data('id');
         const batchNumber = $(this).data('number');

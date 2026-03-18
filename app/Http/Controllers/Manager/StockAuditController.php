@@ -28,7 +28,7 @@ class StockAuditController extends Controller
         $ownerId = $this->getOwnerId();
         $startDate = $request->get('start_date', now()->startOfMonth()->format('Y-m-d'));
         $endDate = $request->get('end_date', now()->format('Y-m-d'));
-        $statusFilter = $request->get('status', 'all'); // 'all', 'selling', 'sold_out', 'audited'
+        $statusFilter = $request->get('status', 'all'); // 'all', 'selling', 'sold_out'
 
         // Get completed/approved/prepared transfers
         $query = StockTransfer::where('user_id', $ownerId)
@@ -88,6 +88,36 @@ class StockAuditController extends Controller
             'endDate',
             'statusFilter'
         ));
+    }
+
+    /**
+     * Get granular sale attribution details for a transfer
+     */
+    public function getDetails(StockTransfer $transfer)
+    {
+        if (!$this->hasPermission('reports', 'view')) {
+            return response()->json(['success' => false, 'message' => 'Unauthorized'], 403);
+        }
+
+        $sales = TransferSale::where('stock_transfer_id', $transfer->id)
+            ->with(['orderItem.order.waiterStaff'])
+            ->get()
+            ->map(function($ts) {
+                return [
+                    'order_number' => $ts->orderItem->order->order_number,
+                    'waiter' => $ts->orderItem->order->waiterStaff->name ?? 'System',
+                    'qty' => $ts->quantity,
+                    'unit_price' => $ts->unit_price,
+                    'total_price' => $ts->total_price,
+                    'date' => $ts->created_at->format('Y-m-d H:i'),
+                ];
+            });
+
+        return response()->json([
+            'success' => true,
+            'transfer_number' => $transfer->transfer_number,
+            'sales' => $sales
+        ]);
     }
 
     /**

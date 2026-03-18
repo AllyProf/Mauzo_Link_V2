@@ -104,7 +104,8 @@
               });
               $summaryShortage = $summaryExpected - $summaryCollected;
               
-              $isManagerView = auth()->user()->role === 'admin' || auth()->user()->role === 'customer' || (auth()->user()->role === 'staff' && in_array(strtolower(auth()->user()->staff->role->name ?? ''), ['manager', 'administrator', 'general manager']));
+              $user = auth()->user();
+              $isManagerView = $user->role === 'admin' || $user->role === 'customer' || ($user->role === 'staff' && $user->staff && in_array(strtolower($user->staff->role->name ?? ''), ['manager', 'administrator', 'general manager']));
           @endphp
 
           @if($isManagerView)

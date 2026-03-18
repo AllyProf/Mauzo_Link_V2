@@ -148,6 +148,26 @@
                   </div>
               </div>
           </div>
+
+          <!-- Charts Section -->
+          <div class="row mb-4">
+              <div class="col-md-7">
+                  <div class="tile pb-2">
+                      <h4 class="tile-title small text-uppercase font-weight-bold"><i class="fa fa-line-chart"></i> Daily Performance Trend</h4>
+                      <div class="embed-responsive embed-responsive-16by9">
+                          <canvas class="embed-responsive-item" id="performanceChart"></canvas>
+                      </div>
+                  </div>
+              </div>
+              <div class="col-md-5">
+                  <div class="tile pb-2">
+                      <h4 class="tile-title small text-uppercase font-weight-bold"><i class="fa fa-pie-chart"></i> Revenue Breakdown</h4>
+                      <div class="embed-responsive embed-responsive-16by9">
+                          <canvas class="embed-responsive-item" id="revenuePieChart"></canvas>
+                      </div>
+                  </div>
+              </div>
+          </div>
           @endif
 
           <!-- Financial Summary Tab -->
@@ -628,8 +648,74 @@
 
 @push('scripts')
 <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script>
 $(document).ready(function() {
+  @if($isManagerView && $tab === 'financial' && !empty($chartData['dates']))
+  // 1. Performance Trend Chart
+  try {
+      const perfCtx = document.getElementById('performanceChart').getContext('2d');
+      new Chart(perfCtx, {
+          type: 'line',
+          data: {
+              labels: {!! json_encode($chartData['dates']) !!},
+              datasets: [{
+                  label: 'Expected',
+                  data: {!! json_encode($chartData['expected']) !!},
+                  borderColor: '#940000',
+                  backgroundColor: 'rgba(148, 0, 0, 0.05)',
+                  fill: true,
+                  tension: 0.4
+              }, {
+                  label: 'Collected',
+                  data: {!! json_encode($chartData['collected']) !!},
+                  borderColor: '#28a745',
+                  backgroundColor: 'rgba(40, 167, 69, 0.05)',
+                  fill: true,
+                  tension: 0.4
+              }]
+          },
+          options: {
+              responsive: true,
+              plugins: { legend: { position: 'top' } },
+              scales: { y: { beginAtZero: true } }
+          }
+      });
+
+      // 2. Revenue Breakdown Pie
+      const pieCtx = document.getElementById('revenuePieChart').getContext('2d');
+      new Chart(pieCtx, {
+          type: 'doughnut',
+          data: {
+              labels: ['Cash', 'Mobile', 'Bank', 'Card'],
+              datasets: [{
+                  data: [
+                      {{ $chartData['methods']['Cash'] }},
+                      {{ $chartData['methods']['Mobile'] }},
+                      {{ $chartData['methods']['Bank'] }},
+                      {{ $chartData['methods']['Card'] }}
+                  ],
+                  backgroundColor: ['#28a745', '#17a2b8', '#ffc107', '#6c757d'],
+                  hoverOffset: 4
+              }]
+          },
+          options: {
+              responsive: true,
+              plugins: { 
+                  legend: { position: 'bottom' },
+                  tooltip: {
+                      callbacks: {
+                          label: function(context) {
+                              let val = context.raw || 0;
+                              return context.label + ': TSh ' + val.toLocaleString();
+                          }
+                      }
+                  }
+              }
+          }
+      });
+  } catch(e) { console.error("Chart error:", e); }
+  @endif
   // Financial Verification Logic
   $('.verify-financial-btn').click(function() {
       const id = $(this).data('id');

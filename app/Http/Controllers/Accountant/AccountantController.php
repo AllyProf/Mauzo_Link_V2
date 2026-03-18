@@ -577,6 +577,56 @@ class AccountantController extends Controller
 
         $staffMembers = Staff::where('user_id', $ownerId)->get();
 
+        // ── Financial Dashboard Charts (High Fidelity) ──
+        $chartData = [
+            'dates' => [],
+            'expected' => [],
+            'collected' => [],
+            'methods' => [
+                'Cash' => 0,
+                'Mobile' => 0,
+                'Bank' => 0,
+                'Card' => 0
+            ]
+        ];
+
+        // Group data by date for the trend graph
+        $dailyResults = [];
+        foreach ($financialReconciliations as $fr) {
+            $dKey = \Carbon\Carbon::parse($fr->reconciliation_date)->format('M d');
+            if(!isset($dailyResults[$dKey])) {
+                $dailyResults[$dKey] = ['expected' => 0, 'collected' => 0];
+            }
+            
+            // Tracking payments
+            $paid = 0;
+            if(preg_match('/\[ShortagePaidTotal:(\d+)\]/', $fr->notes ?? '', $m)) $paid = (int)$m[1];
+            
+            $dailyResults[$dKey]['expected'] += (float)$fr->total_expected;
+            $dailyResults[$dKey]['collected'] += ((float)$fr->total_submitted + $paid);
+
+            // Channel aggregation for Pie chart
+            $breakdown = [];
+            if(preg_match('/\[ShortagePaidBreakdown:([^\]]+)\]/', $fr->notes ?? '', $bm)) {
+                foreach(explode(',', $bm[1]) as $p) {
+                    $kv = explode('=', $p);
+                    if(count($kv) == 2) $breakdown[$kv[0]] = (int)$kv[1];
+                }
+            }
+            $chartData['methods']['Cash'] += ((float)$fr->total_cash + ($breakdown['cash'] ?? 0));
+            $chartData['methods']['Mobile'] += ((float)$fr->total_mobile + ($breakdown['mobile_money'] ?? 0));
+            $chartData['methods']['Bank'] += ((float)($fr->total_bank ?? 0) + ($breakdown['bank_transfer'] ?? 0));
+            $chartData['methods']['Card'] += ((float)($fr->total_card ?? 0) + ($breakdown['pos_card'] ?? 0));
+        }
+
+        // Fill final chart arrays in chronological order
+        ksort($dailyResults);
+        foreach($dailyResults as $date => $vals) {
+            $chartData['dates'][] = $date;
+            $chartData['expected'][] = $vals['expected'];
+            $chartData['collected'][] = $vals['collected'];
+        }
+
         return view('accountant.reconciliations', compact(
             'financialReconciliations',
             'waiterReconciliations',
@@ -585,7 +635,8 @@ class AccountantController extends Controller
             'endDate',
             'tab',
             'staffMembers',
-            'canReconcile'
+            'canReconcile',
+            'chartData'
         ));
     }
 

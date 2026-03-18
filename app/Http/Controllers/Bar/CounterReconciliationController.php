@@ -20,7 +20,12 @@ class CounterReconciliationController extends Controller
      */
     public function reconciliation(Request $request)
     {
-        if (!$this->hasPermission('bar_orders', 'view')) {
+        // Allow counter staff, accountants, and anyone with bar_orders view permission
+        $currentStaff = $this->getCurrentStaff();
+        $roleSlug = strtolower(trim($currentStaff->role->slug ?? ''));
+        $isCounterOrAccountant = in_array($roleSlug, ['counter', 'accountant']);
+
+        if (!$isCounterOrAccountant && !$this->hasPermission('bar_orders', 'view')) {
             abort(403, 'You do not have permission to view reconciliations.');
         }
 

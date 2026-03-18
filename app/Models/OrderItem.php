@@ -17,12 +17,14 @@ class OrderItem extends Model
         'unit_price',
         'total_price',
         'notes',
+        'is_served',
     ];
 
     protected $casts = [
         'quantity' => 'integer',
         'unit_price' => 'decimal:2',
         'total_price' => 'decimal:2',
+        'is_served' => 'boolean',
     ];
 
     /**

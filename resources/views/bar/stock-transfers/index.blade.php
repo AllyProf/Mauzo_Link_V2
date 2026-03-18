@@ -43,6 +43,18 @@
       @endif
 
       <div class="tile-body">
+        @php
+          $showProfit = true;
+          if (session('is_staff')) {
+            $staff = \App\Models\Staff::with('role')->find(session('staff_id'));
+            if ($staff && $staff->role) {
+              $roleName = strtolower(trim($staff->role->name ?? ''));
+              if (in_array($roleName, ['counter', 'bar counter', 'waiter', 'waitress', 'waiter/waitress', 'stock keeper', 'stockkeeper'])) {
+                $showProfit = false;
+              }
+            }
+          }
+        @endphp
         @if($transfers->count() > 0)
           <div class="table-responsive">
             <table class="table table-hover table-bordered" id="transfersTable">
@@ -52,7 +64,9 @@
                   <th>Product</th>
                   <th>Quantity</th>
                   <th>Total Bottles</th>
-                  <th>Expected Profit</th>
+                  @if($showProfit)
+                    <th>Expected Profit</th>
+                  @endif
                   <th>Status</th>
                   <th>Requested By</th>
                   <th>Requested Date</th>
@@ -104,6 +118,7 @@
                       @endphp
                       {{ number_format($transfer->total_units) }} {{ $unitDisp }}
                     </td>
+                    @if($showProfit)
                     <td>
                       @if(isset($transfer->expected_profit) && $transfer->expected_profit > 0)
                         <strong class="text-primary">TSh {{ number_format($transfer->expected_profit) }}</strong>
@@ -114,6 +129,7 @@
                         <span class="text-muted">-</span>
                       @endif
                     </td>
+                    @endif
                     <td>
                       @if($isNewBatch)
                         <span class="badge badge-{{ $transfer->status === 'pending' ? 'warning' : ($transfer->status === 'approved' ? 'success' : ($transfer->status === 'prepared' ? 'info' : ($transfer->status === 'completed' ? 'primary' : 'secondary'))) }} text-uppercase">
@@ -195,6 +211,8 @@
 <script type="text/javascript" src="{{ asset('js/admin/plugins/dataTables.bootstrap.min.js') }}"></script>
 <script type="text/javascript">
   $(document).ready(function() {
+    const showFinancials = {{ $showProfit ? 'true' : 'false' }};
+    
     // Wait for jQuery and SweetAlert to be available
     if (typeof $ === 'undefined') {
       console.error('jQuery not loaded');
@@ -477,11 +495,11 @@
                 <div class="p-2 border rounded mb-2 bg-light">
                    <div class="d-flex justify-content-between font-weight-bold">
                       <span>${item.product_name} (${item.variant_measurement})</span>
-                      <span class="text-primary">TSh ${item.expected_revenue.toLocaleString()}</span>
+                      ${showFinancials ? `<span class="text-primary">TSh ${item.expected_revenue.toLocaleString()}</span>` : ''}
                    </div>
                    <div class="d-flex justify-content-between smallest text-muted">
                       <span>Qty: ${item.quantity_requested} ${item.packaging_display} (${item.total_units} ${item.unit_display})</span>
-                      <span>Profit: TSh ${item.expected_profit.toLocaleString()} ${item.is_tot ? '<b class="text-warning">[GLASS]</b>' : ''}</span>
+                      ${showFinancials ? `<span>Profit: TSh ${item.expected_profit.toLocaleString()} ${item.is_tot ? '<b class="text-warning">[GLASS]</b>' : ''}</span>` : ''}
                    </div>
                 </div>
               `;
@@ -529,8 +547,9 @@
                   </div>
                 </div>
 
+                ${showFinancials ? `
                 <h6 class="font-weight-bold text-uppercase smallest text-muted mb-2"><i class="fa fa-calculator"></i> Batch Financials</h6>
-                <div class="p-3 border rounded">
+                <div class="p-3 border rounded mb-3">
                    <div class="d-flex justify-content-between mb-2">
                       <span class="text-muted">Total Revenue:</span>
                       <span class="text-success font-weight-bold">TSh ${totalBatchRevenue.toLocaleString()}</span>
@@ -540,6 +559,7 @@
                       <span class="text-primary font-weight-bold">TSh ${totalBatchProfit.toLocaleString()}</span>
                    </div>
                 </div>
+                ` : ''}
                 
                 ${transfer.notes ? `
                 <div class="mt-3 p-2 bg-light rounded small">

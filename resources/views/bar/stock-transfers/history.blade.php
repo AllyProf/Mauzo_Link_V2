@@ -12,9 +12,21 @@
     <li class="breadcrumb-item"><i class="fa fa-home fa-lg"></i></li>
     <li class="breadcrumb-item"><a href="{{ route('dashboard') }}">Dashboard</a></li>
     <li class="breadcrumb-item"><a href="{{ route('bar.stock-transfers.index') }}">Stock Transfers</a></li>
-    <li class="breadcrumb-item">History</li>
   </ul>
 </div>
+
+@php
+  $showFinancials = true;
+  if (session('is_staff')) {
+    $staff = \App\Models\Staff::with('role')->find(session('staff_id'));
+    if ($staff && $staff->role) {
+      $roleName = strtolower(trim($staff->role->name ?? ''));
+      if (in_array($roleName, ['counter', 'bar counter', 'waiter', 'waitress', 'waiter/waitress', 'stock keeper', 'stockkeeper'])) {
+        $showFinancials = false;
+      }
+    }
+  }
+@endphp
 
 <!-- Statistics -->
 <div class="row">
@@ -45,6 +57,7 @@
       </div>
     </div>
   </div>
+  @if($showFinancials)
   <div class="col-md-3">
     <div class="widget-small info coloured-icon">
       <i class="icon fa fa-money fa-3x"></i>
@@ -54,6 +67,7 @@
       </div>
     </div>
   </div>
+  @endif
 </div>
 
 <div class="row">
@@ -78,11 +92,15 @@
                   <th>Product</th>
                   <th>Quantity</th>
                   <th>Total Bottles</th>
-                  <th>Expected Amount</th>
-                  <th>Real-Time Generated</th>
-                  <th>Remaining</th>
-                  <th>Progress</th>
-                  <th>Status</th>
+                  @if($showFinancials)
+                    <th>Expected Amount</th>
+                    <th>Real-Time Generated</th>
+                    <th>Remaining</th>
+                    <th>Progress</th>
+                    <th>Status</th>
+                  @else
+                    <th>Movement Status</th>
+                  @endif
                   <th>Completed Date</th>
                 </tr>
               </thead>
@@ -122,6 +140,7 @@
                       @endphp
                       {{ number_format($transfer->total_units) }} {{ $uDisp }}
                     </td>
+                    @if($showFinancials)
                     <td>
                       @if($isFirst)
                         <strong class="text-primary" id="expected-amount-{{ $transfer->id }}" data-expected="{{ $transfer->expected_amount }}">
@@ -177,6 +196,13 @@
                         </span>
                       @endif
                     </td>
+                    @else
+                    <td>
+                       @if($isFirst)
+                         <span class="badge badge-primary">Completed</span>
+                       @endif
+                    </td>
+                    @endif
                     <td>{{ $transfer->updated_at->format('M d, Y H:i') }}</td>
                   </tr>
                 @endforeach
@@ -204,6 +230,7 @@
 <script type="text/javascript" src="{{ asset('js/admin/plugins/dataTables.bootstrap.min.js') }}"></script>
 <script type="text/javascript">
   $(document).ready(function() {
+    const showFinancials = {{ $showFinancials ? 'true' : 'false' }};
     // Initialize DataTable if available
     if (typeof $.fn.DataTable !== 'undefined') {
       try {
@@ -324,7 +351,7 @@
     }
 
     // Update real-time amounts every 10 seconds
-    if ($('#historyTable tbody tr').length > 0) {
+    if (showFinancials && $('#historyTable tbody tr').length > 0) {
       updateRealTimeAmounts(); // Initial update
       setInterval(updateRealTimeAmounts, 10000); // Update every 10 seconds
     }

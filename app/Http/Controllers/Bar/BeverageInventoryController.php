@@ -294,17 +294,16 @@ class BeverageInventoryController extends Controller
                     $packagingCount = $ipp > 1 ? floor($quantity / $ipp) : 0;
                     $extraBottles   = $ipp > 1 ? ($quantity % $ipp) : $quantity;
 
-                    // Build display title: "Wine Collection (Dodoma Red Dry)" or just product name
-                    $variantName  = $variant->name ?? '';
-                    $displayTitle = $product->name;
-                    if ($variantName && $variantName !== $product->name) {
-                        $displayTitle = $product->name . ' (' . $variantName . ')';
-                    }
+                    // Clean Title: prioritize variant name and remove redundant brand/parentheses
+                    $vName        = $variant->name ?? '';
+                    $pName        = $product->name;
+                    $cleanVariant = trim(str_replace([$pName, '(', ')'], '', $vName));
+                    $displayTitle = !empty($cleanVariant) ? $cleanVariant : $vName;
 
                     $warehouseStock->push([
                         'product_id'            => $product->id,
                         'product_name'          => $product->name,
-                        'variant_name'          => $variantName,
+                        'variant_name'          => $vName,
                         'display_title'         => $displayTitle,
                         'product_image'         => $product->image,
                         'category'              => $product->category ?? 'General',
@@ -352,12 +351,25 @@ class BeverageInventoryController extends Controller
         // Unique categories for tabs
         $categories = $warehouseStock->pluck('category')->unique()->sort()->values();
 
+        // Role-based visibility: Hide revenue/profit for Stock Keepers
+        $showRevenue = true;
+        if (session('is_staff')) {
+            $staff = \App\Models\Staff::with('role')->find(session('staff_id'));
+            if ($staff && $staff->role) {
+                $roleName = strtolower(trim($staff->role->name ?? ''));
+                if (in_array($roleName, ['stock keeper', 'stockkeeper'])) {
+                    $showRevenue = false;
+                }
+            }
+        }
+
         return view('bar.beverage-inventory.warehouse-stock', compact(
             'warehouseStock',
             'productsWithWarehouseStock',
             'totalWarehouseStock',
             'totalWarehouseValue',
-            'categories'
+            'categories',
+            'showRevenue'
         ));
     }
     

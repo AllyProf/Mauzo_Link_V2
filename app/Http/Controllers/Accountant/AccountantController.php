@@ -8,6 +8,7 @@ use App\Models\BarOrder;
 use App\Models\Staff;
 use App\Models\WaiterDailyReconciliation;
 use App\Models\OrderPayment;
+use App\Models\PettyCashIssue;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Carbon\Carbon;
@@ -32,9 +33,22 @@ class AccountantController extends Controller
         $startDate = $request->get('start_date', now()->startOfMonth()->format('Y-m-d'));
         $endDate = $request->get('end_date', now()->format('Y-m-d'));
 
-        // Accountant can see all orders (cross-owner access for financial overview)
+        $location = session('active_location');
+
+        // Helper to apply common filters (owner + location)
+        $applyFilters = function($query) use ($ownerId, $location) {
+            $query->where('user_id', $ownerId);
+            if ($location) {
+                $query->whereHas('table', function($q) use ($location) {
+                    $q->where('location', $location);
+                });
+            }
+            return $query;
+        };
+
+        // Accountant must be restricted to their owner's data
         // Today's Financial Summary
-        $todayOrders = BarOrder::query()
+        $todayOrders = $applyFilters(BarOrder::query())
             ->whereDate('created_at', $date)
             ->with(['items', 'kitchenOrderItems', 'orderPayments'])
             ->get();
@@ -65,7 +79,7 @@ class AccountantController extends Controller
         $todayPendingAmount = $todayOrders->where('payment_status', '!=', 'paid')->sum('total_amount');
 
         // Period Financial Summary (default: current month)
-        $periodOrders = BarOrder::query()
+        $periodOrders = $applyFilters(BarOrder::query())
             ->whereBetween('created_at', [Carbon::parse($startDate)->startOfDay(), Carbon::parse($endDate)->endOfDay()])
             ->with(['items', 'kitchenOrderItems', 'orderPayments'])
             ->get();
@@ -120,9 +134,15 @@ class AccountantController extends Controller
                 : 0;
         });
 
-        // Waiter Reconciliations Summary (all reconciliations)
+        // Waiter Reconciliations Summary (filtered by branch)
         $reconciliations = WaiterDailyReconciliation::query()
+            ->where('user_id', $ownerId)
             ->whereBetween('reconciliation_date', [Carbon::parse($startDate)->startOfDay(), Carbon::parse($endDate)->endOfDay()])
+            ->when($location, function($q) use ($location) {
+                $q->whereHas('waiter', function($sq) use ($location) {
+                    $sq->where('location_branch', $location);
+                });
+            })
             ->with('waiter')
             ->get();
 
@@ -137,7 +157,7 @@ class AccountantController extends Controller
         $revenueByDay = [];
         for ($i = 29; $i >= 0; $i--) {
             $day = Carbon::now()->subDays($i);
-            $dayOrders = BarOrder::query()
+            $dayOrders = $applyFilters(BarOrder::query())
                 ->whereDate('created_at', $day->format('Y-m-d'))
                 ->where('payment_status', 'paid')
                 ->with(['items', 'kitchenOrderItems', 'orderPayments'])
@@ -170,22 +190,33 @@ class AccountantController extends Controller
             ];
         }
 
-        // Top Waiters by Revenue (all waiters across all owners)
+        // Top Waiters by Revenue (filtered by owner and branch)
         $topWaiters = Staff::query()
+            ->where('user_id', $ownerId)
             ->whereHas('role', function($q) {
                 $q->where('name', 'Waiter');
+            })
+            ->when($location, function($q) use ($location) {
+                $q->where('location_branch', $location);
             })
             ->with(['dailyReconciliations' => function($q) use ($startDate, $endDate) {
                 $q->whereBetween('reconciliation_date', [Carbon::parse($startDate)->startOfDay(), Carbon::parse($endDate)->endOfDay()]);
             }])
             ->get()
-            ->map(function($waiter) use ($startDate, $endDate) {
-                $orders = BarOrder::query()
+            ->map(function($waiter) use ($startDate, $endDate, $ownerId, $location) {
+                $query = BarOrder::query()
+                    ->where('user_id', $ownerId)
                     ->where('waiter_id', $waiter->id)
                     ->whereBetween('created_at', [Carbon::parse($startDate)->startOfDay(), Carbon::parse($endDate)->endOfDay()])
-                    ->where('payment_status', 'paid')
-                    ->with(['items', 'kitchenOrderItems', 'orderPayments'])
-                    ->get();
+                    ->where('payment_status', 'paid');
+                
+                if ($location) {
+                    $query->whereHas('table', function($q) use ($location) {
+                        $q->where('location', $location);
+                    });
+                }
+
+                $orders = $query->with(['items', 'kitchenOrderItems', 'orderPayments'])->get();
                 
                 return [
                     'waiter' => $waiter,
@@ -205,15 +236,25 @@ class AccountantController extends Controller
             ->take(10)
             ->values();
 
-        // Pending Stock Transfer Verifications (completed transfers waiting for accountant verification)
+        // Pending Stock Transfer Verifications (filtered by owner and branch)
         $pendingTransferVerifications = \App\Models\StockTransfer::query()
+            ->where('user_id', $ownerId)
             ->where('status', 'completed')
-            ->whereNull('verified_at') // Not yet verified
+            ->whereNull('verified_at')
+            ->when($location, function($q) use ($location) {
+                $q->whereExists(function($sq) use ($location) {
+                    $sq->select(DB::raw(1))
+                       ->from('staff')
+                       ->whereRaw('staff.user_id = stock_transfers.user_id')
+                       ->whereRaw('staff.email = (select email from users where id = stock_transfers.requested_by limit 1)')
+                       ->where('staff.location_branch', $location);
+                });
+            })
             ->with(['productVariant.product', 'productVariant.counterStock', 'productVariant.warehouseStock'])
             ->orderBy('updated_at', 'desc')
             ->limit(10)
             ->get()
-            ->map(function($transfer) use ($ownerId) {
+            ->map(function($transfer) use ($ownerId, $location) {
                 // Calculate expected and real-time profit/revenue
                 if ($transfer->productVariant) {
                     $counterStock = \App\Models\StockLocation::where('user_id', $ownerId)
@@ -232,23 +273,29 @@ class AccountantController extends Controller
                     $transfer->expected_revenue = $transfer->total_units * $sellingPrice;
                     $transfer->expected_profit = ($sellingPrice - $buyingPrice) * $transfer->total_units;
                     
-                    // Calculate real-time profit and revenue
-                    $transfer->real_time_profit = $this->calculateRealTimeProfitForTransfer($transfer, $ownerId, $sellingPrice, $buyingPrice);
-                    $revenueData = $this->calculateRealTimeRevenueForTransfer($transfer, $ownerId);
+                    // Calculate real-time profit and revenue (branch-aware)
+                    $transfer->real_time_profit = $this->calculateRealTimeProfitForTransfer($transfer, $ownerId, $sellingPrice, $buyingPrice, $location);
+                    $revenueData = $this->calculateRealTimeRevenueForTransfer($transfer, $ownerId, $location);
                     $transfer->real_time_revenue = $revenueData['total'];
                 }
                 return $transfer;
             });
 
-        // Recent Reconciliations (all reconciliations)
+        // Recent Reconciliations (filtered by branch)
         $recentReconciliations = WaiterDailyReconciliation::query()
+            ->where('user_id', $ownerId)
+            ->when($location, function($q) use ($location) {
+                $q->whereHas('waiter', function($sq) use ($location) {
+                    $sq->where('location_branch', $location);
+                });
+            })
             ->with('waiter', 'verifiedBy')
             ->orderBy('created_at', 'desc')
             ->limit(10)
             ->get();
 
-        // Outstanding Payments (all orders)
-        $outstandingOrders = BarOrder::query()
+        // Outstanding Payments (filtered by branch)
+        $outstandingOrders = $applyFilters(BarOrder::query())
             ->where('status', 'served')
             ->where('payment_status', '!=', 'paid')
             ->with(['waiter', 'table', 'items', 'kitchenOrderItems'])
@@ -256,6 +303,56 @@ class AccountantController extends Controller
             ->get();
 
         $outstandingAmount = $outstandingOrders->sum('total_amount');
+
+        // ── Top selling products this month (Flavor-specific names)
+        $topProducts = \App\Models\OrderItem::whereHas('order', function($q) use ($ownerId, $location) {
+            $q->where('user_id', $ownerId)
+              ->where('payment_status', 'paid')
+              ->whereMonth('created_at', now()->month);
+            if ($location) {
+                $q->where(function($sq) use ($location) {
+                    $sq->whereExists(function ($ssq) use ($location) {
+                        $ssq->select(DB::raw(1))
+                           ->from('staff')
+                           ->whereColumn('staff.id', 'orders.waiter_id')
+                           ->where('staff.location_branch', $location);
+                    })->orWhereHas('table', function($ssq) use ($location) {
+                        $ssq->where('location', $location);
+                    });
+                });
+            }
+        })
+        ->join('product_variants', 'order_items.product_variant_id', '=', 'product_variants.id')
+        ->selectRaw('product_variants.name as display_name, SUM(order_items.quantity) as total_sold, SUM(order_items.total_price) as total_revenue')
+        ->groupBy('product_variants.name')
+        ->orderByDesc('total_sold')
+        ->limit(8)
+        ->get();
+
+        // ── Category Distribution (this month)
+        $categoryDistribution = \App\Models\OrderItem::whereHas('order', function($q) use ($ownerId, $location) {
+            $q->where('user_id', $ownerId)
+              ->where('payment_status', 'paid')
+              ->whereMonth('created_at', now()->month);
+            if ($location) {
+                $q->where(function($sq) use ($location) {
+                    $sq->whereExists(function ($ssq) use ($location) {
+                        $ssq->select(DB::raw(1))
+                           ->from('staff')
+                           ->whereColumn('staff.id', 'orders.waiter_id')
+                           ->where('staff.location_branch', $location);
+                    })->orWhereHas('table', function($ssq) use ($location) {
+                        $ssq->where('location', $location);
+                    });
+                });
+            }
+        })
+        ->join('product_variants', 'order_items.product_variant_id', '=', 'product_variants.id')
+        ->join('products', 'product_variants.product_id', '=', 'products.id')
+        ->selectRaw('products.category, SUM(order_items.quantity) as total_sold')
+        ->groupBy('products.category')
+        ->orderByDesc('total_sold')
+        ->get();
 
         return view('accountant.dashboard', compact(
             'date',
@@ -288,7 +385,9 @@ class AccountantController extends Controller
             'pendingTransferVerifications',
             'recentReconciliations',
             'outstandingOrders',
-            'outstandingAmount'
+            'outstandingAmount',
+            'topProducts',
+            'categoryDistribution'
         ));
     }
 
@@ -304,62 +403,336 @@ class AccountantController extends Controller
         $ownerId = $this->getOwnerId();
         $startDate = $request->get('start_date', now()->startOfMonth()->format('Y-m-d'));
         $endDate = $request->get('end_date', now()->format('Y-m-d'));
-        $status = $request->get('status'); // verified, unverified
+        $location = session('active_location');
+        $tab = $request->get('tab', 'financial'); // 'financial' or 'waiters' or 'payments'
+        $canReconcile = $this->hasPermission('finance', 'edit');
 
-        $query = \App\Models\StockTransfer::query()
-            ->where('status', 'completed')
-            ->whereBetween('updated_at', [Carbon::parse($startDate)->startOfDay(), Carbon::parse($endDate)->endOfDay()])
-            ->with(['productVariant.product', 'productVariant.counterStock', 'productVariant.warehouseStock', 'verifiedBy', 'requestedBy', 'approvedBy']);
+        // ── Financial Reconciliations Aggregate (By Date & Type)
+        // 1. Get already submitted/verified reconciliations
+        $submittedReconciliations = WaiterDailyReconciliation::query()
+            ->where('user_id', $ownerId)
+            ->when($location && $location !== 'all', function($q) use ($location) {
+                $q->whereHas('waiter', function($sq) use ($location) {
+                    $sq->where('location_branch', $location);
+                });
+            })
+            ->whereBetween('reconciliation_date', [Carbon::parse($startDate)->startOfDay(), Carbon::parse($endDate)->endOfDay()])
+            ->selectRaw('reconciliation_date, reconciliation_type, SUM(expected_amount) as total_expected, SUM(submitted_amount) as total_submitted, SUM(cash_collected) as total_cash, SUM(mobile_money_collected) as total_mobile, SUM(bank_collected) as total_bank, SUM(card_collected) as total_card, COUNT(waiter_id) as waiter_count, MIN(status) as status_indicator, MAX(notes) as notes')
+            ->groupBy('reconciliation_date', 'reconciliation_type')
+            ->get();
 
-        if ($status === 'verified') {
-            $query->whereNotNull('verified_at');
-        } elseif ($status === 'unverified') {
-            $query->whereNull('verified_at');
+        // 2. Get Real-time Expected Sales (Pending Reconciliations)
+        // We look for orders that haven't been reconciled yet for the date range
+        $realTimeSales = BarOrder::query()
+            ->where('user_id', $ownerId)
+            ->when($location && $location !== 'all', function($q) use ($location) {
+                // Determine branch from the table location
+                $q->whereHas('table', function($sq) use ($location) {
+                    $sq->where('location', $location);
+                });
+            })
+            ->whereBetween('created_at', [Carbon::parse($startDate)->startOfDay(), Carbon::parse($endDate)->endOfDay()])
+            ->where('status', 'served')
+            ->whereDoesntHave('reconciliation', function($q) {
+                $q->where('status', 'verified');
+            })
+            ->with(['items', 'kitchenOrderItems', 'orderPayments'])
+            ->get();
+
+        // Group the real-time sales by date and type for display
+        $pendingAggr = [];
+        foreach ($realTimeSales as $order) {
+            $dateStr = $order->created_at->format('Y-m-d');
+            
+            // Bar Sales (Drinks)
+            $barAmount = $order->items->sum('total_price');
+            if ($barAmount > 0) {
+                $key = $dateStr . '_bar';
+                if (!isset($pendingAggr[$key])) {
+                    $pendingAggr[$key] = [
+                        'reconciliation_date' => $dateStr,
+                        'reconciliation_type' => 'bar',
+                        'total_expected' => 0,
+                        'total_submitted' => 0, // Not submitted yet
+                        'total_cash' => 0,
+                        'total_mobile' => 0,
+                        'total_bank' => 0,
+                        'total_card' => 0,
+                        'waiter_count' => 0,
+                        'status_indicator' => 'pending'
+                    ];
+                }
+                $pendingAggr[$key]['total_expected'] += $barAmount;
+                foreach ($order->orderPayments as $payment) {
+                    if ($payment->payment_method === 'cash') {
+                        $pendingAggr[$key]['total_cash'] += $payment->amount;
+                    } else if ($payment->payment_method === 'mobile_money') {
+                        $pendingAggr[$key]['total_mobile'] += $payment->amount;
+                    } else if ($payment->payment_method === 'bank_transfer') {
+                        $pendingAggr[$key]['total_bank'] += $payment->amount;
+                    } else if (in_array($payment->payment_method, ['pos_card', 'card'])) {
+                        $pendingAggr[$key]['total_card'] += $payment->amount;
+                    }
+                }
+            }
+
+            // Chef Sales (Food)
+            $foodAmount = $order->kitchenOrderItems->sum('total_price');
+            if ($foodAmount > 0) {
+                $key = $dateStr . '_food';
+                if (!isset($pendingAggr[$key])) {
+                    $pendingAggr[$key] = [
+                        'reconciliation_date' => $dateStr,
+                        'reconciliation_type' => 'food',
+                        'total_expected' => 0,
+                        'total_submitted' => 0,
+                        'total_cash' => 0,
+                        'total_mobile' => 0,
+                        'total_bank' => 0,
+                        'total_card' => 0,
+                        'waiter_count' => 0,
+                        'status_indicator' => 'pending'
+                    ];
+                }
+                $pendingAggr[$key]['total_expected'] += $foodAmount;
+                foreach ($order->orderPayments as $payment) {
+                    if ($payment->payment_method === 'cash') {
+                        $pendingAggr[$key]['total_cash'] += $payment->amount;
+                    } else if ($payment->payment_method === 'mobile_money') {
+                        $pendingAggr[$key]['total_mobile'] += $payment->amount;
+                    } else if ($payment->payment_method === 'bank_transfer') {
+                        $pendingAggr[$key]['total_bank'] += $payment->amount;
+                    } else if (in_array($payment->payment_method, ['pos_card', 'card'])) {
+                        $pendingAggr[$key]['total_card'] += $payment->amount;
+                    }
+                }
+            }
         }
 
-        $transfers = $query->orderBy('updated_at', 'desc')
-            ->orderBy('created_at', 'desc')
-            ->paginate(20);
-
-        // Calculate expected and real-time profit/revenue for each transfer
-        $transfers->getCollection()->transform(function($transfer) use ($ownerId) {
-            if ($transfer->productVariant) {
-                $counterStock = \App\Models\StockLocation::where('user_id', $ownerId)
-                    ->where('product_variant_id', $transfer->product_variant_id)
-                    ->where('location', 'counter')
-                    ->first();
-                
-                $warehouseStock = \App\Models\StockLocation::where('user_id', $ownerId)
-                    ->where('product_variant_id', $transfer->product_variant_id)
-                    ->where('location', 'warehouse')
-                    ->first();
-                
-                $sellingPrice = $counterStock->selling_price ?? $warehouseStock->selling_price ?? $transfer->productVariant->selling_price_per_unit ?? 0;
-                $buyingPrice = $warehouseStock->average_buying_price ?? $transfer->productVariant->buying_price_per_unit ?? 0;
-                
-                $transfer->expected_revenue = $transfer->total_units * $sellingPrice;
-                $transfer->expected_profit = ($sellingPrice - $buyingPrice) * $transfer->total_units;
-                
-                // Calculate real-time profit and revenue
-                $transfer->real_time_profit = $this->calculateRealTimeProfitForTransfer($transfer, $ownerId, $sellingPrice, $buyingPrice);
-                $revenueData = $this->calculateRealTimeRevenueForTransfer($transfer, $ownerId);
-                $transfer->real_time_revenue = $revenueData['total'];
-                $transfer->real_time_revenue_submitted = $revenueData['submitted'];
-                $transfer->real_time_revenue_pending = $revenueData['pending'];
+        // Merge submitted and pending
+        // If a date/type has both, we might want to prioritize the submitted one or combine?
+        // Usually, once 'Marked Paid', it vanishes from pending.
+        $financialReconciliations = collect($submittedReconciliations);
+        foreach ($pendingAggr as $item) {
+            // Only add if not already in submitted
+            $exists = $financialReconciliations->contains(function($r) use ($item) {
+                return $r->reconciliation_date->format('Y-m-d') == $item['reconciliation_date'] && $r->reconciliation_type == $item['reconciliation_type'];
+            });
+            if (!$exists) {
+                $item['reconciliation_date'] = Carbon::parse($item['reconciliation_date']);
+                $financialReconciliations->push((object)$item);
             }
-            return $transfer;
-        });
+        }
+
+        $financialReconciliations = $financialReconciliations->sortByDesc('reconciliation_date')->values();
+
+        // Separate Waiter-level reconciliations for the details view or drill down
+        $waiterReconciliations = WaiterDailyReconciliation::query()
+            ->where('user_id', $ownerId)
+            ->when($location && $location !== 'all', function($q) use ($location) {
+                $q->whereHas('waiter', function($sq) use ($location) {
+                    $sq->where('location_branch', $location);
+                });
+            })
+            ->whereBetween('reconciliation_date', [Carbon::parse($startDate)->startOfDay(), Carbon::parse($endDate)->endOfDay()])
+            ->with(['waiter', 'verifiedBy'])
+            ->orderBy('reconciliation_date', 'desc')
+            ->get();
+        $waiterReconciliations = $waiterReconciliations->values();
+
+        // ── Payments Log (Detailed breakdown for the accountant)
+        $paymentSearch = $request->get('payment_search');
+        $paymentMethod = $request->get('payment_method');
+        $paymentStaff = $request->get('payment_staff');
+
+        $paymentsQuery = OrderPayment::query()
+            ->whereHas('order', function($q) use ($ownerId) {
+                $q->where('user_id', $ownerId);
+            })
+            ->whereBetween('created_at', [Carbon::parse($startDate)->startOfDay(), Carbon::parse($endDate)->endOfDay()])
+            ->with(['order.waiter', 'order.table']);
+
+        if ($paymentSearch) {
+            $paymentsQuery->where(function($q) use ($paymentSearch) {
+                $q->where('transaction_reference', 'like', "%{$paymentSearch}%")
+                  ->orWhere('mobile_money_number', 'like', "%{$paymentSearch}%")
+                  ->orWhereHas('order', function($sq) use ($paymentSearch) {
+                      $sq->where('order_number', 'like', "%{$paymentSearch}%");
+                  });
+            });
+        }
+        if ($paymentMethod) {
+            $paymentsQuery->where('payment_method', $paymentMethod);
+        }
+        if ($paymentStaff) {
+            $paymentsQuery->whereHas('order', function($q) use ($paymentStaff) {
+                $q->where('waiter_id', $paymentStaff);
+            });
+        }
+
+        $payments = $paymentsQuery->orderBy('created_at', 'desc')
+            ->paginate(30, ['*'], 'payments_page');
+
+        $staffMembers = Staff::where('user_id', $ownerId)->get();
 
         return view('accountant.reconciliations', compact(
-            'transfers',
+            'financialReconciliations',
+            'waiterReconciliations',
+            'payments',
             'startDate',
             'endDate',
-            'status'
+            'tab',
+            'staffMembers',
+            'canReconcile'
         ));
     }
 
     /**
-     * Counter Reconciliation (Accountant View)
+     * Finalize Department Reconciliation (Accountant Action)
+     */
+    public function finalizeDepartmentReconciliation(Request $request)
+    {
+        if (!$this->hasPermission('finance', 'edit')) {
+            return response()->json(['success' => false, 'error' => 'Unauthorized'], 403);
+        }
+
+        $validated = $request->validate([
+            'date' => 'required|date',
+            'type' => 'required|in:bar,food',
+            'cash_received' => 'required|numeric|min:0',
+            'mobile_received' => 'required|numeric|min:0',
+            'bank_received' => 'required|numeric|min:0',
+            'card_received' => 'required|numeric|min:0',
+            'notes' => 'nullable|string'
+        ]);
+
+        $ownerId = $this->getOwnerId();
+        $date = $validated['date'];
+        $type = $validated['type'];
+
+        // 1. Get all pending orders for this department and date
+        $orders = BarOrder::where('user_id', $ownerId)
+            ->whereDate('created_at', $date)
+            ->where('status', 'served')
+            ->whereDoesntHave('reconciliation', function($q) {
+                $q->where('status', 'verified');
+            })
+            ->with(['items', 'kitchenOrderItems', 'orderPayments'])
+            ->get();
+
+        if ($orders->isEmpty()) {
+            return response()->json(['success' => false, 'error' => 'No pending orders found for this period.']);
+        }
+
+        // 2. We group orders by waiter to create reconciliation records for each
+        $waiterGroups = $orders->groupBy('waiter_id');
+        $processedWaiters = 0;
+
+        foreach ($waiterGroups as $waiterId => $waiterOrders) {
+            if (!$waiterId) continue;
+            
+            $expected = 0;
+            if ($type === 'bar') {
+                $expected = $waiterOrders->sum(function($o) { return $o->items->sum('total_price'); });
+            } else {
+                $expected = $waiterOrders->sum(function($o) { return $o->kitchenOrderItems->sum('total_price'); });
+            }
+
+            if ($expected <= 0) continue;
+
+            // For the sake of this aggregate action, we distribute the 'actual' amounts proportionally 
+            // or just attribute the 'recorded' amounts as a baseline.
+            // But since the accountant is doing a WHOLE department, we might just mark them all 'submitted' 
+            // and the 'Actual' goes into a master record or distributed.
+            
+            // 3. We use the ACTUAL inputs from the accountant (re-distributed proportionally if needed)
+            // For now, since they reconcile the whole department, we set the actuals on each waiter record
+            // OR we could create a master record. But the table in the UI sums them up.
+            
+            // CRITICAL FIX: Use the accountant's input!
+            // Wait, proportional distribution is safer for multiple waiters:
+            $totalCashInput = $validated['cash_received'];
+            $totalMobileInput = $validated['mobile_received'];
+            $totalBankInput = $validated['bank_received'];
+            $totalCardInput = $validated['card_received'];
+            $totalExpectedAll = $orders->sum(function($o) use ($type) { 
+                return ($type === 'bar') ? $o->items->sum('total_price') : $o->kitchenOrderItems->sum('total_price');
+            });
+
+            $proportion = ($totalExpectedAll > 0) ? ($expected / $totalExpectedAll) : 0;
+            $waiterCashActual = $totalCashInput * $proportion;
+            $waiterMobileActual = $totalMobileInput * $proportion;
+            $waiterBankActual = $totalBankInput * $proportion;
+            $waiterCardActual = $totalCardInput * $proportion;
+            $waiterSubmittedActual = $waiterCashActual + $waiterMobileActual + $waiterBankActual + $waiterCardActual;
+
+            $reconciliation = WaiterDailyReconciliation::updateOrCreate(
+                [
+                    'user_id' => $ownerId,
+                    'waiter_id' => $waiterId,
+                    'reconciliation_date' => $date,
+                    'reconciliation_type' => $type,
+                ],
+                [
+                    'expected_amount' => $expected,
+                    'submitted_amount' => $waiterSubmittedActual,
+                    'cash_collected' => $waiterCashActual,
+                    'mobile_money_collected' => $waiterMobileActual,
+                    'bank_collected' => $waiterBankActual,
+                    'card_collected' => $waiterCardActual,
+                    'difference' => $waiterSubmittedActual - $expected,
+                    'status' => 'verified',
+                    'verified_at' => now(),
+                    'verified_by' => auth()->id(),
+                    'notes' => $validated['notes'] . " (Bulk reconciled by Accountant)"
+                ]
+            );
+
+            // Mark orders as reconciled
+            foreach ($waiterOrders as $order) {
+                $order->update(['reconciliation_id' => $reconciliation->id, 'payment_status' => 'paid']);
+            }
+            
+            $processedWaiters++;
+        }
+
+        return response()->json([
+            'success' => true,
+            'message' => "Successfully reconciled {$processedWaiters} staff records for this department."
+        ]);
+    }
+
+    /**
+     * Verify a financial reconciliation (Counter/Chef)
+     */
+    public function verifyFinancialReconciliation(Request $request, $id)
+    {
+        if (!$this->hasPermission('finance', 'edit')) {
+            return response()->json(['success' => false, 'error' => 'Unauthorized'], 403);
+        }
+
+        $reconciliation = WaiterDailyReconciliation::findOrFail($id);
+        
+        $validated = $request->validate([
+            'notes' => 'nullable|string',
+            'status' => 'required|in:verified,flagged'
+        ]);
+
+        $reconciliation->update([
+            'status' => $validated['status'],
+            'notes' => $validated['notes'],
+            'verified_by' => auth()->id(),
+            'verified_at' => now(),
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Reconciliation updated successfully.'
+        ]);
+    }
+
+    /**
+     * Counter Reconciliation (Accountant View - Proxy)
      */
     public function counterReconciliation(Request $request)
     {
@@ -479,7 +852,7 @@ class AccountantController extends Controller
     /**
      * Calculate real-time profit for a completed stock transfer.
      */
-    private function calculateRealTimeProfitForTransfer($transfer, $ownerId, $sellingPrice, $buyingPrice)
+    private function calculateRealTimeProfitForTransfer($transfer, $ownerId, $sellingPrice, $buyingPrice, $location = null)
     {
         if ($transfer->status !== 'completed' || !$transfer->productVariant) {
             return 0;
@@ -490,9 +863,15 @@ class AccountantController extends Controller
         
         // Find all order items from this product variant created after transfer completion
         $orderItems = \App\Models\OrderItem::where('product_variant_id', $transfer->product_variant_id)
-            ->whereHas('order', function($query) use ($ownerId, $completedDate) {
+            ->whereHas('order', function($query) use ($ownerId, $completedDate, $location) {
                 $query->where('user_id', $ownerId)
                       ->where('created_at', '>=', $completedDate);
+                
+                if ($location) {
+                    $query->whereHas('table', function($q) use ($location) {
+                        $q->where('location', $location);
+                    });
+                }
             })
             ->with(['order.orderPayments'])
             ->get();
@@ -525,7 +904,7 @@ class AccountantController extends Controller
      * Calculate real-time revenue for a completed stock transfer.
      * Returns array with 'recorded', 'submitted', 'pending', and 'total' amounts.
      */
-    private function calculateRealTimeRevenueForTransfer($transfer, $ownerId)
+    private function calculateRealTimeRevenueForTransfer($transfer, $ownerId, $location = null)
     {
         if ($transfer->status !== 'completed' || !$transfer->productVariant) {
             return [
@@ -540,9 +919,15 @@ class AccountantController extends Controller
         
         // Get all order items matching this transfer's product variant
         $orderItems = \App\Models\OrderItem::where('product_variant_id', $transfer->product_variant_id)
-            ->whereHas('order', function($query) use ($ownerId, $completedDate) {
+            ->whereHas('order', function($query) use ($ownerId, $completedDate, $location) {
                 $query->where('user_id', $ownerId)
                       ->where('created_at', '>=', $completedDate);
+                
+                if ($location) {
+                    $query->whereHas('table', function($q) use ($location) {
+                        $q->where('location', $location);
+                    });
+                }
             })
             ->with(['order.orderPayments', 'order.reconciliation'])
             ->get();
@@ -627,6 +1012,18 @@ class AccountantController extends Controller
         $ownerId = $this->getOwnerId();
         $startDate = $request->get('start_date', now()->startOfMonth()->format('Y-m-d'));
         $endDate = $request->get('end_date', now()->format('Y-m-d'));
+        $location = session('active_location');
+
+        // Helper to apply common filters (owner + location)
+        $applyFilters = function($query) use ($ownerId, $location) {
+            $query->where('user_id', $ownerId);
+            if ($location) {
+                $query->whereHas('table', function($q) use ($location) {
+                    $q->where('location', $location);
+                });
+            }
+            return $query;
+        };
 
         // Revenue by Day (all orders)
         $revenueByDay = [];
@@ -634,7 +1031,7 @@ class AccountantController extends Controller
         $end = Carbon::parse($endDate);
         
         while ($currentDate->lte($end)) {
-            $dayOrders = BarOrder::query()
+            $dayOrders = $applyFilters(BarOrder::query())
                 ->whereDate('created_at', $currentDate->format('Y-m-d'))
                 ->where('payment_status', 'paid')
                 ->with(['items', 'kitchenOrderItems', 'orderPayments'])
@@ -671,20 +1068,31 @@ class AccountantController extends Controller
             $currentDate->addDay();
         }
 
-        // Revenue by Waiter (all waiters)
+        // Revenue by Waiter (branch-filtered if applicable)
         $revenueByWaiter = Staff::query()
+            ->where('user_id', $ownerId)
             ->whereHas('role', function($q) {
                 $q->where('name', 'Waiter');
             })
+            ->when($location, function($q) use ($location) {
+                $q->where('location_branch', $location);
+            })
             ->get()
-            ->map(function($waiter) use ($startDate, $endDate) {
-                $orders = BarOrder::query()
+            ->map(function($waiter) use ($startDate, $endDate, $ownerId, $location) {
+                $query = BarOrder::query()
+                    ->where('user_id', $ownerId)
                     ->where('waiter_id', $waiter->id)
                     ->whereBetween('created_at', [Carbon::parse($startDate)->startOfDay(), Carbon::parse($endDate)->endOfDay()])
-                    ->where('payment_status', 'paid')
-                    ->with(['items', 'kitchenOrderItems'])
-                    ->get();
+                    ->where('payment_status', 'paid');
                 
+                if ($location) {
+                    $query->whereHas('table', function($q) use ($location) {
+                        $q->where('location', $location);
+                    });
+                }
+
+                $orders = $query->with(['items', 'kitchenOrderItems'])->get();
+
                 // Calculate revenue from items (bar + food), not total_amount
                 $barSales = $orders->filter(function($order) {
                     return $order->items && $order->items->isNotEmpty();
@@ -709,12 +1117,114 @@ class AccountantController extends Controller
             ->sortByDesc('total_revenue')
             ->values();
 
-        return view('accountant.reports', compact(
-            'revenueByDay',
-            'revenueByWaiter',
-            'startDate',
-            'endDate'
-        ));
+        return view('accountant.reports', compact('revenueByDay', 'revenueByWaiter', 'startDate', 'endDate'));
+    }
+
+    /**
+     * Stock Receipt Reports
+     */
+    public function stockReceiptsReport(Request $request)
+    {
+        if (!$this->hasPermission('finance', 'view') && !$this->hasPermission('reports', 'view')) {
+            abort(403, 'You do not have permission to view stock receipt reports.');
+        }
+
+        $ownerId = $this->getOwnerId();
+        $startDate = $request->get('start_date', now()->startOfMonth()->format('Y-m-d'));
+        $endDate = $request->get('end_date', now()->format('Y-m-d'));
+        $location = session('active_location');
+
+        $receipts = \App\Models\StockReceipt::where('user_id', $ownerId)
+            ->whereBetween('received_date', [$startDate, $endDate])
+            ->when($location, function($q) use ($location) {
+                // If location is provided, filter by requested_by branch (assuming staff belong to branches)
+                $q->whereExists(function($sq) use ($location) {
+                    $sq->select(DB::raw(1))
+                       ->from('staff')
+                       ->whereRaw('staff.user_id = stock_receipts.user_id')
+                       ->whereRaw('staff.email = (select email from users where id = stock_receipts.received_by limit 1)')
+                       ->where('staff.location_branch', $location);
+                });
+            })
+            ->with(['supplier', 'productVariant.product', 'receivedBy'])
+            ->orderBy('received_date', 'desc')
+            ->get();
+
+        $groupSummary = \App\Models\StockReceipt::where('user_id', $ownerId)
+            ->whereBetween('received_date', [$startDate, $endDate])
+            ->when($location, function($q) use ($location) {
+                $q->whereExists(function($sq) use ($location) {
+                    $sq->select(DB::raw(1))
+                       ->from('staff')
+                       ->whereRaw('staff.user_id = stock_receipts.user_id')
+                       ->whereRaw('staff.email = (select email from users where id = stock_receipts.received_by limit 1)')
+                       ->where('staff.location_branch', $location);
+                });
+            })
+            ->selectRaw('sum(final_buying_cost) as total_buying_cost')
+            ->selectRaw('count(distinct receipt_number) as unique_batches')
+            ->selectRaw('sum(total_units) as total_items')
+            ->first();
+
+        return view('accountant.stock-receipts-report', compact('receipts', 'groupSummary', 'startDate', 'endDate'));
+    }
+
+    /**
+     * Stock Transfer Reports (with Real-time tracking)
+     */
+    public function stockTransfersReport(Request $request)
+    {
+        if (!$this->hasPermission('finance', 'view') && !$this->hasPermission('reports', 'view')) {
+            abort(403, 'You do not have permission to view stock transfer reports.');
+        }
+
+        $ownerId = $this->getOwnerId();
+        $startDate = $request->get('start_date', now()->startOfMonth()->format('Y-m-d'));
+        $endDate = $request->get('end_date', now()->format('Y-m-d'));
+        $location = session('active_location');
+
+        $transfers = \App\Models\StockTransfer::where('user_id', $ownerId)
+            ->whereBetween('created_at', [Carbon::parse($startDate)->startOfDay(), Carbon::parse($endDate)->endOfDay()])
+            ->when($location, function($q) use ($location) {
+                $q->whereExists(function($sq) use ($location) {
+                    $sq->select(DB::raw(1))
+                       ->from('staff')
+                       ->whereRaw('staff.user_id = stock_transfers.user_id')
+                       ->whereRaw('staff.email = (select email from users where id = stock_transfers.requested_by limit 1)')
+                       ->where('staff.location_branch', $location);
+                });
+            })
+            ->with(['productVariant.product', 'requestedBy', 'verifiedBy'])
+            ->orderBy('created_at', 'desc')
+            ->get()
+            ->map(function($transfer) use ($ownerId, $location) {
+                $financials = $transfer->calculateFinancials();
+                $transfer->expected_revenue = $financials['revenue'];
+                $transfer->expected_profit = $financials['profit'];
+                
+                // Real-time data (branch-aware)
+                $revenueData = $this->calculateRealTimeRevenueForTransfer($transfer, $ownerId, $location);
+                $transfer->real_time_revenue = $revenueData['total'];
+                $transfer->real_time_submitted = $revenueData['submitted'];
+                $transfer->real_time_profit = $this->calculateRealTimeProfitForTransfer(
+                    $transfer, 
+                    $ownerId, 
+                    $financials['selling_price'], 
+                    $financials['buying_price'],
+                    $location
+                );
+                
+                return $transfer;
+            });
+
+        $totals = [
+            'expected_revenue' => $transfers->sum('expected_revenue'),
+            'expected_profit' => $transfers->sum('expected_profit'),
+            'real_time_revenue' => $transfers->sum('real_time_revenue'),
+            'real_time_profit' => $transfers->sum('real_time_profit')
+        ];
+
+        return view('accountant.stock-transfers-report', compact('transfers', 'totals', 'startDate', 'endDate'));
     }
 
     /**
@@ -729,6 +1239,18 @@ class AccountantController extends Controller
         $ownerId = $this->getOwnerId();
         $startDate = $request->get('start_date', now()->startOfMonth()->format('Y-m-d'));
         $endDate = $request->get('end_date', now()->format('Y-m-d'));
+        $location = session('active_location');
+
+        // Helper to apply common filters (owner + location)
+        $applyFilters = function($query) use ($ownerId, $location) {
+            $query->where('user_id', $ownerId);
+            if ($location) {
+                $query->whereHas('table', function($q) use ($location) {
+                    $q->where('location', $location);
+                });
+            }
+            return $query;
+        };
 
         // Revenue by Day (all orders)
         $revenueByDay = [];
@@ -736,7 +1258,7 @@ class AccountantController extends Controller
         $end = Carbon::parse($endDate);
         
         while ($currentDate->lte($end)) {
-            $dayOrders = BarOrder::query()
+            $dayOrders = $applyFilters(BarOrder::query())
                 ->whereDate('created_at', $currentDate->format('Y-m-d'))
                 ->where('payment_status', 'paid')
                 ->with(['items', 'kitchenOrderItems', 'orderPayments'])
@@ -773,14 +1295,17 @@ class AccountantController extends Controller
             $currentDate->addDay();
         }
 
-        // Revenue by Waiter (all waiters)
         $revenueByWaiter = Staff::query()
+            ->where('user_id', $ownerId)
             ->whereHas('role', function($q) {
                 $q->where('name', 'Waiter');
             })
+            ->when($location, function($q) use ($location) {
+                $q->where('location_branch', $location);
+            })
             ->get()
-            ->map(function($waiter) use ($startDate, $endDate) {
-                $orders = BarOrder::query()
+            ->map(function($waiter) use ($startDate, $endDate, $ownerId, $location, $applyFilters) {
+                $orders = $applyFilters(BarOrder::query())
                     ->where('waiter_id', $waiter->id)
                     ->whereBetween('created_at', [Carbon::parse($startDate)->startOfDay(), Carbon::parse($endDate)->endOfDay()])
                     ->where('payment_status', 'paid')
@@ -832,5 +1357,159 @@ class AccountantController extends Controller
         $filename = 'Financial_Report_' . $startDate . '_to_' . $endDate . '.pdf';
         
         return $pdf->download($filename);
+    }
+
+    /**
+     * Petty Cash / Fund Issuance List
+     */
+    public function fundIssuance(Request $request)
+    {
+        if (!$this->hasPermission('finance', 'view')) {
+            abort(403);
+        }
+
+        $ownerId = $this->getOwnerId();
+        
+        $query = PettyCashIssue::where('user_id', $ownerId)
+            ->with(['recipient', 'issuer'])
+            ->orderBy('issue_date', 'desc');
+
+        if ($request->has('start_date') && $request->has('end_date') && $request->start_date && $request->end_date) {
+            $query->whereBetween('issue_date', [$request->start_date, $request->end_date]);
+        }
+
+        $issues = $query->paginate(20);
+        $staffMembers = Staff::where('user_id', $ownerId)->get();
+
+        return view('accountant.fund_issuance', compact('issues', 'staffMembers'));
+    }
+
+    /**
+     * Store New Fund Issuance
+     */
+    public function storeFundIssuance(Request $request)
+    {
+        if (!$this->hasPermission('finance', 'edit')) {
+            return back()->with('error', 'Unauthorized');
+        }
+
+        $request->validate([
+            'staff_id' => 'required|exists:staff,id',
+            'amount' => 'required|numeric|min:0',
+            'purpose' => 'required|string|max:255',
+            'issue_date' => 'required|date',
+            'notes' => 'nullable|string'
+        ]);
+
+        PettyCashIssue::create([
+            'user_id' => $this->getOwnerId(),
+            'issued_by' => auth()->id(),
+            'staff_id' => $request->staff_id,
+            'amount' => $request->amount,
+            'purpose' => $request->purpose,
+            'issue_date' => $request->issue_date,
+            'notes' => $request->notes,
+            'status' => 'issued'
+        ]);
+
+        return back()->with('success', 'Funds issued successfully.');
+    }
+
+    /**
+     * Update Fund Issuance Status
+     */
+    /**
+     * Re-open a previously finalized department shift (undo reconciliation)
+     */
+    public function reopenDepartmentShift(Request $request)
+    {
+        $validated = $request->validate([
+            'date' => 'required|date',
+            'type' => 'required|string|in:bar,food',
+        ]);
+
+        $ownerId = $this->getOwnerId();
+        $date = $validated['date'];
+        $type = $validated['type'];
+
+        DB::beginTransaction();
+        try {
+            // Find the reconciliations for this department/date
+            $reconciliations = WaiterDailyReconciliation::where('user_id', $ownerId)
+                ->where('reconciliation_date', $date)
+                ->where('reconciliation_type', $type)
+                ->get();
+
+            foreach ($reconciliations as $recon) {
+                // We don't necessarily need to touch the orders if they are linked via a relationship
+                // but if we want them to show up as 'Served' but 'Un-reconciled', deleting the record is enough.
+                $recon->delete();
+            }
+
+            DB::commit();
+            return response()->json(['success' => true, 'message' => 'Shift re-opened successfully. You can now re-reconcile it.']);
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return response()->json(['success' => false, 'message' => 'Failed to re-open shift: ' . $e->getMessage()], 500);
+        }
+    }
+
+    /**
+     * Mark a shortage as paid/cleared
+     */
+    public function payShortage(Request $request)
+    {
+        $validated = $request->validate([
+            'date' => 'required|date',
+            'type' => 'required|string|in:bar,food',
+            'amount' => 'required|numeric|min:1',
+        ]);
+
+        $ownerId = $this->getOwnerId();
+        $date = $validated['date'];
+        $type = $validated['type'];
+
+        DB::beginTransaction();
+        try {
+            $reconciliations = WaiterDailyReconciliation::where('user_id', $ownerId)
+                ->where('reconciliation_date', $date)
+                ->where('reconciliation_type', $type)
+                ->get();
+
+            foreach ($reconciliations as $recon) {
+                // Better parsing for total paid so far
+                $totalPaidSoFar = 0;
+                preg_match('/\[ShortagePaidTotal:(\d+)\]/', $recon->notes, $matches);
+                if (isset($matches[1])) {
+                    $totalPaidSoFar = (int)$matches[1];
+                    // Remove old tag to replace it
+                    $recon->notes = preg_replace('/\[ShortagePaidTotal:\d+\]/', '', $recon->notes);
+                }
+
+                $newTotal = $totalPaidSoFar + (int)$validated['amount'];
+                $recon->notes .= " | [ShortagePaidTotal:{$newTotal}] - TSh " . number_format($validated['amount']) . " received by Accountant on " . now()->toDateTimeString();
+                $recon->save();
+            }
+
+            DB::commit();
+            return response()->json(['success' => true, 'message' => 'Payment recorded successfuly.']);
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return response()->json(['success' => false, 'message' => 'Failed to pay shortage: ' . $e->getMessage()], 500);
+        }
+    }
+
+    public function updateFundStatus(Request $request, $id)
+    {
+        if (!$this->hasPermission('finance', 'edit')) {
+            return response()->json(['success' => false, 'error' => 'Unauthorized'], 403);
+        }
+
+        $issue = PettyCashIssue::findOrFail($id);
+        $request->validate(['status' => 'required|in:completed,cancelled']);
+
+        $issue->update(['status' => $request->status]);
+
+        return response()->json(['success' => true, 'message' => 'Status updated.']);
     }
 }

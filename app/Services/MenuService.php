@@ -10,6 +10,14 @@ use App\Models\Role;
 class MenuService
 {
     /**
+     * Common menu slugs that appear at the top
+     */
+    protected const COMMON_SLUGS = [
+        'dashboard', 'sales', 'products', 'customers', 'staff', 
+        'hr', 'reports', 'marketing', 'settings', 'accountant'
+    ];
+
+    /**
      * Get menu items for staff member based on their role permissions
      */
     public function getStaffMenus($staffRole, $owner)
@@ -30,8 +38,7 @@ class MenuService
         $commonMenuIds = collect();
 
         // First, get ALL common menu IDs (before filtering) to exclude from business-specific menus
-        $commonSlugs = ['dashboard', 'sales', 'products', 'customers', 'staff', 'hr', 'reports', 'marketing', 'settings', 'accountant'];
-        $allCommonMenuIds = \App\Models\MenuItem::whereIn('slug', $commonSlugs)
+        $allCommonMenuIds = MenuItem::whereIn('slug', self::COMMON_SLUGS)
             ->whereNull('parent_id')
             ->pluck('id');
 
@@ -42,16 +49,25 @@ class MenuService
             $commonMenuIds->push($commonMenu->id);
         }
 
+        // Role detection for exceptions
+        $roleName = strtolower($staffRole->name ?? '');
+        $roleSlug = strtolower($staffRole->slug ?? '');
+        $isChef = in_array($roleName, ['chef', 'head chef', 'cook']) || $roleSlug === 'chef';
+        $isCounter = in_array($roleName, ['counter', 'bar counter', 'waiter', 'counter supervisor']) || in_array($roleSlug, ['counter', 'waiter']);
+        
         // Get business-specific menus filtered by staff role permissions
-        // Group menus by business type to ensure all business types appear
         $businessSpecificMenusByType = [];
         
         if ($businessTypes->isNotEmpty()) {
             $businessTypeNames = $businessTypes->pluck('name')->toArray();
             $businessTypeSlugs = $businessTypes->pluck('slug')->toArray();
             
-            // Initialize array for all business types (even if they have no specific menus)
+            // Initialize array for all business types
             foreach ($businessTypes as $businessType) {
+                // Skip business types based on role exceptions
+                if ($isChef && $businessType->slug === 'bar') continue;
+                if ($isCounter && $businessType->slug === 'restaurant') continue;
+
                 $businessSpecificMenusByType[$businessType->id] = [
                     'business_type' => $businessType,
                     'menus' => collect()
@@ -59,20 +75,8 @@ class MenuService
             }
             
             foreach ($businessTypes as $businessType) {
-                // For Chef role, exclude Bar business type menus
-                $isChef = strtolower($staffRole->name ?? '') === 'chef';
-                if ($isChef && $businessType->slug === 'bar') {
-                    continue; // Skip Bar menus for Chef
-                }
-                
-                // Stock Keeper needs access to both Bar and Restaurant stock features
-                
-                // For Counter role, exclude Restaurant business type menus
-                $isCounter = strtolower($staffRole->name ?? '') === 'counter' || 
-                             strtolower($staffRole->slug ?? '') === 'counter';
-                if ($isCounter && $businessType->slug === 'restaurant') {
-                    continue; // Skip Restaurant menus for Counter
-                }
+                // Skip if not in our allowed types for this role
+                if (!isset($businessSpecificMenusByType[$businessType->id])) continue;
                 
                 $typeMenus = $businessType->enabledMenuItems()
                     ->whereNull('parent_id')
@@ -91,7 +95,6 @@ class MenuService
                             return false;
                         }
 
-                        // Don't filter by permissions here - we'll check children later
                         return true;
                     });
 
@@ -99,45 +102,20 @@ class MenuService
                     // Fetch children for this menu
                     $menu->children = $this->getMenuChildrenForStaff($menu, $businessType, $staffRole);
                     
-                    // Only add menu if it has accessible children or is directly accessible
-                    if ($menu->children && $menu->children->count() > 0) {
-                        // Parent menu with accessible children - show it
-                        $menu->business_type_name = $businessType->name;
-                        $menu->business_type_icon = $businessType->icon ?? 'fa-building';
-                        $menu->business_type_id = $businessType->id;
-                        $businessSpecificMenusByType[$businessType->id]['menus']->push($menu);
-                    } elseif ($menu->route && $this->canAccessMenuForStaff($staffRole, $menu)) {
-                        // Menu with route and permission - show it
+                    if (($menu->children && $menu->children->count() > 0) || ($menu->route && $this->canAccessMenuForStaff($staffRole, $menu))) {
                         $menu->business_type_name = $businessType->name;
                         $menu->business_type_icon = $businessType->icon ?? 'fa-building';
                         $menu->business_type_id = $businessType->id;
                         $businessSpecificMenusByType[$businessType->id]['menus']->push($menu);
                     }
-                    // Otherwise, don't add the menu (no accessible children and no direct permission)
                 }
             }
             
-            // Add menus from all business types, including placeholders for those without menus
+            // Add menus and placeholders
             foreach ($businessSpecificMenusByType as $typeData) {
                 $businessType = $typeData['business_type'];
                 $typeMenus = $typeData['menus'];
                 
-                // For Chef role, skip Bar business type placeholders
-                $isChef = strtolower($staffRole->name ?? '') === 'chef';
-                if ($isChef && $businessType->slug === 'bar') {
-                    continue; // Skip Bar placeholder for Chef
-                }
-                
-                // Stock Keeper needs access to both Bar and Restaurant stock features
-                
-                // For Counter role, skip Restaurant business type placeholders
-                $isCounter = strtolower($staffRole->name ?? '') === 'counter' || 
-                             strtolower($staffRole->slug ?? '') === 'counter';
-                if ($isCounter && $businessType->slug === 'restaurant') {
-                    continue; // Skip Restaurant placeholder for Counter
-                }
-                
-                // If this business type has no business-specific menus, create a placeholder separator menu
                 if ($typeMenus->isEmpty()) {
                     // Create a placeholder menu item to show the business type separator
                     $placeholderMenu = (object)[
@@ -152,11 +130,10 @@ class MenuService
                         'business_type_icon' => $businessType->icon ?? 'fa-building',
                         'business_type_id' => $businessType->id,
                         'sort_order' => 999,
-                        'is_placeholder' => true, // Flag to identify placeholder menus
+                        'is_placeholder' => true,
                     ];
                     $menus->push($placeholderMenu);
                 } else {
-                    // Add all menus for this business type
                     foreach ($typeMenus as $menu) {
                         $menus->push($menu);
                     }
@@ -167,8 +144,7 @@ class MenuService
         // Sort menus: common menus first (by sort_order), then business-specific menus (grouped by business type)
         return $menus->sortBy(function($menu) {
             // Common menus get priority based on sort_order
-            $commonMenuSlugs = ['dashboard', 'sales', 'products', 'customers', 'staff', 'reports', 'marketing', 'settings', 'accountant'];
-            if (in_array($menu->slug, $commonMenuSlugs)) {
+            if (in_array($menu->slug, self::COMMON_SLUGS)) {
                 return $menu->sort_order ?? 999;
             }
             // Business-specific menus come after, grouped by business_type_id
@@ -181,13 +157,15 @@ class MenuService
      */
     private function getCommonMenusForStaff($staffRole, $owner)
     {
-        $commonSlugs = ['dashboard', 'sales', 'products', 'customers', 'staff', 'hr', 'reports', 'marketing', 'settings', 'accountant'];
+        // Role detection
+        $roleName = strtolower($staffRole->name ?? '');
+        $roleSlug = strtolower($staffRole->slug ?? '');
+        $isCounter = in_array($roleName, ['counter', 'bar counter', 'waiter', 'counter supervisor']) || in_array($roleSlug, ['counter', 'waiter']);
+        $isStockKeeper = in_array($roleName, ['stock keeper', 'stockkeeper']) || in_array($roleSlug, ['stock-keeper', 'stockkeeper']);
+        $isAccountant = in_array($roleName, ['accountant', 'finance manager', 'finance']) || in_array($roleSlug, ['accountant']);
+        $isHR = in_array($roleName, ['hr', 'hr manager', 'human resources']) || in_array($roleSlug, ['hr-manager', 'hr']);
         
-        // Check if this is Counter role
-        $isCounter = strtolower($staffRole->name ?? '') === 'counter' || 
-                     strtolower($staffRole->slug ?? '') === 'counter';
-        
-        $menus = MenuItem::whereIn('slug', $commonSlugs)
+        $menus = MenuItem::whereIn('slug', self::COMMON_SLUGS)
             ->whereNull('parent_id')
             ->where('is_active', true)
             ->orderBy('sort_order')
@@ -196,7 +174,7 @@ class MenuService
                 $menu->children = $this->getCommonMenuChildrenForStaff($menu, $staffRole);
                 return $menu;
             })
-            ->filter(function($menu) use ($staffRole, $isCounter) {
+            ->filter(function($menu) use ($staffRole, $isCounter, $isStockKeeper, $isAccountant, $isHR) {
                 // Dashboard is always shown
                 if ($menu->slug === 'dashboard') {
                     return true;
@@ -204,7 +182,6 @@ class MenuService
                 
                 // For Counter and Stock Keeper roles, hide the common 'Products' menu (they use specific products menus)
                 // This must be checked BEFORE the children check
-                $isStockKeeper = strtolower($staffRole->name ?? '') === 'stock keeper' || strtolower($staffRole->slug ?? '') === 'stock-keeper';
                 if (($isCounter || $isStockKeeper) && $menu->slug === 'products') {
                     return false;
                 }
@@ -285,29 +262,66 @@ class MenuService
         
         // If menu has no route, it's just a parent - check if it has accessible children
         if (!$menu->route) {
-            // Parent menus should only be shown if they have accessible children
-            // This will be handled by the filter in getCommonMenusForStaff
-            return false; // Don't show parent menus by default - only if they have children
+            return false; // Parent visibility is handled by parent logic checking children
         }
 
-        // Exception: Allow Counter and Stock Keeper to access 'Register Products'
-        if ($menu->route === 'bar.products.create') {
-            $roleName = strtolower($staffRole->name ?? '');
-            if (in_array($roleName, ['counter', 'stock keeper', 'stockkeeper', 'bar counter'])) {
-                return true;
-            }
-        }
+        $roleName = strtolower($staffRole->name ?? '');
+        $roleSlug = strtolower($staffRole->slug ?? '');
+        
+        $isCounter = in_array($roleName, ['counter', 'bar counter', 'waiter', 'counter supervisor']) || 
+                     in_array($roleSlug, ['counter', 'waiter']);
+        $isStockKeeper = in_array($roleName, ['stock keeper', 'stockkeeper']) || 
+                         in_array($roleSlug, ['stock-keeper', 'stockkeeper']);
+        $isChef = in_array($roleName, ['chef', 'head chef', 'cook']) || 
+                  in_array($roleSlug, ['chef']);
+
+        // Role-based route overrides for core functionality
+        $overrides = [
+            'counter' => [
+                'bar.counter.dashboard', 'bar.counter.waiter-orders', 'bar.counter.reconciliation',
+                'bar.counter.counter-stock', 'bar.counter.warehouse-stock', 'bar.counter.analytics',
+                'bar.counter.customer-orders', 'bar.counter.verify-reconciliation', 'bar.counter.mark-paid',
+                'bar.counter.mark-all-paid', 'bar.counter.update-order-status',
+                'accountant.reconciliations', // Link to the new unified view
+                'bar.stock-transfers.available', 'bar.stock-transfers.index', 'bar.stock-transfers.create',
+                'bar.stock-transfers.history', 'bar.counter.stock-transfer-requests', 'bar.counter.request-stock-transfer',
+                'bar.orders.index', 'bar.orders.drinks', 'bar.orders.food', 'bar.orders.juice', 'bar.orders.create',
+                'bar.tables.index', 'bar.products.index', 'bar.products.create', 'bar.payments.index',
+                'customers.index', 'customers.groups', 
+                'bar.waiter.dashboard', 'bar.waiter.create-order', 'bar.waiter.order-history',
+                'sales.pos', 'sales.orders', 'sales.transactions',
+                'products.index', 'products.categories', 'products.inventory',
+                'bar.beverage-inventory.index', 'bar.beverage-inventory.stock-levels', 'bar.beverage-inventory.warehouse-stock',
+                'reports.index'
+            ],
+            'stock_keeper' => [
+                'bar.beverage-inventory.warehouse-stock', 'bar.stock-receipts.index', 'bar.stock-receipts.create',
+                'bar.stock-receipts.store', 'bar.stock-receipts.show',
+                'bar.stock-transfers.index', 'bar.stock-transfers.create', 'bar.stock-transfers.store',
+                'bar.products.index', 'bar.products.create', 'bar.suppliers.index',
+                'products.inventory', 'products.index'
+            ],
+            'chef' => [
+                'bar.chef.dashboard', 'bar.chef.kds', 'bar.chef.update-item-status', 'bar.chef.latest-orders',
+                'bar.chef.food-items', 'bar.chef.ingredients', 'bar.chef.ingredient-receipts',
+                'bar.chef.ingredient-batches', 'bar.chef.ingredient-stock-movements', 'bar.chef.reports',
+                'accountant.reconciliations', // Link for chef to see their food reconciliations
+                'bar.chef.reconciliation'
+            ]
+        ];
+
+        if ($isCounter && in_array($menu->route, $overrides['counter'])) return true;
+        if ($isStockKeeper && in_array($menu->route, $overrides['stock_keeper'])) return true;
+        if ($isChef && in_array($menu->route, $overrides['chef'])) return true;
 
         // Map routes to permissions
         $routePermissions = $this->getRoutePermissions();
 
         if (isset($routePermissions[$menu->route])) {
             $permission = $routePermissions[$menu->route];
-            // Check if staff role has this permission
             return $staffRole->hasPermission($permission['module'], $permission['action']);
         }
 
-        // Default: deny access if no specific permission mapping (security first)
         return false;
     }
     /**
@@ -533,9 +547,7 @@ class MenuService
      */
     private function getCommonMenus(User $user)
     {
-        $commonSlugs = ['dashboard', 'sales', 'products', 'customers', 'staff', 'reports', 'marketing', 'settings'];
-        
-        $menus = MenuItem::whereIn('slug', $commonSlugs)
+        $menus = MenuItem::whereIn('slug', self::COMMON_SLUGS)
             ->whereNull('parent_id')
             ->where('is_active', true)
             ->orderBy('sort_order')
@@ -610,11 +622,19 @@ class MenuService
             'products.inventory' => ['module' => 'inventory', 'action' => 'view'],
             'customers.index' => ['module' => 'customers', 'action' => 'view'],
             'customers.groups' => ['module' => 'customers', 'action' => 'view'],
-            'staff.index' => ['module' => 'staff', 'action' => 'view'],
-            'staff.create' => ['module' => 'staff', 'action' => 'create'],
-            'settings.index' => ['module' => 'settings', 'action' => 'view'],
             'business-configuration.edit' => ['module' => 'settings', 'action' => 'edit'],
             'business-configuration.update' => ['module' => 'settings', 'action' => 'edit'],
+            'location.switch' => ['module' => 'settings', 'action' => 'view'],
+            
+            // Staff Management
+            'staff.index' => ['module' => 'staff', 'action' => 'view'],
+            'staff.create' => ['module' => 'staff', 'action' => 'create'],
+            'staff.store' => ['module' => 'staff', 'action' => 'create'],
+            'staff.show' => ['module' => 'staff', 'action' => 'view'],
+            'staff.edit' => ['module' => 'staff', 'action' => 'edit'],
+            'staff.update' => ['module' => 'staff', 'action' => 'edit'],
+            'staff.destroy' => ['module' => 'staff', 'action' => 'delete'],
+            'staff.roles-by-business-type' => ['module' => 'staff', 'action' => 'view'],
             // Bar Operations
             'bar.suppliers.index' => ['module' => 'suppliers', 'action' => 'view'],
             'bar.suppliers.create' => ['module' => 'suppliers', 'action' => 'create'],
@@ -645,6 +665,9 @@ class MenuService
             'bar.stock-transfers.create' => ['module' => 'stock_transfer', 'action' => 'create'],
             'bar.stock-transfers.show' => ['module' => 'stock_transfer', 'action' => 'view'],
             'bar.stock-transfers.store' => ['module' => 'stock_transfer', 'action' => 'create'],
+            'bar.stock-transfers.edit' => ['module' => 'stock_transfer', 'action' => 'edit'],
+            'bar.stock-transfers.update' => ['module' => 'stock_transfer', 'action' => 'edit'],
+            'bar.stock-transfers.destroy' => ['module' => 'stock_transfer', 'action' => 'delete'],
             'bar.stock-transfers.approve' => ['module' => 'stock_transfer', 'action' => 'edit'],
             'bar.stock-transfers.reject' => ['module' => 'stock_transfer', 'action' => 'edit'],
             'bar.stock-transfers.history' => ['module' => 'stock_transfer', 'action' => 'view'],
@@ -653,6 +676,9 @@ class MenuService
             'bar.orders.create' => ['module' => 'bar_orders', 'action' => 'create'],
             'bar.orders.store' => ['module' => 'bar_orders', 'action' => 'create'],
             'bar.orders.show' => ['module' => 'bar_orders', 'action' => 'view'],
+            'bar.orders.edit' => ['module' => 'bar_orders', 'action' => 'edit'],
+            'bar.orders.update' => ['module' => 'bar_orders', 'action' => 'edit'],
+            'bar.orders.destroy' => ['module' => 'bar_orders', 'action' => 'delete'],
             'bar.orders.food' => ['module' => 'bar_orders', 'action' => 'view'],
             'bar.orders.drinks' => ['module' => 'bar_orders', 'action' => 'view'],
             'bar.orders.juice' => ['module' => 'bar_orders', 'action' => 'view'],
@@ -751,6 +777,8 @@ class MenuService
             'accountant.reconciliations' => ['module' => 'finance', 'action' => 'view'],
             'accountant.reconciliation-details' => ['module' => 'finance', 'action' => 'view'],
             'accountant.reports' => ['module' => 'reports', 'action' => 'view'],
+            'reports.stock-receipts' => ['module' => 'reports', 'action' => 'view'],
+            'reports.stock-transfers' => ['module' => 'reports', 'action' => 'view'],
             // HR Routes
             'hr.dashboard' => ['module' => 'hr', 'action' => 'view'],
             'hr.attendance' => ['module' => 'hr', 'action' => 'view'],

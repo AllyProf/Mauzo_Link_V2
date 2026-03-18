@@ -13,6 +13,7 @@ use App\Services\StockTransferSmsService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 
 class StockTransferController extends Controller
@@ -130,14 +131,21 @@ class StockTransferController extends Controller
         $quickFilters = $products->pluck('category')
             ->merge($products->pluck('brand'))
             ->unique()
-            ->filter()
+            ->filter(function($val) {
+                return stripos(trim($val), 'bonite') === false;
+            })
             ->values()
             ->sort()
             ->all();
 
         // Separate Brands for the dropdown still (if needed for fallback)
-        $brands = $products->pluck('brand')->unique()->filter()->values()->all();
-        $categories = $products->pluck('category')->unique()->filter()->values()->all();
+        $brands = $products->pluck('brand')->unique()->filter(function($val) {
+            return stripos(trim($val), 'bonite') === false;
+        })->values()->all();
+
+        $categories = $products->pluck('category')->unique()->filter(function($val) {
+            return stripos(trim($val), 'bonite') === false;
+        })->values()->all();
 
         // Process products and variants into a flat list of individual inventory items
         $inventoryItems = $products->flatMap(function($product) {
@@ -147,10 +155,20 @@ class StockTransferController extends Controller
                 $warehouseStock = $variant->warehouseStock;
                 $warehousePackages = floor($warehouseStock->quantity / $variant->items_per_package);
                 
+                // Cleaner product name (Remove brand from product title if redundant)
+                $cleanTitle = $variant->name;
+                $brandStr = strtolower($product->brand ?? '');
+                if ($brandStr && str_starts_with(strtolower($cleanTitle), $brandStr)) {
+                    $cleanTitle = trim(substr($cleanTitle, strlen($brandStr)));
+                    // Handle cases like "Brand - Product" or "Brand Product"
+                    $cleanTitle = ltrim($cleanTitle, ' -');
+                }
+
                 return [
                     'variant_id' => $variant->id,
                     'product_name' => $product->name,
                     'variant_name' => $variant->name,
+                    'display_title' => $cleanTitle, 
                     'brand' => $product->brand,
                     'category' => $product->category,
                     'description' => $product->description,
@@ -161,17 +179,27 @@ class StockTransferController extends Controller
                     'items_per_package' => $variant->items_per_package,
                     'warehouse_quantity' => $warehouseStock->quantity,
                     'warehouse_packages' => $warehousePackages,
-                    'average_buying_price' => $warehouseStock->average_buying_price,
-                    'selling_price' => $warehouseStock->selling_price,
-                    'unit_label' => $variant->unit ?? 'btl',
-                    'can_sell_in_tots' => $variant->can_sell_in_tots,
-                    'total_tots_per_unit' => $variant->total_tots,
+                    'selling_price' => $variant->selling_price_per_unit,
                     'selling_price_per_tot' => $variant->selling_price_per_tot,
+                    'total_tots_per_unit' => $variant->total_tots,
+                    'can_sell_in_tots' => $variant->can_sell_in_tots,
+                    'average_buying_price' => $warehouseStock->average_buying_price,
+                    'unit_label' => $variant->unit
                 ];
             });
         })->values();
 
-        return view('bar.stock-transfers.available', compact('inventoryItems', 'categories', 'brands', 'quickFilters'));
+        // Calculate Summary Statistics
+        $stats = [
+            'total_items' => $inventoryItems->count(),
+            'total_packages' => $inventoryItems->sum('warehouse_packages'),
+            'total_quantity' => $inventoryItems->sum('warehouse_quantity'),
+            'total_value' => $inventoryItems->sum(function($item) {
+                return $item['warehouse_quantity'] * ($item['average_buying_price'] ?? 0);
+            })
+        ];
+
+        return view('bar.stock-transfers.available', compact('inventoryItems', 'categories', 'brands', 'quickFilters', 'stats'));
     }
 
     /**
@@ -345,7 +373,7 @@ class StockTransferController extends Controller
 
             // Send SMS notification to stock keeper
             try {
-                \Log::info('Attempting to send stock transfer SMS notification', [
+                Log::info('Attempting to send stock transfer SMS notification', [
                     'transfer_id' => $transfer->id,
                     'owner_id' => $ownerId,
                     'transfer_number' => $transfer->transfer_number
@@ -354,7 +382,7 @@ class StockTransferController extends Controller
                 $smsService = new StockTransferSmsService();
                 $result = $smsService->sendTransferRequestNotification($transfer, $ownerId);
                 
-                \Log::info('Stock transfer SMS notification attempt completed', [
+                Log::info('Stock transfer SMS notification attempt completed', [
                     'transfer_id' => $transfer->id,
                     'result' => $result ? 'true' : 'false',
                     'owner_id' => $ownerId,
@@ -362,7 +390,7 @@ class StockTransferController extends Controller
                 ]);
             } catch (\Exception $smsException) {
                 // Log SMS error but don't fail the transaction
-                \Log::error('Failed to send stock transfer request SMS notification', [
+                Log::error('Failed to send stock transfer request SMS notification', [
                     'transfer_id' => $transfer->id,
                     'owner_id' => $ownerId,
                     'error' => $smsException->getMessage(),
@@ -376,7 +404,7 @@ class StockTransferController extends Controller
                 ->with('success', 'Stock transfer request created successfully. Waiting for approval.');
         } catch (\Exception $e) {
             DB::rollBack();
-            \Log::error('Stock transfer creation failed: ' . $e->getMessage());
+            Log::error('Stock transfer creation failed: ' . $e->getMessage());
             return back()->withErrors(['error' => 'Failed to create stock transfer: ' . $e->getMessage()])->withInput();
         }
     }
@@ -452,7 +480,7 @@ class StockTransferController extends Controller
                 $smsService = new StockTransferSmsService();
                 $smsService->sendBatchTransferRequestNotification($createdTransfers, $ownerId, $transferNumber);
             } catch (\Exception $e) {
-                \Log::error('Batch SMS notification failed: ' . $e->getMessage());
+                Log::error('Batch SMS notification failed: ' . $e->getMessage());
             }
 
             return response()->json([
@@ -669,14 +697,14 @@ class StockTransferController extends Controller
                 $smsService = new StockTransferSmsService();
                 $smsService->sendBatchTransferStatusNotification($batchItems, 'approved', $ownerId);
             } catch (\Exception $smsException) {
-                \Log::error('Failed to send batch stock transfer approval SMS notification: ' . $smsException->getMessage());
+                Log::error('Failed to send batch stock transfer approval SMS notification: ' . $smsException->getMessage());
             }
 
             return redirect()->route('bar.stock-transfers.index')
                 ->with('success', 'Stock transfer batch approved successfully.');
         } catch (\Exception $e) {
             DB::rollBack();
-            \Log::error('Batch stock transfer approval failed: ' . $e->getMessage());
+            Log::error('Batch stock transfer approval failed: ' . $e->getMessage());
             return back()->withErrors(['error' => 'Failed to approve batch: ' . $e->getMessage()]);
         }
     }
@@ -742,7 +770,7 @@ class StockTransferController extends Controller
                 $smsService = new StockTransferSmsService();
                 $smsService->sendBatchTransferStatusNotification($batchItems, 'rejected', $ownerId);
             } catch (\Exception $smsException) {
-                \Log::error('Failed to send batch stock transfer rejection SMS notification: ' . $smsException->getMessage());
+                Log::error('Failed to send batch stock transfer rejection SMS notification: ' . $smsException->getMessage());
             }
 
             return redirect()->route('bar.stock-transfers.index')
@@ -790,14 +818,14 @@ class StockTransferController extends Controller
                 $smsService = new StockTransferSmsService();
                 $smsService->sendBatchTransferStatusNotification($batchItems, 'prepared', $ownerId);
             } catch (\Exception $smsException) {
-                \Log::error('Failed to send batch stock transfer prepared SMS notification: ' . $smsException->getMessage());
+                Log::error('Failed to send batch stock transfer prepared SMS notification: ' . $smsException->getMessage());
             }
 
             return redirect()->route('bar.stock-transfers.index')
                 ->with('success', 'Batch transfer marked as prepared successfully.');
         } catch (\Exception $e) {
             DB::rollBack();
-            \Log::error('Mark as prepared failed: ' . $e->getMessage());
+            Log::error('Mark as prepared failed: ' . $e->getMessage());
             return back()->withErrors(['error' => 'Failed to mark transfer as prepared: ' . $e->getMessage()]);
         }
     }
@@ -899,14 +927,14 @@ class StockTransferController extends Controller
                 $smsService = new StockTransferSmsService();
                 $smsService->sendBatchTransferStatusNotification($batchItems, 'completed', $ownerId);
             } catch (\Exception $smsException) {
-                \Log::error('Failed to send batch stock transfer completion SMS notification: ' . $smsException->getMessage());
+                Log::error('Failed to send batch stock transfer completion SMS notification: ' . $smsException->getMessage());
             }
 
             return redirect()->route('bar.stock-transfers.index')
                 ->with('success', 'Batch transfer completed. All items have been moved to counter stock.');
         } catch (\Exception $e) {
             DB::rollBack();
-            \Log::error('Batch mark as moved failed: ' . $e->getMessage());
+            Log::error('Batch mark as moved failed: ' . $e->getMessage());
             return back()->withErrors(['error' => 'Failed to complete batch movement: ' . $e->getMessage()]);
         }
     }
@@ -977,14 +1005,14 @@ class StockTransferController extends Controller
                 $smsService = new StockTransferSmsService();
                 $smsService->sendTransferStatusNotification($stockTransfer, 'rejected', $ownerId, $validated['rejection_reason']);
             } catch (\Exception $smsException) {
-                \Log::error('Failed to send stock transfer rejection SMS notification: ' . $smsException->getMessage());
+                Log::error('Failed to send stock transfer rejection SMS notification: ' . $smsException->getMessage());
             }
 
             return redirect()->route('bar.stock-transfers.index')
                 ->with('success', 'Stock transfer rejected successfully.');
         } catch (\Exception $e) {
             DB::rollBack();
-            \Log::error('Reject transfer failed: ' . $e->getMessage());
+            Log::error('Reject transfer failed: ' . $e->getMessage());
             return back()->withErrors(['error' => 'Failed to reject transfer: ' . $e->getMessage()])->withInput();
         }
     }
@@ -1226,7 +1254,6 @@ class StockTransferController extends Controller
 
         $ownerId = $this->getOwnerId();
         
-        // Get only completed transfers
         $transfers = StockTransfer::where('user_id', $ownerId)
             ->where('status', 'completed')
             ->with(['productVariant.product', 'productVariant.counterStock', 'requestedBy', 'approvedBy'])

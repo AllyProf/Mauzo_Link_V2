@@ -11,9 +11,12 @@ use App\Models\StockLocation;
 use App\Models\StockTransfer;
 use App\Models\OrderItem;
 use App\Models\StockMovement;
+use App\Models\KitchenOrderItem;
+use App\Models\FoodItem;
 use App\Services\TransferSaleService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 
 class CounterController extends Controller
 {
@@ -93,22 +96,17 @@ class CounterController extends Controller
                 ]);
 
                 // Deduct stock from counter when order is marked as served
-                // Only deduct if stock hasn't been deducted yet (check for existing stock movements)
+                // Only deduct if stock hasn't been deducted for the specific item
                 $order->load('items.productVariant');
-                $hasStockMovements = StockMovement::where('reference_type', BarOrder::class)
-                    ->where('reference_id', $order->id)
-                    ->where('movement_type', 'sale')
-                    ->exists();
+                
+                $transferSaleService = new TransferSaleService();
+                $currentUser = $this->getCurrentUser();
 
-                if (!$hasStockMovements) {
-                    $transferSaleService = new TransferSaleService();
-                    $currentUser = $this->getCurrentUser();
-
-                    foreach ($order->items as $orderItem) {
-                        // Skip if this is a food item (handled by chef)
-                        if (!$orderItem->productVariant || !$orderItem->productVariant->product) {
-                            continue;
-                        }
+                foreach ($order->items as $orderItem) {
+                    // Skip if this is a food item (handled by chef) or already served
+                    if (!$orderItem->productVariant || !$orderItem->productVariant->product || $orderItem->is_served) {
+                        continue;
+                    }
 
                         // Get counter stock for this variant
                         $counterStock = StockLocation::where('user_id', $ownerId)
@@ -117,7 +115,7 @@ class CounterController extends Controller
                             ->first();
 
                         if (!$counterStock) {
-                            \Log::warning("Counter stock not found for variant {$orderItem->product_variant_id} when serving order {$order->id}");
+                            Log::warning("Counter stock not found for variant {$orderItem->product_variant_id} when serving order {$order->id}");
                             continue;
                         }
 
@@ -215,9 +213,11 @@ class CounterController extends Controller
 
                         // Attribute sale to transfers using FIFO
                         $transferSaleService->attributeSaleToTransfer($orderItem, $ownerId);
+
+                        // Mark item as served to prevent double deduction
+                        $orderItem->update(['is_served' => true]);
                     }
                 }
-            }
 
             DB::commit();
 
@@ -472,11 +472,97 @@ class CounterController extends Controller
 
         // Recent orders
         $recentOrders = BarOrder::where('user_id', $ownerId)
-            ->whereNotNull('waiter_id')
-            ->with(['waiter', 'items.productVariant.product'])
+            ->with(['waiter', 'items.productVariant.product', 'table'])
             ->orderBy('created_at', 'desc')
-            ->limit(5)
+            ->limit(10)
             ->get();
+
+        // --- NEW POS DATA FOR COUNTER ---
+        // Get all products with counter stock
+        $variants = ProductVariant::whereHas('product', function($query) use ($ownerId) {
+            $query->where('user_id', $ownerId)
+                  ->where(function($q) {
+                      $q->where('category', 'like', '%beverage%')
+                        ->orWhere('category', 'like', '%drink%')
+                        ->orWhere('category', 'like', '%alcohol%')
+                        ->orWhere('category', 'like', '%beer%')
+                        ->orWhere('category', 'like', '%wine%')
+                        ->orWhere('category', 'like', '%spirit%');
+                  });
+        })
+        ->with(['product', 'stockLocations' => function($query) use ($ownerId) {
+            $query->where('user_id', $ownerId)
+                  ->where('location', 'counter');
+        }])
+        ->get()
+        ->filter(function($variant) {
+            $counterStock = $variant->stockLocations->where('location', 'counter')->first();
+            return $counterStock && $counterStock->quantity > 0;
+        })
+        ->map(function($variant) {
+            $counterStock = $variant->stockLocations->where('location', 'counter')->first();
+            $category = $variant->product->category ?? '';
+            $isAlcoholic = stripos($category, 'alcoholic') !== false;
+            
+            return [
+                'id' => $variant->id,
+                'product_name' => $variant->product->name,
+                'variant_name' => $variant->name,
+                'variant' => $variant->measurement . ' - ' . $variant->packaging,
+                'quantity' => $counterStock->quantity,
+                'selling_price' => $counterStock->selling_price ?? $variant->selling_price_per_unit ?? 0,
+                'selling_price_per_tot' => $counterStock->selling_price_per_tot ?? $variant->selling_price_per_tot ?? 0,
+                'can_sell_in_tots' => $variant->can_sell_in_tots,
+                'total_tots' => $variant->total_tots,
+                'items_per_package' => $variant->items_per_package ?? 1,
+                'packaging_type' => $variant->packaging ?? 'Packages',
+                'category' => $category,
+                'is_alcoholic' => $isAlcoholic,
+                'product_image' => $variant->product->image ?? null,
+            ];
+        });
+
+        // Get all active tables
+        $tables = \App\Models\BarTable::where('user_id', $ownerId)
+            ->where('is_active', true)
+            ->orderBy('table_number')
+            ->get()
+            ->map(function($table) {
+                return [
+                    'id' => $table->id,
+                    'table_number' => $table->table_number,
+                    'table_name' => $table->table_name,
+                    'capacity' => $table->capacity,
+                    'current_people' => $table->current_people,
+                    'remaining_capacity' => $table->remaining_capacity,
+                    'location' => $table->location ?? 'N/A',
+                    'status' => $table->status,
+                ];
+            });
+
+        // Get all active food items
+        $foodItems = FoodItem::where('user_id', $ownerId)
+            ->where('is_available', true)
+            ->orderBy('sort_order')
+            ->orderBy('name')
+            ->get();
+
+        // Get completed and served orders (for history view in POS)
+        $completedOrders = BarOrder::where('user_id', $ownerId)
+            ->where(function($query) {
+                $query->where('status', 'served')
+                    ->orWhereHas('kitchenOrderItems', function($q) {
+                        $q->where('status', 'completed');
+                    });
+            })
+            ->with(['kitchenOrderItems' => function($query) {
+                $query->where('status', 'completed')->orderBy('updated_at', 'desc');
+            }, 'items.productVariant.product', 'table', 'waiter'])
+            ->orderBy('updated_at', 'desc')
+            ->limit(10)
+            ->get();
+
+        $staff = $this->getCurrentStaff();
 
         return view('bar.counter.dashboard', compact(
             'todayOrders',
@@ -488,7 +574,12 @@ class CounterController extends Controller
             'warehouseStockItems',
             'lowStockItemsList',
             'recentTransferRequests',
-            'recentOrders'
+            'recentOrders',
+            'variants',
+            'foodItems',
+            'tables',
+            'completedOrders',
+            'staff'
         ));
     }
 
@@ -535,22 +626,32 @@ class CounterController extends Controller
         ->filter(function($variant) {
             $warehouseStock = $variant->stockLocations->where('location', 'warehouse')->first();
             return $warehouseStock && $warehouseStock->quantity > 0;
-        })
-        ->map(function($variant) {
-            $warehouseStock = $variant->stockLocations->where('location', 'warehouse')->first();
-            $counterStock = $variant->stockLocations->where('location', 'counter')->first();
-            return [
-                'id' => $variant->id,
-                'product_name' => $variant->product->name,
-                'variant' => $variant->measurement . ' - ' . $variant->packaging,
-                'warehouse_quantity' => $warehouseStock->quantity,
-                'counter_quantity' => $counterStock ? $counterStock->quantity : 0,
-                'buying_price' => $warehouseStock->average_buying_price ?? $variant->buying_price_per_unit ?? 0,
-                'selling_price' => $counterStock ? ($counterStock->selling_price ?? $variant->selling_price_per_unit ?? 0) : ($variant->selling_price_per_unit ?? 0),
-            ];
         });
+        $variants = ProductVariant::whereIn('id', $variants->pluck('id'))
+            ->get()
+            ->map(function($variant) use ($ownerId) {
+                $warehouseStock = $variant->stockLocations->where('location', 'warehouse')->where('user_id', $ownerId)->first();
+                $counterStock = $variant->stockLocations->where('location', 'counter')->where('user_id', $ownerId)->first();
+                return [
+                    'id' => $variant->id,
+                    'product_name' => $variant->product->name,
+                    'variant_name' => $variant->name,
+                    'brand' => $variant->product->brand ?? 'N/A',
+                    'category' => $variant->product->category ?? 'General',
+                    'variant' => $variant->measurement,
+                    'packaging' => $variant->packaging,
+                    'product_image' => $variant->product->image,
+                    'warehouse_quantity' => $warehouseStock->quantity,
+                    'counter_quantity' => $counterStock ? $counterStock->quantity : 0,
+                    'buying_price' => $warehouseStock->average_buying_price ?? $variant->buying_price_per_unit ?? 0,
+                    'selling_price' => $counterStock ? ($counterStock->selling_price ?? $variant->selling_price_per_unit ?? 0) : ($variant->selling_price_per_unit ?? 0),
+                ];
+            });
 
-        return view('bar.counter.warehouse-stock', compact('variants'));
+        $categories = $variants->pluck('category')->unique()->sort()->values();
+        $brands = $variants->pluck('brand')->unique()->filter()->sort()->values();
+
+        return view('bar.counter.warehouse-stock', compact('variants', 'categories', 'brands'));
     }
 
     /**
@@ -602,10 +703,11 @@ class CounterController extends Controller
                 return [
                     'id'                   => $variant->id,
                     'product_name'         => $variant->product->name,
-                    'variant_name'         => $variant->name,          // e.g. "Fanta Pineapple"
+                    'variant_name'         => $variant->name,
                     'product_image'        => $variant->product->image,
+                    'brand'                => $variant->product->brand ?? 'N/A',
                     'category'             => $variant->product->category ?? 'General',
-                    'variant'              => $variant->measurement,    // e.g. "350"
+                    'variant'              => $variant->measurement,
                     'quantity'             => $quantity,
                     'items_per_package'    => $itemsPerPackage,
                     'packaging'            => $packaging,
@@ -621,10 +723,13 @@ class CounterController extends Controller
 
         $totalValue = $variants->sum(fn($v) => $v['quantity'] * $v['selling_price']);
 
-        // Get unique categories for tabs
+        // Get unique categories for tabs; exclude 'bonite' from brand filter pills
         $categories = $variants->pluck('category')->unique()->sort()->values();
+        $brands = $variants->pluck('brand')->unique()->filter(function($b) {
+            return stripos($b, 'bonite') === false;
+        })->sort()->values();
 
-        return view('bar.counter.counter-stock', compact('variants', 'totalValue', 'categories'));
+        return view('bar.counter.counter-stock', compact('variants', 'totalValue', 'categories', 'brands'));
     }
 
     /**
@@ -1156,5 +1261,317 @@ class CounterController extends Controller
             'success' => true,
             'message' => 'Voice clip deleted successfully',
         ]);
+    }
+
+    /**
+     * Create Order from Counter
+     */
+    public function createOrder(Request $request)
+    {
+        // Check permission
+        if (!$this->hasPermission('bar_orders', 'create')) {
+            return response()->json(['error' => 'You do not have permission to create orders.'], 403);
+        }
+
+        $ownerId = $this->getOwnerId();
+        $staff = $this->getCurrentStaff();
+        
+        if (!$staff || !$staff->is_active) {
+            return response()->json(['error' => 'Unauthorized'], 401);
+        }
+
+        // Validate items
+        $validated = $request->validate([
+            'items' => 'required|array|min:1',
+            'table_id' => 'nullable|exists:bar_tables,id',
+            'existing_order_id' => 'nullable|exists:orders,id',
+            'customer_name' => 'nullable|string|max:255',
+            'customer_phone' => 'nullable|string|max:20',
+            'order_notes' => 'nullable|string|max:1000',
+        ]);
+        
+        DB::beginTransaction();
+        try {
+            $existingOrderId = $request->input('existing_order_id');
+            $existingOrder = $existingOrderId ? BarOrder::find($existingOrderId) : null;
+            
+            // Calculate total and prepare items
+            $totalAmount = 0;
+            $orderItems = [];
+            $kitchenOrderItems = [];
+            $foodItemsNotes = [];
+
+            foreach ($request->input('items') as $item) {
+                // Handle food items
+                if (isset($item['food_item_id']) && $item['food_item_id'] !== null) {
+                    $unitPrice = (float)$item['price'];
+                    $quantity = (int)$item['quantity'];
+                    $itemTotal = $quantity * $unitPrice;
+                    $totalAmount += $itemTotal;
+                    
+                    $kitchenOrderItems[] = [
+                        'food_item_id' => $item['food_item_id'],
+                        'food_item_name' => $item['product_name'] ?? 'Food Item',
+                        'variant_name' => $item['variant_name'] ?? null,
+                        'quantity' => $quantity,
+                        'unit_price' => $unitPrice,
+                        'total_price' => $itemTotal,
+                        'special_instructions' => $item['notes'] ?? null,
+                        'status' => 'pending',
+                    ];
+                    
+                    $foodItemNote = $quantity . 'x ' . ($item['product_name'] ?? 'Food Item') . 
+                                   (isset($item['variant_name']) && $item['variant_name'] ? ' (' . $item['variant_name'] . ')' : '') . 
+                                   ' - Tsh ' . number_format($unitPrice, 0);
+                    
+                    if (isset($item['notes']) && $item['notes']) {
+                        $foodItemNote .= ' [Note: ' . $item['notes'] . ']';
+                    }
+                    
+                    $foodItemsNotes[] = $foodItemNote;
+                    continue;
+                }
+                
+                // Handle Regular product variants (drinks)
+                if (!isset($item['variant_id'])) continue;
+
+                $sellType = $item['sell_type'] ?? 'unit';
+                $variant = ProductVariant::with(['product', 'stockLocations' => function($query) use ($ownerId) {
+                    $query->where('user_id', $ownerId)->where('location', 'counter');
+                }])->findOrFail($item['variant_id']);
+
+                $counterStock = $variant->stockLocations->where('location', 'counter')->first();
+                if (!$counterStock) {
+                    throw new \Exception("Counter stock not found for {$variant->product->name}");
+                }
+
+                // Accurate stock check for shots vs units (Match Waiter logic)
+                if ($sellType === 'tot') {
+                    $totsPerBottle = $variant->total_tots ?: 1;
+                    $openBottle = \App\Models\OpenBottle::where('user_id', $ownerId)
+                        ->where('product_variant_id', $variant->id)
+                        ->first();
+                    
+                    $totalTotsAvailable = ($counterStock->quantity * $totsPerBottle) + ($openBottle ? $openBottle->tots_remaining : 0);
+                    
+                    if ($totalTotsAvailable < $item['quantity']) {
+                        throw new \Exception("Insufficient shots for {$variant->product->name}. [Available: {$totalTotsAvailable}]");
+                    }
+                } else {
+                    if ($counterStock->quantity < $item['quantity']) {
+                        throw new \Exception("Insufficient stock for {$variant->product->name}");
+                    }
+                }
+
+                $sellingPrice = $sellType === 'tot' 
+                    ? ($counterStock->selling_price_per_tot ?? $variant->selling_price_per_tot ?? 0)
+                    : ($counterStock->selling_price ?? $variant->selling_price_per_unit ?? 0);
+
+                $itemTotal = $item['quantity'] * $sellingPrice;
+                $totalAmount += $itemTotal;
+
+                $orderItems[] = [
+                    'product_variant_id' => $variant->id,
+                    'sell_type' => $sellType,
+                    'quantity' => $item['quantity'],
+                    'unit_price' => $sellingPrice,
+                    'total_price' => $itemTotal,
+                ];
+            }
+            
+            // Build order notes
+            $notesParts = [];
+            if (!empty($foodItemsNotes)) {
+                $notesParts[] = 'FOOD ITEMS: ' . implode(', ', $foodItemsNotes);
+            }
+            if (!empty($validated['order_notes'])) {
+                $notesParts[] = 'ORDER NOTES: ' . $validated['order_notes'];
+            }
+            $newNotes = implode(' | ', $notesParts);
+
+            if ($existingOrder) {
+                // UPDATE EXISTING ORDER
+                $existingOrder->total_amount += $totalAmount;
+                if (!empty($newNotes)) {
+                    $existingOrder->notes = ($existingOrder->notes ? $existingOrder->notes . ' | ' : '') . $newNotes;
+                }
+                // If it was served, revert back to pending to process the new items
+                if ($existingOrder->status === 'served' || $existingOrder->status === 'completed') {
+                    $existingOrder->status = 'pending';
+                }
+                $existingOrder->save();
+                $order = $existingOrder;
+                $message = 'Items added to existing order successfully';
+            } else {
+                // CREATE NEW ORDER
+                $orderNumber = BarOrder::generateOrderNumber($ownerId);
+                $order = BarOrder::create([
+                    'user_id' => $ownerId,
+                    'order_number' => $orderNumber,
+                    'waiter_id' => $staff->id, // Attributed to counter staff
+                    'order_source' => 'counter',
+                    'table_id' => $validated['table_id'] ?? null,
+                    'customer_name' => $validated['customer_name'] ?? null,
+                    'customer_phone' => $validated['customer_phone'] ?? null,
+                    'status' => 'pending',
+                    'payment_status' => 'pending',
+                    'total_amount' => $totalAmount,
+                    'paid_amount' => 0,
+                    'notes' => $newNotes,
+                ]);
+                $message = 'Order created successfully';
+            }
+
+            // Create items and attribute via service
+            $transferSaleService = new \App\Services\TransferSaleService();
+            foreach ($orderItems as $item) {
+                $orderItem = OrderItem::create([
+                    'order_id' => $order->id,
+                    'product_variant_id' => $item['product_variant_id'],
+                    'sell_type' => $item['sell_type'],
+                    'quantity' => $item['quantity'],
+                    'unit_price' => $item['unit_price'],
+                    'total_price' => $item['total_price'],
+                ]);
+                $transferSaleService->attributeSaleToTransfer($orderItem, $ownerId);
+            }
+
+            foreach ($kitchenOrderItems as $item) {
+                KitchenOrderItem::create([
+                    'order_id' => $order->id,
+                    'food_item_id' => $item['food_item_id'],
+                    'food_item_name' => $item['food_item_name'],
+                    'variant_name' => $item['variant_name'],
+                    'quantity' => $item['quantity'],
+                    'unit_price' => $item['unit_price'],
+                    'total_price' => $item['total_price'],
+                    'special_instructions' => $item['special_instructions'],
+                    'status' => 'pending',
+                ]);
+            }
+
+            DB::commit();
+
+            // Send SMS notifications
+            try {
+                $smsService = new \App\Services\WaiterSmsService();
+                $smsService->sendOrderNotification($order);
+                
+                if ($order->customer_phone) {
+                    $smsService->sendCustomerOrderConfirmation($order);
+                }
+            } catch (\Exception $e) {
+                Log::error('SMS notification failed in counter', ['id' => $order->id, 'err' => $e->getMessage()]);
+            }
+
+            return response()->json([
+                'success' => true,
+                'message' => $message,
+                'order' => $order->load(['items.productVariant.product', 'table']),
+            ]);
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return response()->json(['success' => false, 'error' => $e->getMessage()], 400);
+        }
+    }
+
+    /**
+     * Cancel an order
+     */
+    public function cancelOrder(Request $request, BarOrder $order)
+    {
+        // Check permission
+        if (!$this->hasPermission('bar_orders', 'edit')) {
+            return response()->json(['error' => 'You do not have permission to cancel orders.'], 403);
+        }
+
+        $ownerId = $this->getOwnerId();
+        if ($order->user_id !== $ownerId) {
+            return response()->json(['error' => 'Unauthorized'], 403);
+        }
+
+        if ($order->status !== 'pending') {
+            return response()->json(['error' => 'Only pending orders can be cancelled'], 400);
+        }
+
+        $validated = $request->validate([
+            'reason' => 'nullable|string|max:500',
+        ]);
+
+        DB::beginTransaction();
+        try {
+            $order->status = 'cancelled';
+            $cancelReason = !empty($validated['reason']) ? 'CANCELLED - Reason: ' . $validated['reason'] : 'CANCELLED';
+            $order->notes = ($order->notes ? $order->notes . ' | ' : '') . $cancelReason;
+            $order->save();
+
+            DB::commit();
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Order cancelled successfully'
+            ]);
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return response()->json(['error' => 'Failed to cancel order: ' . $e->getMessage()], 500);
+        }
+    }
+
+    /**
+     * Record payment for an order
+     */
+    public function recordPayment(Request $request, BarOrder $order)
+    {
+        // Check permission
+        if (!$this->hasPermission('bar_orders', 'edit')) {
+            return response()->json(['error' => 'You do not have permission.'], 403);
+        }
+
+        $ownerId = $this->getOwnerId();
+        if ($order->user_id !== $ownerId) {
+            return response()->json(['error' => 'Unauthorized'], 403);
+        }
+
+        $validated = $request->validate([
+            'payment_method' => 'required|in:cash,mobile_money,bank,card',
+            'mobile_money_number' => 'required_if:payment_method,mobile_money|nullable|string|max:20',
+            'transaction_reference' => 'required_if:payment_method,mobile_money|nullable|string|max:50',
+        ]);
+
+        DB::beginTransaction();
+        try {
+            $staff = $this->getCurrentStaff();
+            
+            $order->update([
+                'payment_method' => $validated['payment_method'],
+                'mobile_money_number' => $validated['mobile_money_number'] ?? null,
+                'transaction_reference' => $validated['transaction_reference'] ?? null,
+                'payment_status' => 'paid',
+                'paid_amount' => $order->total_amount,
+                'paid_by_waiter_id' => $staff->id,
+            ]);
+
+            \App\Models\OrderPayment::create([
+                'order_id' => $order->id,
+                'payment_method' => $validated['payment_method'],
+                'amount' => $order->total_amount,
+                'mobile_money_number' => $validated['mobile_money_number'] ?? null,
+                'transaction_reference' => $validated['transaction_reference'] ?? null,
+                'payment_status' => 'verified',
+            ]);
+
+            DB::commit();
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Payment recorded successfully',
+                'order' => $order->load(['items.productVariant.product', 'table', 'orderPayments']),
+            ]);
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return response()->json(['error' => 'Failed to record payment: ' . $e->getMessage()], 500);
+        }
     }
 }

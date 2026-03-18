@@ -110,6 +110,8 @@
                 <td>
                   @if($order->order_source === 'kiosk')
                     <span class="badge badge-info"><i class="fa fa-desktop"></i> Kiosk</span>
+                  @elseif($order->order_source === 'counter')
+                    <span class="badge badge-warning"><i class="fa fa-shopping-cart"></i> Counter</span>
                   @elseif($order->waiter_id)
                     <span class="badge badge-primary"><i class="fa fa-user"></i> Waiter</span>
                   @else
@@ -165,18 +167,45 @@
                 </td>
                 <td>{{ $order->created_at->format('M d, Y H:i') }}</td>
                 <td>
-                  <div class="btn-group">
-                    <button class="btn btn-sm btn-info view-order-btn" data-order-id="{{ $order->id }}">
+                  <div class="">
+                    {{-- Always: View --}}
+                    <button class="btn btn-sm btn-secondary view-order-btn mr-1 mb-1" data-order-id="{{ $order->id }}">
                       <i class="fa fa-eye"></i> View
                     </button>
-                    @if($order->status === 'pending')
-                      <button class="btn btn-sm btn-primary update-status-btn" 
-                              data-order-id="{{ $order->id }}" 
+
+                    @if($order->status === 'pending' && $order->payment_status !== 'paid')
+                      {{-- PENDING: Mark Served + Cancel --}}
+                      <button class="btn btn-sm btn-info update-status-btn mr-1 mb-1"
+                              data-order-id="{{ $order->id }}"
                               data-status="served">
-                        <i class="fa fa-truck"></i> Mark Served
+                        <i class="fa fa-check"></i> Serve
+                      </button>
+                      <button class="btn btn-sm btn-danger cancel-order-btn mr-1 mb-1"
+                              data-order-id="{{ $order->id }}"
+                              data-order-number="{{ $order->order_number }}"
+                              title="Cancel Order">
+                        <i class="fa fa-times"></i>
+                      </button>
+
+                    @elseif($order->status === 'served' && $order->payment_status !== 'paid')
+                      {{-- SERVED & UNPAID: PAY button --}}
+                      <button class="btn btn-sm btn-success font-weight-bold pay-order-btn mr-1 mb-1"
+                              data-order-id="{{ $order->id }}"
+                              data-total="{{ $order->total_amount }}">
+                        <i class="fa fa-money"></i> PAY
+                      </button>
+
+                    @elseif($order->payment_status === 'paid')
+                      {{-- PAID: no actions --}}
+                      <button class="btn btn-sm btn-success" disabled style="opacity: 1;">
+                        <i class="fa fa-check-circle"></i> Paid
+                      </button>
+
+                    @elseif($order->status === 'cancelled')
+                      <button class="btn btn-sm btn-secondary" disabled style="opacity: 1;">
+                        <i class="fa fa-ban"></i> Cancelled
                       </button>
                     @endif
-                    {{-- Payment marking is done in reconciliation after waiter submits daily collection --}}
                   </div>
                 </td>
               </tr>
@@ -262,39 +291,109 @@
   </div>
 </div>
 
-<!-- Mark Paid Modal -->
-<div class="modal fade" id="mark-paid-modal" tabindex="-1" role="dialog">
-  <div class="modal-dialog" role="document">
-    <div class="modal-content">
-      <div class="modal-header">
-        <h5 class="modal-title">Mark Order as Paid</h5>
-        <button type="button" class="close" data-dismiss="modal">
-          <span>&times;</span>
-        </button>
+<!-- Checkout / Payment Modal -->
+<div class="modal fade" id="checkoutModal" tabindex="-1" role="dialog" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered" role="document">
+    <div class="modal-content border-0 shadow-lg">
+      <div class="modal-header bg-success text-white">
+        <h5 class="modal-title font-weight-bold"><i class="fa fa-credit-card"></i> Process Payment</h5>
+        <button type="button" class="close text-white" data-dismiss="modal">&times;</button>
       </div>
-      <form id="mark-paid-form">
-        <div class="modal-body">
-          <input type="hidden" id="paid-order-id" name="order_id">
-          <div class="form-group">
-            <label>Paid Amount</label>
-            <input type="number" class="form-control" id="paid-amount" name="paid_amount" step="0.01" required>
-            <small class="form-text text-muted">Total Amount: <span id="order-total-amount"></span></small>
+      <div class="modal-body p-4">
+        <div class="bg-light p-3 rounded mb-4 text-center border">
+          <small class="text-muted d-block text-uppercase font-weight-bold">Total Amount Due</small>
+          <h2 class="mb-0 text-dark font-weight-bold" id="checkout-total-display">TSh 0</h2>
+          <input type="hidden" id="checkout-order-id" value="">
+        </div>
+
+        <div class="form-group">
+          <label class="font-weight-bold">Select Payment Mode</label>
+          <div class="btn-group btn-group-toggle d-flex flex-wrap" data-toggle="buttons">
+            <label class="btn btn-outline-success flex-fill active p-3">
+              <input type="radio" name="payment_method" value="cash" checked>
+              <i class="fa fa-money fa-2x mb-2 d-block"></i> CASH
+            </label>
+            <label class="btn btn-outline-info flex-fill p-3">
+              <input type="radio" name="payment_method" value="mobile_money">
+              <i class="fa fa-mobile fa-3x mb-2 d-block"></i> MOBILE MONEY
+            </label>
+            <label class="btn btn-outline-primary flex-fill p-3">
+              <input type="radio" name="payment_method" value="bank">
+              <i class="fa fa-university fa-2x mb-2 d-block"></i> BANK
+            </label>
+            <label class="btn btn-outline-dark flex-fill p-3">
+              <input type="radio" name="payment_method" value="card">
+              <i class="fa fa-credit-card fa-2x mb-2 d-block"></i> CARD
+            </label>
           </div>
+        </div>
+
+        {{-- Mobile Money --}}
+        <div id="mobile-money-details" style="display: none;" class="mt-3 p-3 bg-light border-info border rounded">
           <div class="form-group">
-            <label>Waiter Who Collected Payment</label>
-            <select class="form-control" id="paid-by-waiter" name="waiter_id" required>
-              <option value="">Select Waiter</option>
-              @foreach($waiters as $waiter)
-              <option value="{{ $waiter->id }}">{{ $waiter->full_name }} ({{ $waiter->staff_id }})</option>
-              @endforeach
+            <label class="font-weight-bold small">MM Provider</label>
+            <select class="form-control" id="mobile-money-provider">
+              <option value="Tigo Pesa">Tigo Pesa</option>
+              <option value="M-Pesa">M-Pesa</option>
+              <option value="Airtel Money">Airtel Money</option>
+              <option value="HaloPesa">HaloPesa</option>
+              <option value="MIXX BY YAS">MIXX BY YAS</option>
             </select>
           </div>
+          <div class="form-group mb-0">
+            <label class="font-weight-bold small">Transaction Reference / Receipt #</label>
+            <input type="text" id="mobile-money-ref" class="form-control" placeholder="Enter Reference ID">
+          </div>
         </div>
-        <div class="modal-footer">
-          <button type="button" class="btn btn-secondary" data-dismiss="modal">Cancel</button>
-          <button type="submit" class="btn btn-success">Mark as Paid</button>
+
+        {{-- Bank Transfer --}}
+        <div id="bank-details" style="display: none;" class="mt-3 p-3 bg-light border-primary border rounded">
+          <div class="form-group">
+            <label class="font-weight-bold small">Bank Name</label>
+            <select class="form-control" id="bank-provider">
+              <option value="CRDB Bank">CRDB Bank</option>
+              <option value="NMB Bank">NMB Bank</option>
+              <option value="NBC Bank">NBC Bank</option>
+              <option value="Stanbic Bank">Stanbic Bank</option>
+              <option value="Equity Bank">Equity Bank</option>
+              <option value="Absa Bank">Absa Bank</option>
+              <option value="DTB Bank">DTB Bank</option>
+              <option value="KCB Bank">KCB Bank</option>
+              <option value="Exim Bank">Exim Bank</option>
+              <option value="Azania Bank">Azania Bank</option>
+              <option value="Other">Other</option>
+            </select>
+          </div>
+          <div class="form-group mb-0">
+            <label class="font-weight-bold small">Bank Slip / Reference #</label>
+            <input type="text" id="bank-ref" class="form-control" placeholder="Enter bank slip or reference number">
+          </div>
         </div>
-      </form>
+
+        {{-- Card Payment --}}
+        <div id="card-details" style="display: none;" class="mt-3 p-3 bg-light border-dark border rounded">
+          <div class="form-group">
+            <label class="font-weight-bold small">Card Type</label>
+            <select class="form-control" id="card-provider">
+              <option value="Visa">Visa</option>
+              <option value="Mastercard">Mastercard</option>
+              <option value="Amex">American Express</option>
+              <option value="UnionPay">UnionPay</option>
+              <option value="Other">Other</option>
+            </select>
+          </div>
+          <div class="form-group mb-0">
+            <label class="font-weight-bold small">Card Approval Code</label>
+            <input type="text" id="card-ref" class="form-control" placeholder="Enter approval / authorization code">
+          </div>
+        </div>
+
+      </div>
+      <div class="modal-footer border-0 p-4 pt-0">
+          <button type="button" class="btn btn-success btn-lg btn-block font-weight-bold py-3 shadow-sm" id="btn-place-order-final">
+              <i class="fa fa-check-circle"></i> COMPLETE & PROCESS PAYMENT
+          </button>
+      </div>
     </div>
   </div>
 </div>
@@ -1637,7 +1736,90 @@
     });
   });
 
-  // Payment marking is now done in reconciliation after waiter submits daily collection
+  // Handle Payment Options UI
+  $('input[name="payment_method"]').on('change', function() {
+      const val = $(this).val();
+      $('#mobile-money-details, #bank-details, #card-details').slideUp();
+      if (val === 'mobile_money') {
+          $('#mobile-money-details').slideDown();
+      } else if (val === 'bank') {
+          $('#bank-details').slideDown();
+      } else if (val === 'card') {
+          $('#card-details').slideDown();
+      }
+  });
+
+  // Open Checkout modal from PAY button
+  $(document).on('click', '.pay-order-btn', function() {
+      const orderId = $(this).data('order-id');
+      const orderTotal = $(this).data('total');
+      
+      $('#checkout-order-id').val(orderId);
+      $('#checkout-total-display').text('TSh ' + parseFloat(orderTotal).toLocaleString('en-US'));
+      
+      // Default to Cash
+      $('input[name="payment_method"][value="cash"]').prop('checked', true).trigger('change');
+      
+      $('#checkoutModal').modal('show');
+  });
+
+  // Submit payment record
+  $('#btn-place-order-final').on('click', function() {
+      const btn = $(this);
+      const orderId = $('#checkout-order-id').val();
+      const method = $('input[name="payment_method"]:checked').val() || 'cash';
+      
+      if (method === 'mobile_money' && !$('#mobile-money-ref').val()) {
+          Swal.fire('Required', 'Please enter reference number for mobile money', 'warning');
+          return;
+      }
+      if (method === 'bank' && !$('#bank-ref').val()) {
+          Swal.fire('Required', 'Please enter Bank Slip / Reference number', 'warning');
+          return;
+      }
+      if (method === 'card' && !$('#card-ref').val()) {
+          Swal.fire('Required', 'Please enter the Card Approval Code', 'warning');
+          return;
+      }
+
+      const originalBtnText = btn.html();
+      btn.prop('disabled', true).html('<i class="fa fa-spinner fa-spin"></i> PROCESSING...');
+      
+      $.ajax({
+          url: '{{ url("bar/counter/record-payment") }}/' + orderId,
+          method: 'POST',
+          data: {
+              payment_method: method,
+              mobile_money_number: method === 'mobile_money' ? $('#mobile-money-provider').val()
+                                : method === 'bank' ? $('#bank-provider').val()
+                                : method === 'card' ? $('#card-provider').val()
+                                : null,
+              transaction_reference: method === 'mobile_money' ? $('#mobile-money-ref').val()
+                                  : method === 'bank' ? $('#bank-ref').val()
+                                  : method === 'card' ? $('#card-ref').val()
+                                  : null,
+              _token: '{{ csrf_token() }}'
+          },
+          success: function(payResponse) {
+              $('#checkoutModal').modal('hide');
+              Swal.fire({
+                  icon: 'success',
+                  title: 'Success!',
+                  text: 'Order payment recorded successfully.'
+              }).then(() => {
+                  location.reload();
+              });
+          },
+          error: function(err) {
+              btn.prop('disabled', false).html(originalBtnText);
+              let errMsg = "Payment failed";
+              if (err.responseJSON) {
+                  errMsg = err.responseJSON.error || err.responseJSON.message || errMsg;
+              }
+              Swal.fire('Error', errMsg, 'error');
+          }
+      });
+  });
 </script>
 @endpush
 

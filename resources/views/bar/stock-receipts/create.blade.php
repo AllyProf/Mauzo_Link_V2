@@ -63,9 +63,9 @@
                    <div class="form-group">
                       <label class="font-weight-bold small text-uppercase text-primary">Load Inventory By Group / Distributor</label>
                       <select class="form-control border-primary" id="category_filter" style="border-width: 2px;">
-                         <option value="">-- Choose Distributor / Group --</option>
-                         @foreach($categories as $cat)
-                            <option value="{{ $cat }}">{{ $cat }}</option>
+                         <option value="">-- Choose Brand / Distributor --</option>
+                         @foreach($distributorGroups as $brand)
+                            <option value="{{ $brand }}">{{ $brand }}</option>
                          @endforeach
                       </select>
                    </div>
@@ -178,7 +178,7 @@
                     <h5 class="mb-0 font-weight-bold">Summary</h5>
                     <small class="opacity-75">Valuation & Profitability</small>
                   </div>
-                  <span class="badge badge-light badge-pill px-3 py-1" id="items_badge">0 Items</span>
+                  <span class="badge badge-light badge-pill px-3 py-1" id="summary_items_badge">0 Items</span>
                </div>
 
                <div id="summary_content_area">
@@ -217,6 +217,7 @@
                      <div class="smallest text-white-50 mt-1">Avg: <span id="summ_unit_cost" class="text-white">0</span> / bottle/pc</div>
                   </div>
 
+                  @if($showRevenue)
                   <div class="summary-card-light p-3 mb-4">
                      <div class="d-flex justify-content-between align-items-center mb-2">
                         <span class="smallest opacity-75">Expected Selling</span>
@@ -250,6 +251,7 @@
                          </div>
                       </div>
                   </div>
+                  @endif
                </div>
             </div>
                <div class="tile shadow-sm border-0 p-3 mb-3 bg-white">
@@ -332,6 +334,10 @@
 
 @section('scripts')
 <script>
+    // Visibility flag passed from controller
+    const showRevenue = {{ $showRevenue ? 'true' : 'false' }};
+    const productsData = @json($productsData);
+
 $(document).ready(function() {
     // 1. STATE MANAGEMENT
     let receiptItems = [];
@@ -453,7 +459,7 @@ $(document).ready(function() {
             const profitBtlColor = totalLineBtlProfit >= 0 ? 'text-success' : 'text-danger';
             const profitTotColor = totalLineTotProfit >= 0 ? 'text-success' : 'text-danger';
 
-            const totProfitHtml = (isDualSelling && sellTot > 0)
+            const totProfitHtml = (isDualSelling && sellTot > 0 && showRevenue)
                 ? `<div class="d-flex justify-content-between smallest ${profitTotColor}">
                         <span><i class="fa fa-glass mr-1"></i> ${itemUnitLabel} Profit (Tot):</span>
                         <span class="font-weight-bold">+${Math.round(totalLineTotProfit).toLocaleString()}</span>
@@ -464,7 +470,7 @@ $(document).ready(function() {
                 <div class="mb-3 pb-2 border-bottom border-light">
                     <div class="d-flex justify-content-between align-items-start mb-1">
                         <span class="small font-weight-bold text-dark pr-2" style="max-width: 160px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${item.name}</span>
-                        <span class="small font-weight-bold badge badge-light border">Cost: ${Math.round(lineNetCost).toLocaleString()}</span>
+                        ${showRevenue ? `<span class="small font-weight-bold badge badge-light border">Cost: ${Math.round(lineNetCost).toLocaleString()}</span>` : ''}
                     </div>
                     
                     <div class="smallest text-muted mb-2">
@@ -472,6 +478,7 @@ $(document).ready(function() {
                         ${totalTotsPerUnit > 0 ? `<span class="opacity-50 ml-1">(${totalTotsPerUnit} ${itemUnitLabel}s/btl)</span>` : ''}
                     </div>
 
+                    ${showRevenue ? `
                     <div class="bg-light p-1 rounded">
                         <div class="d-flex justify-content-between smallest mb-1 px-1">
                             <span class="text-muted"><i class="fa fa-shopping-cart mr-1"></i> Btl Sales:</span>
@@ -491,6 +498,7 @@ $(document).ready(function() {
                         ${totProfitHtml}
                         ` : ''}
                     </div>
+                    ` : ''}
                 </div>
             `;
             $('#items_breakdown_list').append(breakdownHtml);
@@ -526,6 +534,8 @@ $(document).ready(function() {
         $('#summ_roi').text(roi.toFixed(1) + '%');
         const activeItemsCount = receiptItems.filter(item => cleanNum(item.quantity_received) > 0).length;
         $('#items_badge').text(activeItemsCount + ' Items');
+        $('#summary_items_badge').text(activeItemsCount + ' Items');
+        $('#summ_unit_cost').text(Math.round(avgUnitCost).toLocaleString());
 
         // D. Batch Status Badge
         const badge = $('#batch_status_badge');
@@ -746,7 +756,56 @@ $(document).ready(function() {
         receiptItems[idx].is_dual = !receiptItems[idx].is_dual;
         renderTable();
         updateSummaries();
-    });
+    }); // End of toggle-dual
+
+    // --- AUTO-LOAD VARIANT FROM URL (Restock Mode) ---
+    const urlParams = new URLSearchParams(window.location.search);
+    const autoLoadId = urlParams.get('auto_load_variant');
+    if (autoLoadId && typeof productsData !== 'undefined') {
+        let found = false;
+        productsData.forEach(prod => {
+            if (found) return;
+            const variant = prod.variants.find(v => v.id == autoLoadId);
+            if (variant) {
+                // 1. Load Supplier (Distributor)
+                if (variant.last_supplier_id) {
+                    $('#supplier_id').val(variant.last_supplier_id).trigger('change');
+                }
+
+                // 2. Add to list
+                receiptItems.push({
+                    product_variant_id: variant.id,
+                    name: variant.name,
+                    brand: prod.brand,
+                    measurement: variant.measurement,
+                    packaging: variant.packaging || 'Piece',
+                    items_per_package: variant.items_per_package || 1,
+                    conversion_qty: variant.items_per_package || 1,
+                    unit: variant.unit || 'btl',
+                    selling_type: variant.selling_type || 'bottle',
+                    is_dual: (variant.selling_type === 'mixed' || variant.selling_type === 'glass'),
+                    buying_price_per_unit: variant.average_buying_price || variant.buying_price_per_unit || 0,
+                    last_known_buy: variant.average_buying_price || variant.buying_price_per_unit || 0,
+                    selling_price_per_unit: variant.selling_price_per_unit || 0,
+                    total_tots: variant.total_tots || 0,
+                    selling_price_per_tot: variant.selling_price_per_tot || 0,
+                    quantity_received: 0,
+                    existing_quantity: variant.existing_quantity || 0,
+                    expiry_date: '',
+                    discount_type: 'fixed',
+                    discount_amount: 0
+                });
+                renderTable();
+                updateSummaries();
+                found = true;
+                
+                if (typeof showToast === 'function') {
+                    showToast('success', `Auto-loaded ${variant.name} from Inventory.`);
+                }
+            }
+        });
+    }
+    // ------------------------------------------------
 
     $(document).on('input change', '.item-pkg, .item-buy-price, .item-sell-price, .item-sell-tot, .item-expiry, .item-discount-amount, .item-discount-type', function() {
         const idx = $(this).attr('data-index');

@@ -31,11 +31,17 @@ class CounterReconciliationController extends Controller
         $currentStaff = $this->getCurrentStaff();
         $isAccountant = $currentStaff && strtolower($currentStaff->role->name ?? '') === 'accountant';
 
+        // Get location from session (branch switcher)
+        $location = session('active_location');
+
         // Get all waiters with their sales for the date
         $waitersQuery = Staff::query()
             ->where('is_active', true)
             ->whereHas('role', function($q) {
                 $q->where('name', 'Waiter');
+            })
+            ->when($location && $location !== 'all', function($q) use ($location) {
+                $q->where('location_branch', $location);
             });
         
         // If not accountant, filter by owner
@@ -49,9 +55,14 @@ class CounterReconciliationController extends Controller
                   ->where('reconciliation_type', 'bar'); // Only get bar reconciliations
             }])
             ->get()
-            ->map(function($waiter) use ($ownerId, $date, $isAccountant) {
+            ->map(function($waiter) use ($ownerId, $date, $isAccountant, $location) {
                 $ordersQuery = BarOrder::query()
-                    ->where('waiter_id', $waiter->id);
+                    ->where('waiter_id', $waiter->id)
+                    ->when($location && $location !== 'all', function($q) use ($location) {
+                        $q->whereHas('table', function($sq) use ($location) {
+                            $sq->where('location', $location);
+                        });
+                    });
                 
                 // If not accountant, filter by owner
                 if (!$isAccountant) {
@@ -240,10 +251,17 @@ class CounterReconciliationController extends Controller
             return response()->json(['error' => 'Waiter not found'], 404);
         }
 
+        $location = session('active_location');
+
         // Get all served bar orders (with drinks) for this waiter on this date that are not yet paid
         // Counter only marks bar orders as paid, not food orders
         $ordersQuery = BarOrder::query()
-            ->where('waiter_id', $waiter->id);
+            ->where('waiter_id', $waiter->id)
+            ->when($location && $location !== 'all', function($q) use ($location) {
+                $q->whereHas('table', function($sq) use ($location) {
+                    $sq->where('location', $location);
+                });
+            });
         
         // If not accountant, filter by owner
         if (!$isAccountant) {

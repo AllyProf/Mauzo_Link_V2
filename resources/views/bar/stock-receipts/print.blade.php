@@ -62,7 +62,9 @@
             <p class="mb-1 small text-muted">Gross Purchase: <span>TSh {{ number_format($receipts->sum('total_buying_cost')) }}</span></p>
             <p class="mb-1 small text-danger">Total Discounts: <span class="font-weight-bold">(-) TSh {{ number_format($receipts->sum('discount_value')) }}</span></p>
             <p class="mb-1 small">Net Buying Cost: <span class="font-weight-bold text-dark">TSh {{ number_format($receipts->sum('final_buying_cost')) }}</span></p>
+            @if($showRevenue)
             <p class="mb-0 h6 mt-2 font-weight-bold text-success border-top pt-2">EST. TOTAL PROFIT: TSh {{ number_format($receipts->sum('total_selling_value') - $receipts->sum('final_buying_cost')) }}</p>
+            @endif
             <div class="mt-2 smallest text-muted">
                 {{ $receipts->count() }} items &bull; {{ number_format($receipts->sum('quantity_received'), 1) }} total units received
             </div>
@@ -84,31 +86,40 @@
             </thead>
             <tbody>
                 @foreach($receipts as $index => $item)
+                @php
+                    $buyPrice = data_get($item, 'buying_price_per_unit', 0);
+                    $sellPrice = data_get($item, 'selling_price_per_unit', 0);
+                    $totalUnits = data_get($item, 'total_units', 0);
+                    $finalCost = data_get($item, 'final_buying_cost', 0);
+                    $discount = data_get($item, 'discount_value', 0);
+                    
+                    $totalLineBtlProfit = ($sellPrice - $buyPrice) * $totalUnits;
+                    
+                    $pv = data_get($item, 'productVariant');
+                    $hasTots = (data_get($pv, 'can_sell_in_tots') && (data_get($item, 'selling_price_per_tot', 0) > 0 || data_get($pv, 'selling_price_per_tot', 0) > 0));
+                    $displayTotPrice = data_get($item, 'selling_price_per_tot', 0) > 0 ? data_get($item, 'selling_price_per_tot') : data_get($pv, 'selling_price_per_tot', 0);
+                    $totsPerUnit = data_get($pv, 'total_tots', 0);
+                    $totalLineTots = $totalUnits * $totsPerUnit;
+                    $totCost = $totsPerUnit > 0 ? ($buyPrice / $totsPerUnit) : 0;
+                    $totProfitPerGlass = $displayTotPrice - $totCost;
+                    $totalLineTotProfit = $totalLineTots * $totProfitPerGlass;
+                @endphp
                 <tr>
                     <td class="py-2 px-3 text-center text-muted">{{ $index + 1 }}</td>
                     <td class="py-2 px-3">
-                        <div class="font-weight-bold text-dark">{{ $item->productVariant->product->name }} ({{ $item->productVariant->name }})</div>
+                        <div class="font-weight-bold text-dark" style="font-size: 1.1rem;">{{ data_get($pv, 'name', 'Unknown Item') }}</div>
+                        @if($showRevenue)
                         <div class="mt-1 smallest">
                             <span class="text-muted mr-2">
-                                @if($item->productVariant->items_per_package <= 1)
-                                    {{ $item->productVariant->packaging }} (Single)
+                                @if(data_get($pv, 'items_per_package', 0) <= 1)
+                                    {{ data_get($pv, 'packaging') }} (Single)
                                 @else
-                                    {{ $item->productVariant->packaging }} ({{ $item->productVariant->items_per_package }} units)
+                                    {{ data_get($pv, 'packaging') }} ({{ data_get($pv, 'items_per_package') }} units)
                                 @endif
                             </span>
-                            <span class="text-info mr-2">Sell: <strong>TSh {{ number_format($item->selling_price_per_unit) }}</strong></span>
-                            <span class="text-success font-weight-bold">Margin: +{{ number_format($item->profit_per_unit) }}</span>
+                            <span class="text-info mr-2">Sell: <strong>TSh {{ number_format($sellPrice) }}</strong></span>
+                            <span class="text-success font-weight-bold">Margin: +{{ number_format(data_get($item, 'profit_per_unit', 0)) }}</span>
                         </div>
-                        @php
-                            $totalLineBtlProfit = ($item->selling_price_per_unit - $item->buying_price_per_unit) * $item->total_units;
-                            $hasTots = ($item->productVariant->can_sell_in_tots && ($item->selling_price_per_tot > 0 || $item->productVariant->selling_price_per_tot > 0));
-                            $displayTotPrice = $item->selling_price_per_tot > 0 ? $item->selling_price_per_tot : $item->productVariant->selling_price_per_tot;
-                            $totsPerUnit = $item->productVariant->total_tots > 0 ? $item->productVariant->total_tots : 0;
-                            $totalLineTots = $item->total_units * $totsPerUnit;
-                            $totCost = $totsPerUnit > 0 ? ($item->buying_price_per_unit / $totsPerUnit) : 0;
-                            $totProfitPerGlass = $displayTotPrice - $totCost;
-                            $totalLineTotProfit = $totalLineTots * $totProfitPerGlass;
-                        @endphp
 
                         <div class="mt-2 p-2 border rounded shadow-sm bg-white">
                             <div class="row no-gutters">
@@ -116,7 +127,7 @@
                                     <div class="smallest font-weight-bold text-uppercase text-primary mb-1 border-bottom pb-1">Bottle Channel</div>
                                     <div class="d-flex justify-content-between smallest mb-1">
                                         <span class="text-muted">Price:</span>
-                                        <span class="font-weight-bold">TSh {{ number_format($item->selling_price_per_unit) }}</span>
+                                        <span class="font-weight-bold">TSh {{ number_format($sellPrice) }}</span>
                                     </div>
                                     <div class="d-flex justify-content-between smallest text-success">
                                         <span class="font-weight-bold">Tot Profit:</span>
@@ -143,11 +154,27 @@
                                 </div>
                             </div>
                         </div>
+                        @else
+                        <div class="mt-1 smallest">
+                            <span class="text-muted mr-2">
+                                @if(data_get($pv, 'items_per_package', 0) <= 1)
+                                    {{ data_get($pv, 'packaging') }} (Single)
+                                @else
+                                    {{ data_get($pv, 'packaging') }} ({{ data_get($pv, 'items_per_package') }} units)
+                                @endif
+                            </span>
+                        </div>
+                        @endif
                     </td>
-                    <td class="py-2 px-3 text-center">{{ number_format($item->quantity_received, 1) }}</td>
-                    <td class="py-2 px-3 text-center font-weight-bold">{{ number_format($item->total_units) }}</td>
-                    <td class="py-2 px-3 text-right">TSh {{ number_format($item->buying_price_per_unit) }}</td>
-                    <td class="py-2 px-3 text-right font-weight-bold text-dark">TSh {{ number_format($item->final_buying_cost) }}</td>
+                    <td class="py-2 px-3 text-center">{{ number_format(data_get($item, 'quantity_received', 0), 1) }}</td>
+                    <td class="py-2 px-3 text-center font-weight-bold">{{ number_format($totalUnits) }}</td>
+                    <td class="py-2 px-3 text-right">
+                        @if($discount > 0)
+                            <small class="text-muted strike-through" style="text-decoration: line-through;">{{ number_format($buyPrice) }}</small><br>
+                        @endif
+                        <span class="font-weight-bold text-dark">TSh {{ number_format($totalUnits > 0 ? $finalCost / $totalUnits : $buyPrice) }}</span>
+                    </td>
+                    <td class="py-2 px-3 text-right font-weight-bold text-dark">TSh {{ number_format($finalCost) }}</td>
                 </tr>
                 @endforeach
             </tbody>

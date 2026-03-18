@@ -3,165 +3,265 @@
 @section('title', 'Warehouse Inventory')
 
 @section('content')
+<div class="app-title">
+    <div>
+        <h1><i class="fa fa-exchange"></i> Warehouse Inventory</h1>
+        <p>Browse and request stock from warehouse to counter</p>
+    </div>
+    <ul class="app-breadcrumb breadcrumb">
+        <li class="breadcrumb-item"><i class="fa fa-home fa-lg"></i></li>
+        <li class="breadcrumb-item"><a href="{{ route('dashboard') }}">Dashboard</a></li>
+        <li class="breadcrumb-item">Warehouse Inventory</li>
+    </ul>
+</div>
+
+<!-- STATISTICS WIDGETS -->
+<div class="row mb-4">
+    <div class="col-md-3">
+        <div class="widget-small primary coloured-icon"><i class="icon fa fa-cubes fa-3x"></i>
+            <div class="info">
+                <h4>Items</h4>
+                <p><b>{{ $stats['total_items'] }}</b></p>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="widget-small info coloured-icon"><i class="icon fa fa-archive fa-3x"></i>
+            <div class="info">
+                <h4>Packages</h4>
+                <p><b>{{ number_format($stats['total_packages']) }}</b></p>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="widget-small warning coloured-icon"><i class="icon fa fa-flask fa-3x"></i>
+            <div class="info">
+                <h4>Pieces</h4>
+                <p><b>{{ number_format($stats['total_quantity']) }}</b></p>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="widget-small danger coloured-icon"><i class="icon fa fa-money fa-3x"></i>
+            <div class="info">
+                <h4>Est. Value</h4>
+                <p><b>{{ number_format($stats['total_value']) }}</b></p>
+            </div>
+        </div>
+    </div>
+</div>
+
 <div class="row">
     <div class="col-md-12">
-        <!-- HEADER & SEARCH -->
-        <div class="d-flex flex-column flex-md-row justify-content-between align-items-center mb-4">
-            <div class="mb-3 mb-md-0 pt-2">
-                <h3 class="font-weight-extra-bold text-dark mb-1">Warehouse Inventory</h3>
-                <p class="text-muted mb-0"><i class="fa fa-info-circle text-primary"></i> Browse and request stock from warehouse to counter</p>
-            </div>
-            <div class="d-flex align-items-center">
-                <div class="input-group shadow-sm mr-2" style="width: 320px; border-radius: 20px; overflow: hidden;">
-                    <div class="input-group-prepend">
-                        <span class="input-group-text bg-white border-right-0"><i class="fa fa-search text-muted"></i></span>
+        <div class="tile">
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <h3 class="tile-title mb-0">Available Items</h3>
+                <div class="d-flex align-items-center">
+                    <!-- VIEW TOGGLE -->
+                    <div class="btn-group mr-3" role="group">
+                        <button type="button" class="btn btn-sm btn-outline-secondary active view-btn" data-view="grid">
+                            <i class="fa fa-th"></i>
+                        </button>
+                        <button type="button" class="btn btn-sm btn-outline-secondary view-btn" data-view="list">
+                            <i class="fa fa-list"></i>
+                        </button>
                     </div>
-                    <input type="text" id="inventorySearch" class="form-control border-left-0 px-2" placeholder="Search by name or brand..." style="font-size: 14px; border-radius: 0 20px 20px 0;">
-                </div>
-                <!-- BATCH ACTION BUTTON -->
-                <button type="button" id="btnBatchTransfer" class="btn btn-primary btn-sm shadow-sm mr-2 d-none" style="border-radius: 20px; padding: 8px 20px; font-weight: 700;">
-                    <i class="fa fa-shopping-cart mr-1"></i> BATCH REQUEST (<span id="batchCount">0</span>)
-                </button>
-                <a href="{{ route('bar.stock-transfers.index') }}" class="btn btn-outline-dark btn-sm shadow-sm" style="border-radius: 20px; padding: 8px 15px;">
-                    <i class="fa fa-history mr-1"></i> My History
-                </a>
-            </div>
-        </div>
 
-        <!-- QUICK FILTER TABS (HORIZONTAL SCROLLABLE) -->
-        <div class="category-tabs-wrapper mb-4">
-            <div class="d-flex align-items-center overflow-auto no-scrollbar py-2" id="categoryContainer">
-                <button class="btn btn-category active filter-pill" data-filter="all">
-                    <i class="fa fa-th-large mr-2"></i> ALL ITEMS
-                </button>
-                @foreach($quickFilters as $label)
-                    @php 
-                        $slug = Str::slug($label);
-                    @endphp
-                    <button class="btn btn-category filter-pill" data-filter="{{ $slug }}">
-                        {{ strtoupper($label) }}
+                    <button type="button" id="btnBatchTransfer" class="btn btn-primary d-none mr-2">
+                        <i class="fa fa-shopping-cart"></i> REQUEST BATCH (<span id="batchCount">0</span>)
                     </button>
-                @endforeach
+                    <a href="{{ route('bar.stock-transfers.index') }}" class="btn btn-secondary">
+                        <i class="fa fa-history"></i> My History
+                    </a>
+                </div>
             </div>
-        </div>
 
-        <!-- INVENTORY GRID -->
-        <div class="row" id="inventoryGrid">
-            @forelse($inventoryItems as $item)
-                @php
-                    $isMixed = ($item['category'] == 'MIXED');
-                    $imgUrl = $item['image'] ? asset('storage/' . $item['image']) : asset('default_images/default_drink.jpg');
-                @endphp
-                <div class="col-xl-3 col-lg-4 col-md-6 mb-4 product-card-wrapper" 
-                     data-category="{{ Str::slug($item['category']) }}" 
-                     data-brand="{{ Str::slug($item['brand']) }}"
-                     data-name="{{ strtolower($item['variant_name']) }} {{ strtolower($item['product_name']) }} {{ strtolower($item['measurement']) }} {{ strtolower($item['brand'] ?? '') }}">
-                    
-                    <div class="card border-0 shadow-sm h-100 overflow-hidden inventory-card">
-                        <!-- Top Image Sec -->
-                        <div class="bg-light text-center p-2" style="height: 160px; overflow: hidden; position: relative;">
-                            <img src="{{ $imgUrl }}" alt="{{ $item['variant_name'] }}" style="height: 100%; width: 100%; object-fit: contain;">
-                            @if($isMixed)
-                                <span class="badge badge-warning position-absolute" style="top: 10px; right: 10px; font-size: 10px;">MIXED</span>
-                            @endif
+            <!-- SEARCH & QUICK FILTERS -->
+            <div class="row mb-4">
+                <div class="col-md-3">
+                    <div class="form-group">
+                        <label class="control-label font-weight-bold">Search Products</label>
+                        <div class="input-group">
+                            <div class="input-group-prepend">
+                                <span class="input-group-text"><i class="fa fa-search"></i></span>
+                            </div>
+                            <input type="text" id="inventorySearch" class="form-control" placeholder="Search...">
                         </div>
+                    </div>
+                </div>
+                <div class="col-md-9">
+                    <label class="control-label font-weight-bold">Quick Filters (Categories & Brands)</label>
+                    <div class="category-tabs-wrapper">
+                        <div class="d-flex align-items-center overflow-auto no-scrollbar py-1" id="categoryContainer">
+                            <button class="btn btn-sm btn-outline-primary active filter-pill mr-1 mb-1" data-filter="all" data-filter-type="category">
+                                ALL ITEMS
+                            </button>
+                            @foreach($categories as $label)
+                                <button class="btn btn-sm btn-outline-primary filter-pill mr-1 mb-1" data-filter="{{ Str::slug($label) }}" data-filter-type="category">
+                                    {{ strtoupper($label) }}
+                                </button>
+                            @endforeach
+                            <div class="mx-2 border-right h-100"></div>
+                            @foreach($brands as $label)
+                                <button class="btn btn-sm btn-outline-info filter-pill mr-1 mb-1" data-filter="{{ Str::slug($label) }}" data-filter-type="brand">
+                                    {{ $label }}
+                                </button>
+                            @endforeach
+                        </div>
+                    </div>
+                </div>
+            </div>
 
-                        <div class="card-body p-3 d-flex flex-column">
+            <hr>
+
+            <!-- INVENTORY GRID (Default) -->
+            <div class="row mt-4" id="inventoryGrid">
+                @forelse($inventoryItems as $item)
+                    @php
+                        $ms = $item['measurement'];
+                        $displayMs = is_numeric($ms) ? ($ms > 10 ? $ms . 'ml' : $ms . 'L') : $ms;
+                        $unitLabel = ($item['unit_label'] == 'ml' || strtolower($item['unit_label'] ?? '') == 'bottle' || strtolower($item['unit_label'] ?? '') == 'btl') ? 'btl' : (strtolower($item['unit_label'] ?? '') == 'piece' || strtolower($item['unit_label'] ?? '') == 'pcs' ? 'pcs' : 'btl/pcs');
+                    @endphp
+                    <div class="col-md-4 mb-4 product-card-wrapper" 
+                         data-category="{{ Str::slug($item['category']) }}" 
+                         data-brand="{{ Str::slug($item['brand']) }}"
+                         data-name="{{ strtolower($item['display_title']) }} {{ strtolower($item['product_name']) }} {{ strtolower($item['brand'] ?? '') }}">
+                        
+                        <div class="tile p-3 h-100 mb-0 shadow-sm border-0 inventory-item-card transition-all">
                             <div class="d-flex justify-content-between align-items-start mb-2">
-                                <span class="badge badge-primary-light smallest px-2 py-1">{{ $item['brand'] }}</span>
-                                <span class="badge badge-success px-2 py-1" style="font-size: 10px; border-radius: 4px;">
-                                    <i class="fa fa-archive"></i> {{ $item['warehouse_packages'] }} {{ Str::plural(Str::singular($item['packaging']), $item['warehouse_packages']) }}
-                                </span>
+                                <div class="flex-grow-1 pr-2">
+                                    <h6 class="font-weight-bold text-primary mb-1 line-clamp-1" title="{{ $item['display_title'] }}">{{ $item['display_title'] }}</h6>
+                                    <p class="text-muted smallest mb-0">{{ $item['brand'] }} • {{ $item['category'] }}</p>
+                                </div>
+                                <span class="badge badge-secondary px-2 py-1 smallest">{{ $displayMs }}</span>
                             </div>
 
-                            <h6 class="font-weight-extra-bold text-dark mb-1" style="font-size: 14px; line-height: 1.2;">
-                                {{ $item['variant_name'] }} 
-                                @php
-                                    $ms = $item['measurement'];
-                                    $displayMs = $ms;
-                                    if (is_numeric($ms)) {
-                                        $displayMs = $ms > 10 ? $ms . 'ml' : $ms . 'L';
-                                    }
-                                @endphp
-                                <span class="text-primary small">({{ $displayMs }})</span>
-                            </h6>
-                            
-                            @if(strtolower(trim($item['product_name'])) != strtolower(trim($item['brand'])))
-                                <div class="smallest text-muted mb-2 font-weight-bold opacity-75">
-                                    {{ $item['product_name'] }}
+                            <div class="bg-light p-2 rounded mb-3">
+                                <div class="d-flex justify-content-between small mb-1">
+                                    <span class="text-muted">Stock Level:</span>
+                                    <strong class="text-dark">{{ number_format($item['warehouse_quantity']) }} {{ $unitLabel }}</strong>
                                 </div>
-                            @endif
-
-                            <!-- Stock & Price Info -->
-                            <div class="p-2 rounded mb-2 bg-light border-left border-info" style="border-left-width: 3px !important;">
-                                <div class="d-flex justify-content-between align-items-center smallest mb-1">
-                                    <b class="text-dark">
-                                        {{ number_format($item['warehouse_quantity']) }} 
-                                        {{ Str::plural('Bottle', $item['warehouse_quantity']) }}
-                                    </b>
-                                </div>
-                                <div class="d-flex justify-content-between align-items-center smallest">
-                                    <span class="text-muted">Bottle Sell Price:</span>
-                                    <b class="text-success font-weight-bold">TSh {{ number_format($item['selling_price']) }}</b>
+                                <div class="d-flex justify-content-between small">
+                                    <span class="text-muted">Packages:</span>
+                                    <strong class="text-info">{{ $item['warehouse_packages'] }} {{ $item['packaging'] }}</strong>
                                 </div>
                             </div>
 
-                            @if($item['can_sell_in_tots'])
-                                <div class="p-2 rounded mb-3 bg-light border-left border-warning" style="border-left-width: 3px !important; background-color: #fff9f0 !important;">
-                                    <div class="d-flex justify-content-between align-items-center smallest mb-1">
-                                        <span class="text-muted">Portion Yield:</span>
-                                        <b class="text-dark">{{ $item['total_tots_per_unit'] }} Glasses/Bottle</b>
-                                    </div>
-                                    <div class="d-flex justify-content-between align-items-center smallest">
-                                        <span class="text-muted">Portion Price:</span>
-                                        <b class="text-warning font-weight-bold">TSh {{ number_format($item['selling_price_per_tot']) }}</b>
-                                    </div>
+                            <div class="row no-gutters mb-3 text-center bg-white rounded border py-2">
+                                <div class="col-6 border-right">
+                                    <div class="smallest text-muted">Price / {{ $unitLabel }}</div>
+                                    <div class="font-weight-bold text-dark">Tsh {{ number_format($item['selling_price']) }}</div>
                                 </div>
-                            @endif
+                                <div class="col-6">
+                                    <div class="smallest text-muted">Portion Sale</div>
+                                    @if($item['can_sell_in_tots'])
+                                        <div class="font-weight-bold text-warning">Tsh {{ number_format($item['selling_price_per_tot']) }}</div>
+                                    @else
+                                        <div class="smallest italic text-muted">N/A</div>
+                                    @endif
+                                </div>
+                            </div>
 
-                            <!-- Transfer Form -->
-                            <div class="mt-auto">
-                                <div class="input-group input-group-sm mb-1 shadow-xs">
+                            <div class="form-group mb-0">
+                                <div class="input-group input-group-sm mb-2 shadow-sm">
                                     <div class="input-group-prepend">
-                                        <button type="button" class="btn btn-light border btn-qty-minus"><i class="fa fa-minus"></i></button>
+                                        <button class="btn btn-light border btn-qty-minus" type="button"><i class="fa fa-minus"></i></button>
                                     </div>
-                                    <input type="number" name="quantity_requested" class="form-control text-center font-weight-bold q-field border-left-0 border-right-0" value="1" min="1" max="{{ $item['warehouse_packages'] }}">
+                                    <input type="number" class="form-control text-center q-field font-weight-bold" value="1" min="1" max="{{ $item['warehouse_packages'] }}">
                                     <div class="input-group-append">
-                                        <button type="button" class="btn btn-light border btn-qty-plus"><i class="fa fa-plus"></i></button>
-                                        <span class="input-group-text px-2 smallest font-weight-bold bg-white text-uppercase" style="font-size: 9px; min-width: 50px;">{{ Str::singular($item['packaging']) }}</span>
+                                        <button class="btn btn-light border btn-qty-plus" type="button"><i class="fa fa-plus"></i></button>
                                     </div>
                                 </div>
-
-                                <button type="button" class="btn btn-outline-primary btn-sm btn-block p-1 font-weight-bold smallest shadow-sm mt-1 btn-add-batch" 
+                                <button type="button" class="btn btn-primary btn-block btn-sm btn-add-batch font-weight-bold shadow-sm" 
                                         data-variant-id="{{ $item['variant_id'] }}"
-                                        data-name="{{ $item['variant_name'] }} ({{ $displayMs }})"
+                                        data-name="{{ $item['display_title'] }} ({{ $displayMs }})"
                                         data-items-per-package="{{ $item['items_per_package'] }}"
                                         data-sell-price="{{ $item['selling_price'] }}"
                                         data-buy-price="{{ $item['average_buying_price'] }}"
                                         data-packaging="{{ $item['packaging'] }}"
-                                        data-unit="{{ strtolower($item['unit_label'] ?? '') == 'ml' ? 'Bottle' : ($item['unit_label'] ?? 'Bottle') }}"
+                                        data-unit="{{ $unitLabel }}"
                                         data-can-sell-tots="{{ $item['can_sell_in_tots'] ? 1 : 0 }}"
                                         data-tots-per-unit="{{ $item['total_tots_per_unit'] }}"
-                                        data-tot-price="{{ $item['selling_price_per_tot'] }}"
-                                        style="border-radius: 6px;">
-                                    <i class="fa fa-plus-circle mr-1"></i> ADD TO BATCH
+                                        data-tot-price="{{ $item['selling_price_per_tot'] }}">
+                                    <i class="fa fa-plus-circle mr-1"></i> REQUEST STOCK
                                 </button>
                             </div>
                         </div>
                     </div>
-                </div>
-            @empty
-                <div class="col-12">
-                    <div class="tile text-center py-5 border-0 shadow-sm" style="border-radius: 20px; background: #fff;">
-                        <i class="fa fa-folder-open-o fa-5x text-light mb-3"></i>
+                @empty
+                    <div class="col-12 text-center py-5">
+                        <i class="fa fa-folder-open-o fa-5x text-muted mb-3"></i>
                         <h4 class="text-muted">No stock available currently</h4>
-                        <a href="{{ route('bar.stock-receipts.create') }}" class="btn btn-primary mt-3 px-4 shadow-sm" style="border-radius: 25px;">
-                            <i class="fa fa-plus"></i> New Stock Receipt
-                        </a>
                     </div>
-                </div>
-            @endforelse
-        </div>
+                @endforelse
+            </div>
+
+            <!-- INVENTORY LIST (Hidden by default) -->
+            <div id="inventoryList" class="table-responsive d-none mt-4">
+                <table class="table table-hover table-bordered" id="listTable">
+                    <thead class="bg-light">
+                        <tr>
+                            <th>Product Name</th>
+                            <th>Brand / Category</th>
+                            <th>Measure</th>
+                            <th>Available Stock</th>
+                            <th>Price / Unit</th>
+                            <th>Quantity</th>
+                            <th>Action</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach($inventoryItems as $item)
+                        @php
+                            $ms = $item['measurement'];
+                            $displayMs = is_numeric($ms) ? ($ms > 10 ? $ms . 'ml' : $ms . 'L') : $ms;
+                            $unitLabel = ($item['unit_label'] == 'ml' || strtolower($item['unit_label'] ?? '') == 'bottle' || strtolower($item['unit_label'] ?? '') == 'btl') ? 'btl' : (strtolower($item['unit_label'] ?? '') == 'piece' || strtolower($item['unit_label'] ?? '') == 'pcs' ? 'pcs' : 'btl/pcs');
+                        @endphp
+                        <tr class="product-card-wrapper" 
+                            data-category="{{ Str::slug($item['category']) }}" 
+                            data-brand="{{ Str::slug($item['brand']) }}"
+                            data-name="{{ strtolower($item['display_title']) }} {{ strtolower($item['product_name']) }} {{ strtolower($item['brand'] ?? '') }}">
+                            <td>
+                                <strong class="text-primary">{{ $item['display_title'] }}</strong>
+                            </td>
+                            <td>{{ $item['brand'] }} <br><small class="text-muted">{{ $item['category'] }}</small></td>
+                            <td><span class="badge badge-secondary">{{ $displayMs }}</span></td>
+                            <td>
+                                <strong class="text-dark">{{ $item['warehouse_packages'] }} {{ $item['packaging'] }}</strong><br>
+                                <small class="text-muted">{{ number_format($item['warehouse_quantity']) }} {{ $unitLabel }} total</small>
+                            </td>
+                            <td>Tsh {{ number_format($item['selling_price']) }}</td>
+                            <td style="width: 140px;">
+                                <div class="input-group input-group-sm shadow-sm">
+                                    <div class="input-group-prepend">
+                                        <button class="btn btn-light border btn-qty-minus" type="button"><i class="fa fa-minus"></i></button>
+                                    </div>
+                                    <input type="number" class="form-control text-center q-field font-weight-bold" value="1" min="1" max="{{ $item['warehouse_packages'] }}">
+                                    <div class="input-group-append">
+                                        <button class="btn btn-light border btn-qty-plus" type="button"><i class="fa fa-plus"></i></button>
+                                    </div>
+                                </div>
+                            </td>
+                            <td>
+                                <button type="button" class="btn btn-primary btn-sm btn-add-batch shadow-sm font-weight-bold" 
+                                        data-variant-id="{{ $item['variant_id'] }}"
+                                        data-name="{{ $item['display_title'] }} ({{ $displayMs }})"
+                                        data-items-per-package="{{ $item['items_per_package'] }}"
+                                        data-sell-price="{{ $item['selling_price'] }}"
+                                        data-buy-price="{{ $item['average_buying_price'] }}"
+                                        data-packaging="{{ $item['packaging'] }}"
+                                        data-unit="{{ $unitLabel }}"
+                                        data-can-sell-tots="{{ $item['can_sell_in_tots'] ? 1 : 0 }}"
+                                        data-tots-per-unit="{{ $item['total_tots_per_unit'] }}"
+                                        data-tot-price="{{ $item['selling_price_per_tot'] }}">
+                                    <i class="fa fa-plus-circle mr-1"></i> REQUEST
+                                </button>
+                            </td>
+                        </tr>
+                        @endforeach
+                    </tbody>
+                </table>
+            </div>
     </div>
 </div>
 
@@ -197,48 +297,32 @@
         box-shadow: 0 2px 4px rgba(0,0,0,0.02);
     }
     
-    .btn-category:hover { background: #f8f9fa; color: #000; }
-    
-    .btn-category.active {
-        background: #000 !important;
-        color: #fff !important;
-        border-color: #000 !important;
-        transform: scale(1.05);
-        box-shadow: 0 5px 15px rgba(0,0,0,0.15) !important;
+    .inventory-item-card {
+        border-radius: 15px;
+        border: 1px solid #f0f0f0;
+        background: #fff;
     }
 
-    .inventory-card {
-        border-radius: 12px;
-        border: 1px solid #f1f3f5;
-        transition: all 0.3s ease;
-    }
-
-    .inventory-card:hover {
+    .inventory-item-card:hover {
         transform: translateY(-5px);
-        box-shadow: 0 12px 24px rgba(0,0,0,0.08) !important;
-        border-color: #e9ecef;
+        box-shadow: 0 10px 25px rgba(0,0,0,0.1) !important;
+        border-color: #007bff22;
     }
 
-    .badge-primary-light { background: #e7f1ff; color: #007bff; }
-    .line-clamp-1 { display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical; overflow: hidden; }
-
-    .q-field:focus { border-color: #ced4da; box-shadow: none; }
-
-    .swipe-fade {
-        animation: swipeFadeIn 0.4s ease-out forwards;
+    .transition-all { transition: all 0.3s ease; }
+    
+    .filter-pill {
+        border-radius: 20px;
+        padding: 6px 16px;
+        font-weight: 600;
+        font-size: 11px;
+        transition: all 0.2s;
     }
 
-    @keyframes swipeFadeIn {
-        from { opacity: 0; transform: translateY(15px); }
-        to { opacity: 1; transform: translateY(0); }
+    .filter-pill.active {
+        box-shadow: 0 4px 10px rgba(0,0,0,0.15);
+        transform: scale(1.05);
     }
-
-    .btn-qty-minus, .btn-qty-plus {
-        background: #f8f9fa;
-        color: #333;
-        padding: 0 10px;
-    }
-    .btn-qty-minus:hover, .btn-qty-plus:hover { background: #e9ecef; }
 </style>
 @endpush
 
@@ -247,32 +331,64 @@
 <script>
 $(function() {
     let batchItems = [];
-
-    // 1. TABS FILTERING
-    $('.filter-pill').on('click', function() {
-        const filter = $(this).data('filter');
-        $('.filter-pill').removeClass('active');
+    // 1. VIEW TOGGLE
+    $('.view-btn').on('click', function() {
+        const view = $(this).data('view');
+        $('.view-btn').removeClass('active');
         $(this).addClass('active');
 
-        if(filter === 'all') {
-            $('.product-card-wrapper').show().addClass('swipe-fade');
+        if (view === 'grid') {
+            $('#inventoryGrid').removeClass('d-none');
+            $('#inventoryList').addClass('d-none');
         } else {
-            $('.product-card-wrapper').hide();
-            $(`.product-card-wrapper[data-category="${filter}"], .product-card-wrapper[data-brand="${filter}"]`).show().addClass('swipe-fade');
+            $('#inventoryGrid').addClass('d-none');
+            $('#inventoryList').removeClass('d-none');
         }
     });
 
-    // 2. LIVE SEARCH
-    $('#inventorySearch').on('input', function() {
-        const term = $(this).val().toLowerCase();
+    // 2. TABS FILTERING
+    let activeCategory = 'all';
+    let activeBrand = 'all';
+
+    $('.filter-pill').on('click', function() {
+        const filter = $(this).data('filter');
+        const type = $(this).data('filter-type');
+        
+        if (type === 'category') {
+            activeCategory = filter;
+            $('#categoryContainer .filter-pill[data-filter-type="category"]').removeClass('active');
+        } else {
+            activeBrand = filter;
+            $('#categoryContainer .filter-pill[data-filter-type="brand"]').removeClass('active');
+        }
+        
+        $(this).addClass('active');
+        applyFilters();
+    });
+
+    function applyFilters() {
+        const searchTerm = $('#inventorySearch').val().toLowerCase();
+        
         $('.product-card-wrapper').each(function() {
-            const searchData = $(this).data('name');
-            if(searchData.indexOf(term) > -1) {
+            const itemCat = $(this).data('category');
+            const itemBrand = $(this).data('brand');
+            const itemName = $(this).data('name');
+            
+            const matchesCat = (activeCategory === 'all' || itemCat === activeCategory);
+            const matchesBrand = (activeBrand === 'all' || itemBrand === activeBrand);
+            const matchesSearch = itemName.indexOf(searchTerm) > -1;
+            
+            if (matchesCat && matchesBrand && matchesSearch) {
                 $(this).show().addClass('swipe-fade');
             } else {
                 $(this).hide();
             }
         });
+    }
+
+    // 2. LIVE SEARCH
+    $('#inventorySearch').on('input', function() {
+        applyFilters();
     });
 
     // Qty buttons
@@ -290,9 +406,9 @@ $(function() {
     });
 
     // 3. BATCH ADD LOGIC
-    $('.btn-add-batch').on('click', function() {
-        const $card = $(this).closest('.card-body');
-        const qty = parseInt($card.find('.q-field').val());
+    $(document).on('click', '.btn-add-batch', function() {
+        const row = $(this).closest('.product-card-wrapper');
+        const qty = parseInt(row.find('.q-field').val());
         const variantId = $(this).data('variant-id');
         const name = $(this).data('name');
         const itemsPerPkg = $(this).data('items-per-package');
@@ -319,10 +435,18 @@ $(function() {
         
         // Visual feedback
         const originalHtml = $(this).html();
-        $(this).html('<i class="fa fa-check"></i> ADDED').removeClass('btn-outline-primary').addClass('btn-success');
+        $(this).html('<i class="fa fa-check"></i>').addClass('btn-success').removeClass('btn-primary');
         setTimeout(() => {
-            $(this).html(originalHtml).removeClass('btn-success').addClass('btn-outline-primary');
-        }, 1000);
+            $(this).html(originalHtml).addClass('btn-primary').removeClass('btn-success');
+        }, 800);
+    });
+
+    // 4. QUANTITY SYNC (Sync between Grid and List if both visible or when switching)
+    $(document).on('change keyup', '.q-field', function() {
+        const val = $(this).val();
+        const row = $(this).closest('.product-card-wrapper');
+        const variantId = row.find('.btn-add-batch').data('variant-id');
+        $(`.product-card-wrapper:has(.btn-add-batch[data-variant-id="${variantId}"]) .q-field`).not(this).val(val);
     });
 
     function updateBatchUI() {
@@ -349,9 +473,8 @@ $(function() {
             const primaryRev = Math.max(bottleRev, glassRev);
             totalRevenue += primaryRev;
             
-            // Helper for pluralization in JS
             const pkgLabel = item.qty > 1 ? item.packaging + 's' : item.packaging;
-            const unitLabel = totalUnits > 1 ? item.unit + 's' : item.unit;
+            const unitLabel = item.unit;
 
             let revLines = '';
             if (glassRev > 0) {

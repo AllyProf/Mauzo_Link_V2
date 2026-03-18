@@ -6,9 +6,7 @@
         <tr>
           <th width="60px">PHOTO</th>
           <th class="text-left">PRODUCT / VARIANT NAME</th>
-          <th>CATEGORY</th>
-          <th>SIZE</th>
-          <th>PACKAGING</th>
+          <th>PACKAGING & SIZE</th>
           <th>SELL TYPE</th>
           <th>SERVING INFO</th>
           <th width="120px">ACTIONS</th>
@@ -16,35 +14,17 @@
       </thead>
       <tbody>
         @foreach($variants as $variant)
-          @php
-            $product = $variant->product;
-            $canEdit = false;
-            $canDelete = false;
-            if (session('is_staff')) {
-              $staff = \App\Models\Staff::find(session('staff_id'));
-              if ($staff && $staff->role) {
-                $canEdit = $staff->role->hasPermission('products', 'edit');
-                $canDelete = $staff->role->hasPermission('products', 'delete');
-              }
-            } else {
-              $user = Auth::user();
-              if ($user) {
-                $canEdit = $user->hasPermission('products', 'edit') || $user->hasRole('owner');
-                $canDelete = $user->hasPermission('products', 'delete') || $user->hasRole('owner');
-              }
-            }
-          @endphp
-
+          @php $product = $variant->product; @endphp
           @if($product->category !== $lastCategory)
             <tr class="bg-light">
-                <td colspan="8" class="py-2 px-3 font-weight-bold text-uppercase text-primary" style="letter-spacing: 1px; font-size: 0.85rem; background: #fdf2f2;">
+                <td colspan="6" class="py-2 px-3 font-weight-bold text-uppercase text-primary" style="letter-spacing: 1px; font-size: 0.85rem; background: #fdf2f2;">
                     <i class="fa fa-folder-open mr-2"></i> Category: {{ $product->category ?: 'Uncategorized' }}
                 </td>
             </tr>
             @php $lastCategory = $product->category; @endphp
           @endif
 
-          <tr class="variant-row-record">
+          <tr class="variant-row-record view-product" style="cursor: pointer;" data-product-id="{{ $product->id }}" data-variant-id="{{ $variant->id }}">
             <td class="text-center align-middle p-1">
               @if($variant->image)
                 <img src="{{ asset('storage/' . $variant->image) }}" class="rounded shadow-sm" style="width: 45px; height: 45px; object-fit: cover; border: 1px solid #eee;">
@@ -63,16 +43,12 @@
                 @endif
             </td>
             <td class="text-center align-middle">
-                <span class="badge badge-pill badge-light border px-3">{{ $product->category ?: 'General' }}</span>
-            </td>
-            <td class="text-center align-middle font-weight-bold">
-                {{ $variant->measurement }}{{ $variant->unit }}
-            </td>
-            <td class="text-center align-middle">
                 @if($variant->items_per_package > 1)
-                    <span class="badge badge-danger px-3 shadow-sm">{{ $variant->packaging }} ({{ $variant->items_per_package }} units)</span>
+                    <div class="font-weight-bold text-danger">{{ $variant->packaging }}</div>
+                    <small class="text-muted">{{ $variant->items_per_package }} units &times; {{ $variant->measurement }}{{ $variant->unit }}</small>
                 @else
-                    <span class="badge badge-secondary px-3">{{ $variant->packaging }}</span>
+                    <div class="font-weight-bold">{{ $variant->packaging }}</div>
+                    <small class="text-muted">{{ $variant->measurement }}{{ $variant->unit }}</small>
                 @endif
             </td>
             <td class="text-center align-middle">

@@ -19,8 +19,8 @@
 <div class="row">
   <!-- Stock Information Section - Left Side -->
   <div class="col-md-4">
-    <div class="tile" style="background-color: #f8f9fa; border-left: 4px solid #28a745; position: sticky; top: 20px;">
-      <h3 class="tile-title" style="color: #28a745;">
+    <div class="tile" style="background-color: #f8f9fa; border-left: 4px solid #940000; position: sticky; top: 20px;">
+      <h3 class="tile-title" style="color: #940000;">
         <i class="fa fa-info-circle"></i> Stock Information
       </h3>
       <div class="tile-body">
@@ -52,12 +52,12 @@
           <label class="control-label" style="font-weight: 600;">Total Bottles to Transfer</label>
           <div class="input-group">
             <input type="text" class="form-control" id="total_units" readonly 
-                   style="background-color: #d4edda; color: #155724; font-size: 1.2em; font-weight: bold; text-align: center; border: 2px solid #28a745;">
+                   style="background-color: #fff5f5; color: #940000; font-size: 1.2em; font-weight: bold; text-align: center; border: 2px solid #940000;">
             <div class="input-group-append">
-              <span class="input-group-text" style="background-color: #d4edda; color: #155724;">bottle(s)</span>
+              <span class="input-group-text" style="background-color: #940000; color: #fff;">btl</span>
             </div>
           </div>
-          <small class="form-text text-muted" style="color: #28a745;">Packages × Items per Package</small>
+          <small class="form-text text-muted" style="color: #940000;">Packages × Items per Package</small>
         </div>
         
         <div class="alert alert-info mt-3 mb-0" role="alert" style="font-size: 0.9em;">
@@ -140,7 +140,7 @@
           </div>
 
           <div class="tile-footer">
-            <button class="btn btn-primary" type="submit">
+            <button class="btn btn-dark" type="submit" style="background-color: #000; border-color: #000;">
               <i class="fa fa-fw fa-lg fa-check-circle"></i>Submit Transfer Request
             </button>
             <a class="btn btn-secondary" href="{{ route('bar.stock-transfers.index') }}">
@@ -286,6 +286,41 @@
         updateVariantInfo();
       }
     }
+
+    // --- AUTO-LOAD VARIANT FROM URL ---
+    const urlParams = new URLSearchParams(window.location.search);
+    const autoLoadId = urlParams.get('auto_load_variant');
+    if (autoLoadId) {
+        let foundProduct = null;
+        let foundVariant = null;
+
+        // Search for the variant and its parent product
+        productsData.forEach(prod => {
+            if (foundVariant) return;
+            const v = prod.variants.find(v => v.id == autoLoadId);
+            if (v) {
+                foundProduct = prod;
+                foundVariant = v;
+            }
+        });
+
+        if (foundProduct && foundVariant) {
+            productSelect.value = foundProduct.id;
+            updateVariants(); // Fill the variant dropdown
+            variantSelect.value = foundVariant.id;
+            updateVariantInfo(); // Update stock info fields
+            
+            // Fix package label to match actual packaging (e.g., Crate, Carton)
+            const pkgName = foundVariant.packaging || 'Packages';
+            $(availablePackagesInput).next('.input-group-append').find('.input-group-text').text(pkgName.toLowerCase());
+            $(quantityInput).next('.form-text').text(`e.g., 5 ${pkgName.toLowerCase()}`);
+
+            if (typeof showToast === 'function') {
+                showToast('success', `Auto-loaded ${foundVariant.name} for transfer.`);
+            }
+        }
+    }
+    // ---------------------------------
   })();
 </script>
 @endsection

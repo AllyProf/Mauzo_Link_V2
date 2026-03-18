@@ -470,6 +470,7 @@
       e.stopPropagation();
       
       const productId = $(this).data('product-id');
+      const variantId = $(this).data('variant-id');
       const modal = $('#productDetailsModal');
       const content = $('#productDetailsContent');
       
@@ -484,7 +485,7 @@
         return;
       }
       
-      console.log('Viewing product:', productId);
+      console.log('Viewing product:', productId, 'variant:', variantId);
       
       // Show modal with loading state
       modal.modal('show');
@@ -501,26 +502,47 @@
         success: function(response) {
           if (response.product) {
             const product = response.product;
+            // Find selected variant for personalized header
+            const selectedVariant = product.variants.find(v => v.id == variantId) || product.variants[0];
+            
             let html = '<div class="product-modal-details">';
             
             // Header Section with Image and Key Info
             html += '<div class="row mb-4 align-items-center">';
             html += '<div class="col-md-4 mb-3 mb-md-0">';
-            if (product.image) {
-              html += '<img src="{{ asset("storage") }}/' + product.image + '" class="img-fluid rounded-lg shadow-sm" style="max-height: 200px; width: 100%; object-fit: cover;">';
+            
+            const displayImage = selectedVariant.image || product.image;
+            if (displayImage) {
+              const imgSrc = displayImage.startsWith('http') ? displayImage : '{{ asset("storage") }}/' + displayImage;
+              html += '<img src="' + imgSrc + '" class="img-fluid rounded-lg shadow-sm" style="max-height: 200px; width: 100%; object-fit: cover;">';
             } else {
               html += '<div class="bg-light rounded-lg d-flex align-items-center justify-content-center" style="height: 180px;"><i class="fa fa-cube fa-4x text-muted opacity-25"></i></div>';
             }
             html += '</div>';
             
             html += '<div class="col-md-8">';
-            html += '<h3 class="font-weight-bold mb-1">' + escapeHtml(product.name) + '</h3>';
+            html += '<h3 class="font-weight-bold mb-1">' + escapeHtml(selectedVariant ? selectedVariant.name : product.name) + '</h3>';
             html += '<p class="text-primary font-weight-bold mb-3">' + escapeHtml(product.category || 'General Category') + '</p>';
             
             html += '<div class="row">';
             html += '<div class="col-6 mb-2"><small class="text-muted d-block">Brand</small><span class="font-weight-bold">' + escapeHtml(product.brand || 'N/A') + '</span></div>';
             html += '<div class="col-6 mb-2"><small class="text-muted d-block">Status</small>' + (product.is_active ? '<span class="text-success font-weight-bold">● Active</span>' : '<span class="text-danger font-weight-bold">● Inactive</span>') + '</div>';
-            html += '<div class="col-12"><small class="text-muted d-block">Primary Supplier</small><span class="font-weight-bold">' + escapeHtml(product.supplier ? product.supplier.company_name : 'N/A') + '</span></div>';
+            html += '<div class="col-12 mb-3"><small class="text-muted d-block">Primary Supplier</small><span class="font-weight-bold">' + escapeHtml(product.supplier ? product.supplier.company_name : 'N/A') + '</span></div>';
+            
+            // Add Stock Info
+            if (selectedVariant.warehouse_stock || selectedVariant.counter_stock) {
+              html += '<div class="col-12 mt-1">';
+              html += '<div class="row">';
+              if (selectedVariant.warehouse_stock) {
+                html += '<div class="col-6"><div class="p-2 border rounded bg-white shadow-sm"><small class="text-muted d-block font-weight-bold" style="font-size: 0.65rem;">WAREHOUSE</small><span class="h5 mb-0 font-weight-bold text-dark">' + number_format(selectedVariant.warehouse_stock.quantity) + '</span> <small>' + (selectedVariant.unit || '') + '</small></div></div>';
+              }
+              if (selectedVariant.counter_stock) {
+                html += '<div class="col-6"><div class="p-2 border rounded bg-white shadow-sm"><small class="text-muted d-block font-weight-bold" style="font-size: 0.65rem;">COUNTER</small><span class="h5 mb-0 font-weight-bold text-dark">' + number_format(selectedVariant.counter_stock.quantity) + '</span> <small>' + (selectedVariant.unit || '') + '</small></div></div>';
+              }
+              html += '</div>';
+              html += '</div>';
+            }
+            
             html += '</div>';
             html += '</div>';
             html += '</div>';
@@ -548,8 +570,9 @@
               html += '<tbody>';
               
               product.variants.forEach(function(variant) {
-                html += '<tr>';
-                html += '<td class="align-middle"><strong>' + escapeHtml(variant.name || 'N/A') + '</strong></td>';
+                const isSelected = variant.id == variantId;
+                html += '<tr ' + (isSelected ? 'class="table-primary" style="background-color: #f0f7ff;"' : '') + '>';
+                html += '<td class="align-middle"><strong>' + escapeHtml(variant.name || 'N/A') + '</strong>' + (isSelected ? ' <span class="badge badge-primary ml-2">Selected</span>' : '') + '</td>';
                 html += '<td class="align-middle">' + escapeHtml(variant.measurement) + ' ' + (variant.unit || '') + '</td>';
                 html += '<td class="align-middle text-center">' + escapeHtml(variant.packaging) + '</td>';
                 html += '<td class="align-middle text-right">';

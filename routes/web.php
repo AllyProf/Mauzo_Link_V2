@@ -95,6 +95,10 @@ Route::middleware('allow.staff')->group(function () {
         Route::get('/sales/pos', [\App\Http\Controllers\SalesController::class, 'pos'])->name('sales.pos');
         Route::get('/sales/orders', [\App\Http\Controllers\SalesController::class, 'orders'])->name('sales.orders');
         Route::get('/sales/transactions', [\App\Http\Controllers\SalesController::class, 'transactions'])->name('sales.transactions');
+        
+        // Manager/Owner Stock Reports
+        Route::get('/reports/stock-receipts', [\App\Http\Controllers\Accountant\AccountantController::class, 'stockReceiptsReport'])->name('reports.stock-receipts');
+        Route::get('/reports/stock-transfers', [\App\Http\Controllers\Accountant\AccountantController::class, 'stockTransfersReport'])->name('reports.stock-transfers');
     });
     
     // Products Routes (Require Payment & Configuration)
@@ -230,6 +234,9 @@ Route::middleware('allow.staff')->group(function () {
         Route::get('counter/get-voice-clips', [\App\Http\Controllers\Bar\CounterController::class, 'getVoiceClips'])->name('counter.get-voice-clips');
         Route::delete('counter/voice-clips/{id}', [\App\Http\Controllers\Bar\CounterController::class, 'deleteVoiceClip'])->name('counter.delete-voice-clip');
         Route::post('counter/request-stock-transfer', [\App\Http\Controllers\Bar\CounterController::class, 'requestStockTransfer'])->name('counter.request-stock-transfer');
+        Route::post('counter/create-order', [\App\Http\Controllers\Bar\CounterController::class, 'createOrder'])->name('counter.create-order');
+        Route::post('counter/cancel-order/{order}', [\App\Http\Controllers\Bar\CounterController::class, 'cancelOrder'])->name('counter.cancel-order');
+        Route::post('counter/record-payment/{order}', [\App\Http\Controllers\Bar\CounterController::class, 'recordPayment'])->name('counter.record-payment');
         Route::post('counter/orders/{order}/update-status', [\App\Http\Controllers\Bar\CounterController::class, 'updateOrderStatus'])->name('counter.update-order-status');
         Route::post('counter/orders/{order}/mark-paid', [\App\Http\Controllers\Bar\CounterController::class, 'markAsPaid'])->name('counter.mark-paid');
         Route::get('counter/orders-by-status', [\App\Http\Controllers\Bar\CounterController::class, 'getOrdersByStatus'])->name('counter.orders-by-status');
@@ -297,9 +304,21 @@ Route::middleware('allow.staff')->group(function () {
             Route::get('reconciliations/{id}', [\App\Http\Controllers\Accountant\AccountantController::class, 'reconciliationDetails'])->name('reconciliation-details');
             Route::get('counter-reconciliation', [\App\Http\Controllers\Accountant\AccountantController::class, 'counterReconciliation'])->name('counter-reconciliation');
             Route::post('counter/reconciliation/{reconciliation}/verify', [\App\Http\Controllers\Bar\CounterReconciliationController::class, 'verifyReconciliation'])->name('counter.verify-reconciliation');
+            Route::post('financial/reconciliation/{id}/verify', [\App\Http\Controllers\Accountant\AccountantController::class, 'verifyFinancialReconciliation'])->name('financial.verify');
+            Route::post('reconciliations/finalize', [\App\Http\Controllers\Accountant\AccountantController::class, 'finalizeDepartmentReconciliation'])->name('reconciliations.finalize');
+            Route::post('reconciliations/reopen', [\App\Http\Controllers\Accountant\AccountantController::class, 'reopenDepartmentShift'])->name('reconciliations.reopen');
+            Route::post('reconciliations/pay-shortage', [\App\Http\Controllers\Accountant\AccountantController::class, 'payShortage'])->name('reconciliations.pay-shortage');
+            
+            // Petty Cash / Fund Issuance
+            Route::get('fund-issuance', [\App\Http\Controllers\Accountant\AccountantController::class, 'fundIssuance'])->name('fund-issuance');
+            Route::post('fund-issuance', [\App\Http\Controllers\Accountant\AccountantController::class, 'storeFundIssuance'])->name('fund-issuance.store');
+            Route::post('fund-issuance/{id}/update-status', [\App\Http\Controllers\Accountant\AccountantController::class, 'updateFundStatus'])->name('fund-issuance.update-status');
+
             Route::get('counter/reconciliation/waiter-orders/{waiter}', [\App\Http\Controllers\Bar\CounterReconciliationController::class, 'getWaiterOrders'])->name('counter.reconciliation.waiter-orders');
             Route::post('stock-transfers/{stockTransfer}/verify', [\App\Http\Controllers\Accountant\AccountantController::class, 'verifyStockTransfer'])->name('verify-stock-transfer');
             Route::get('reports', [\App\Http\Controllers\Accountant\AccountantController::class, 'reports'])->name('reports');
+            Route::get('reports/stock-receipts', [\App\Http\Controllers\Accountant\AccountantController::class, 'stockReceiptsReport'])->name('reports.stock-receipts');
+            Route::get('reports/stock-transfers', [\App\Http\Controllers\Accountant\AccountantController::class, 'stockTransfersReport'])->name('reports.stock-transfers');
             Route::get('reports/pdf', [\App\Http\Controllers\Accountant\AccountantController::class, 'exportReportsPdf'])->name('reports.pdf');
         });
     

@@ -181,7 +181,19 @@
                 <th>Total Bottles:</th>
                 <td><strong>{{ number_format($stockTransfer->total_units) }} bottle(s)</strong></td>
               </tr>
-              @if($stockTransfer->status === 'completed' && isset($expectedRevenue) && $expectedRevenue > 0)
+              @php
+                $showFinancials = true;
+                if (session('is_staff')) {
+                  $staff = \App\Models\Staff::with('role')->find(session('staff_id'));
+                  if ($staff && $staff->role) {
+                    $roleName = strtolower(trim($staff->role->name ?? ''));
+                    if (in_array($roleName, ['counter', 'bar counter', 'waiter', 'waitress', 'waiter/waitress', 'stock keeper', 'stockkeeper'])) {
+                      $showFinancials = false;
+                    }
+                  }
+                }
+              @endphp
+              @if($showFinancials && $stockTransfer->status === 'completed' && isset($expectedRevenue) && $expectedRevenue > 0)
               <tr>
                 <th>Expected Revenue:</th>
                 <td>

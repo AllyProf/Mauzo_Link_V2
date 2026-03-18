@@ -46,7 +46,9 @@
                   <th class="text-center">Tot Received</th>
                   <th class="text-center">Tot Btls/Pcs</th>
                   <th class="text-right">Total Cost</th>
+                  @if($showRevenue)
                   <th class="text-right">Exp. Profit</th>
+                  @endif
                   <th class="text-center">Received Date</th>
                   <th class="text-center">Actions</th>
                 </tr>
@@ -71,9 +73,11 @@
                     <td class="text-center">{{ number_format($receipt->total_packages_sum, 1) }}</td>
                     <td class="text-center font-weight-bold">{{ number_format($receipt->total_units_sum) }}</td>
                     <td class="text-right">TSh {{ number_format($receipt->total_cost_sum) }}</td>
+                    @if($showRevenue)
                     <td class="text-right font-weight-bold text-success">
                         TSh {{ number_format($receipt->total_profit_sum) }}
                     </td>
+                    @endif
                     <td class="text-center">{{ $receipt->received_date->format('d M, Y') }}</td>
                     <td class="text-center">
                       @php

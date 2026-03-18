@@ -401,10 +401,12 @@ class WaiterApiController extends Controller
             'items.*.food_item_id' => 'required_without:items.*.variant_id|nullable|exists:food_items,id',
             'items.*.quantity' => 'required|integer|min:1',
             'items.*.price' => 'required|numeric|min:0',
+            'items.*.sell_type' => 'nullable|in:unit,tot',
             'items.*.product_name' => 'required_if:items.*.food_item_id,!=,null|nullable|string',
             'items.*.variant_name' => 'nullable|string',
             'items.*.notes' => 'nullable|string|max:500',
             'table_id' => 'nullable|exists:bar_tables,id',
+            'existing_order_id' => 'nullable|exists:bar_orders,id',
             'customer_name' => 'nullable|string|max:255',
             'customer_phone' => 'nullable|string|max:20',
             'order_notes' => 'nullable|string|max:1000',
@@ -412,7 +414,9 @@ class WaiterApiController extends Controller
 
         DB::beginTransaction();
         try {
-            $orderNumber = BarOrder::generateOrderNumber($ownerId);
+            $existingOrderId = $request->input('existing_order_id');
+            $existingOrder = $existingOrderId ? BarOrder::find($existingOrderId) : null;
+
             $totalAmount = 0;
             $orderItems = [];
             $kitchenOrderItems = [];
@@ -454,22 +458,44 @@ class WaiterApiController extends Controller
                     continue;
                 }
                 
+                $sellType = $item['sell_type'] ?? 'unit';
                 $variant = ProductVariant::with(['product', 'stockLocations' => function($query) use ($ownerId) {
                     $query->where('user_id', $ownerId)->where('location', 'counter');
                 }])->findOrFail($item['variant_id']);
 
                 $counterStock = $variant->stockLocations->where('location', 'counter')->first();
-                
-                if (!$counterStock || $counterStock->quantity < $item['quantity']) {
-                    throw new \Exception("Insufficient stock for {$variant->product->name} - {$variant->measurement}");
+                if (!$counterStock) {
+                    throw new \Exception("Counter stock not found for {$variant->product->name}");
                 }
 
-                $sellingPrice = $counterStock->selling_price ?? $variant->selling_price_per_unit ?? 0;
+                // Accurate stock check for shots vs units (Match View logic)
+                if ($sellType === 'tot') {
+                    $totsPerBottle = $variant->total_tots ?: 1;
+                    $openBottle = \App\Models\OpenBottle::where('user_id', $ownerId)
+                        ->where('product_variant_id', $variant->id)
+                        ->first();
+                    
+                    $totalTotsAvailable = ($counterStock->quantity * $totsPerBottle) + ($openBottle ? $openBottle->tots_remaining : 0);
+                    
+                    if ($totalTotsAvailable < $item['quantity']) {
+                        throw new \Exception("Insufficient shots available for {$variant->product->name}. [Available: {$totalTotsAvailable}]");
+                    }
+                } else {
+                    if ($counterStock->quantity < $item['quantity']) {
+                        throw new \Exception("Insufficient stock for {$variant->product->name} - {$variant->measurement}");
+                    }
+                }
+
+                $sellingPrice = $sellType === 'tot' 
+                    ? ($counterStock->selling_price_per_tot ?? $variant->selling_price_per_tot ?? 0)
+                    : ($counterStock->selling_price ?? $variant->selling_price_per_unit ?? 0);
+                    
                 $itemTotal = $item['quantity'] * $sellingPrice;
                 $totalAmount += $itemTotal;
 
                 $orderItems[] = [
                     'product_variant_id' => $variant->id,
+                    'sell_type' => $sellType,
                     'quantity' => $item['quantity'],
                     'unit_price' => $sellingPrice,
                     'total_price' => $itemTotal,
@@ -484,23 +510,36 @@ class WaiterApiController extends Controller
             if (!empty($validated['order_notes'])) {
                 $notesParts[] = 'ORDER NOTES: ' . $validated['order_notes'];
             }
-            $orderNotes = !empty($notesParts) ? implode(' | ', $notesParts) : '';
+            $newNotes = !empty($notesParts) ? implode(' | ', $notesParts) : '';
 
-            // Create order
-            $order = BarOrder::create([
-                'user_id' => $ownerId,
-                'order_number' => $orderNumber,
-                'waiter_id' => $staff->id,
-                'order_source' => 'mobile',
-                'table_id' => $validated['table_id'] ?? null,
-                'customer_name' => $validated['customer_name'] ?? null,
-                'customer_phone' => $validated['customer_phone'] ?? null,
-                'status' => 'pending',
-                'payment_status' => 'pending',
-                'total_amount' => $totalAmount,
-                'paid_amount' => 0,
-                'notes' => $orderNotes,
-            ]);
+            if ($existingOrder) {
+                // UPDATE EXISTING ORDER
+                $existingOrder->total_amount += $totalAmount;
+                if (!empty($newNotes)) {
+                    $existingOrder->notes = ($existingOrder->notes ? $existingOrder->notes . ' | ' : '') . $newNotes;
+                }
+                $existingOrder->save();
+                $order = $existingOrder;
+                $message = 'Items added to existing order successfully';
+            } else {
+                // CREATE NEW ORDER
+                $orderNumber = BarOrder::generateOrderNumber($ownerId);
+                $order = BarOrder::create([
+                    'user_id' => $ownerId,
+                    'order_number' => $orderNumber,
+                    'waiter_id' => $staff->id,
+                    'order_source' => 'mobile',
+                    'table_id' => $validated['table_id'] ?? null,
+                    'customer_name' => $validated['customer_name'] ?? null,
+                    'customer_phone' => $validated['customer_phone'] ?? null,
+                    'status' => 'pending',
+                    'payment_status' => 'pending',
+                    'total_amount' => $totalAmount,
+                    'paid_amount' => 0,
+                    'notes' => $newNotes,
+                ]);
+                $message = 'Order created successfully';
+            }
 
             // Create order items (drinks)
             $transferSaleService = new \App\Services\TransferSaleService();

@@ -29,22 +29,16 @@ class ProductController extends Controller
         $search = $request->get('search');
         $category = $request->get('category');
         
-        // Comprehensive list of categories precisely matching the bar context
-        $standardCategories = collect([
-            'BEER/LAGER', 'BRANDY/WHISKY/RUM/GIN', 'CAN BEER', 
-            'ENERGIES', 'MIXED', 'SODA', 'SOFT DRINKS', 
-            'SPIRITS', 'WATER', 'WINE BY BOTTLE'
-        ]);
-
-        // Get unique categories currently in use plus standard ones
-        $existingCategories = Product::where('user_id', $ownerId)
+        // Get unique categories currently in use that have products
+        $categories = Product::where('user_id', $ownerId)
             ->whereNotNull('category')
             ->where('category', '!=', '')
             ->distinct()
             ->pluck('category')
-            ->map(fn($c) => strtoupper($c));
-        
-        $categories = $standardCategories->merge($existingCategories)->unique()->sort();
+            ->map(fn($c) => strtoupper($c))
+            ->unique()
+            ->sort()
+            ->values();
 
         $query = ProductVariant::with(['product.supplier', 'product'])
             ->join('products', 'product_variants.product_id', '=', 'products.id')
@@ -70,21 +64,32 @@ class ProductController extends Controller
 
         // Check permission for the view
         $canCreate = $this->hasPermission('products', 'create');
-        if (!$canCreate && session('is_staff')) {
+        $canEdit = $this->hasPermission('products', 'edit');
+        $canDelete = $this->hasPermission('products', 'delete');
+        
+        if (session('is_staff')) {
             $staff = \App\Models\Staff::with('role')->find(session('staff_id'));
             if ($staff && $staff->role) {
                 $roleName = strtolower(trim($staff->role->name ?? ''));
                 if (in_array($roleName, ['stock keeper', 'stockkeeper', 'counter', 'bar counter'])) {
                     $canCreate = true;
+                    $canEdit = true;
+                    $canDelete = true;
                 }
+            }
+        } else {
+            // Owner has all permissions
+            $user = Auth::user();
+            if ($user && $user->hasRole('owner')) {
+                $canCreate = $canEdit = $canDelete = true;
             }
         }
 
         if ($request->ajax()) {
-            return view('bar.products._product_list', compact('variants', 'canCreate'))->render();
+            return view('bar.products._product_list', compact('variants', 'canCreate', 'canEdit', 'canDelete'))->render();
         }
 
-        return view('bar.products.index', compact('variants', 'categories', 'search', 'category', 'canCreate'));
+        return view('bar.products.index', compact('variants', 'categories', 'search', 'category', 'canCreate', 'canEdit', 'canDelete'));
     }
 
     /**

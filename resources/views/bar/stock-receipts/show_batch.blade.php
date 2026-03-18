@@ -70,10 +70,12 @@
                     <span class="font-weight-bold">NET COST:</span>
                     <span class="h5 mb-0 font-weight-bold" style="color: #940000;">TSh {{ number_format($receipts->sum('final_buying_cost')) }}</span>
                 </div>
+                @if($showRevenue)
                 <div class="alert alert-success mt-3 mb-0 py-2">
                     <small>Expected Total Profit:</small>
                     <div class="h5 mb-0 font-weight-bold">TSh {{ number_format($receipts->sum('total_selling_value') - $receipts->sum('final_buying_cost')) }}</div>
                 </div>
+                @endif
             </div>
         </div>
     </div>
@@ -98,7 +100,13 @@
                             @foreach($receipts as $item)
                             <tr>
                                 <td>
-                                    <div class="font-weight-bold text-dark">{{ $item->productVariant->product->name }} ({{ $item->productVariant->name }})</div>
+                                    @php
+                                        $vName = $item->productVariant->name;
+                                        $pName = optional($item->productVariant->product)->name;
+                                        $cleanName = trim(str_replace([$pName, '(', ')'], '', $vName));
+                                        if (empty($cleanName)) $cleanName = $vName;
+                                    @endphp
+                                    <div class="font-weight-bold text-dark" style="font-size: 1.05rem;">{{ $cleanName }}</div>
                                     
                                     @php
                                         $totalLineBtlProfit = ($item->selling_price_per_unit - $item->buying_price_per_unit) * $item->total_units;
@@ -111,6 +119,7 @@
                                         $totalLineTotProfit = $totalLineTots * $totProfitPerGlass;
                                     @endphp
 
+                                    @if($showRevenue)
                                     <div class="mt-2 p-2 border rounded shadow-sm bg-light">
                                         <div class="row no-gutters">
                                             <div class="col-6 border-right pr-2">
@@ -144,6 +153,7 @@
                                             </div>
                                         </div>
                                     </div>
+                                    @endif
 
                                     <small class="text-muted d-block mt-2">
                                         @if($item->productVariant->items_per_package <= 1)
@@ -152,10 +162,18 @@
                                             {{ $item->productVariant->packaging }} of {{ $item->productVariant->items_per_package }} units
                                         @endif
                                     </small>
+                                    @if($item->discount_value > 0)
+                                        <div class="mt-1 badge badge-success smallest p-1">Discount Applied</div>
+                                    @endif
                                 </td>
                                 <td class="text-center">{{ number_format($item->quantity_received, 1) }}</td>
                                 <td class="text-center">{{ number_format($item->total_units) }}</td>
-                                <td class="text-right">{{ number_format($item->buying_price_per_unit) }}</td>
+                                <td class="text-right">
+                                    @if($item->discount_value > 0)
+                                        <small class="text-muted strike-through" style="text-decoration: line-through;">{{ number_format($item->buying_price_per_unit) }}</small><br>
+                                    @endif
+                                    <span class="font-weight-bold">{{ number_format($item->total_units > 0 ? $item->final_buying_cost / $item->total_units : $item->buying_price_per_unit) }}</span>
+                                </td>
                                 <td class="text-right font-weight-bold text-dark">{{ number_format($item->final_buying_cost) }}</td>
                             </tr>
                             @endforeach

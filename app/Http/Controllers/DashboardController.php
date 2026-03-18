@@ -72,12 +72,286 @@ class DashboardController extends Controller
                 return redirect()->route('dashboard.role', ['role' => $roleSlug]);
             }
             
-            // Get statistics for Managers and Stock Keepers
+            // Route Manager to dedicated dashboard with rich data
             $statistics = [];
             $roleName = strtolower($staff->role->name ?? '');
-            if ($roleName === 'stock keeper' || $roleName === 'manager' || ($staff->role && $staff->role->hasPermission('inventory', 'view'))) {
-                $ownerId = $owner->id;
+            $ownerId  = $owner->id;
+
+            if ($roleName === 'manager') {
+                $location = session('active_location');
+
+                // Helper to apply branch filter to various models
+                // It checks both the waiter/staff associated and the table location (if applicable)
+                $applyLocation = function($query, $staffKey = 'waiter_id', $tableCheck = true) use ($location) {
+                    if ($location) {
+                        $query->where(function($q) use ($location, $staffKey, $tableCheck) {
+                            // Filter by staff/waiter's branch
+                            $q->whereExists(function ($sq) use ($location, $staffKey) {
+                                $sq->select(\DB::raw(1))
+                                   ->from('staff')
+                                   ->whereColumn('staff.id', $staffKey)
+                                   ->where('staff.location_branch', $location);
+                            });
+
+                            // OR Filter by table's location (if applicable)
+                            if ($tableCheck) {
+                                $q->orWhereHas('table', function($sq) use ($location) {
+                                    $sq->where('location', $location);
+                                });
+                            }
+                        });
+                    }
+                    return $query;
+                };
+
+                // ── Today's revenue
+                $todayRevenue = $applyLocation(\App\Models\BarOrder::where('user_id', $ownerId))
+                    ->whereDate('created_at', today())
+                    ->where('payment_status', 'paid')
+                    ->sum('total_amount');
+
+                // ── This month revenue
+                $monthRevenue = $applyLocation(\App\Models\BarOrder::where('user_id', $ownerId))
+                    ->whereMonth('created_at', now()->month)
+                    ->whereYear('created_at', now()->year)
+                    ->where('payment_status', 'paid')
+                    ->sum('total_amount');
+
+                // ── Today's orders
+                $todayOrders = $applyLocation(\App\Models\BarOrder::where('user_id', $ownerId))
+                    ->whereDate('created_at', today())
+                    ->count();
+
+                // ── Pending orders
+                $pendingOrders = $applyLocation(\App\Models\BarOrder::where('user_id', $ownerId))
+                    ->where('status', 'pending')
+                    ->count();
+
+                // ── Stock transfers summary
+                // Filter by requester branch
+                $pendingTransfers  = $applyLocation(\App\Models\StockTransfer::where('user_id', $ownerId), 'requested_by', false)
+                    ->where('status', 'pending')->count();
+                $approvedTransfers = $applyLocation(\App\Models\StockTransfer::where('user_id', $ownerId), 'requested_by', false)
+                    ->where('status', 'approved')->count();
+                $completedTransfersToday = $applyLocation(\App\Models\StockTransfer::where('user_id', $ownerId), 'requested_by', false)
+                    ->where('status', 'completed')
+                    ->whereDate('updated_at', today())
+                    ->count();
+
+                // ── Total transfer sales value
+                $totalTransferSalesValue = \App\Models\TransferSale::whereHas('stockTransfer', function($q) use ($ownerId, $location) {
+                    $q->where('user_id', $ownerId)
+                      ->where('status', 'completed')
+                      ->whereMonth('created_at', now()->month);
+                    if ($location) {
+                        $q->whereExists(function ($sq) use ($location) {
+                            $sq->select(\DB::raw(1))
+                               ->from('staff')
+                               ->whereColumn('staff.id', 'stock_transfers.requested_by')
+                               ->where('staff.location_branch', $location);
+                        });
+                    }
+                })->sum('total_price');
+
+                // ── Recent stock receipts (this month)
+                // Filter by received_by branch
+                $recentReceiptsQuery = \App\Models\StockReceipt::where('user_id', $ownerId)
+                    ->with(['productVariant.product', 'supplier'])
+                    ->whereMonth('received_date', now()->month);
                 
+                if ($location) {
+                    $recentReceiptsQuery->whereExists(function ($sq) use ($location) {
+                        $sq->select(\DB::raw(1))
+                           ->from('staff')
+                           ->whereColumn('staff.id', 'stock_receipts.received_by')
+                           ->where('staff.location_branch', $location);
+                    });
+                }
+                
+                $recentReceipts = $recentReceiptsQuery->orderBy('received_date', 'desc')
+                    ->limit(8)
+                    ->get();
+
+                // ── Monthly Purchase Cost
+                $monthlyPurchaseCostQuery = \App\Models\StockReceipt::where('user_id', $ownerId)
+                    ->whereMonth('received_date', now()->month);
+                
+                if ($location) {
+                    $monthlyPurchaseCostQuery->whereExists(function ($sq) use ($location) {
+                        $sq->select(\DB::raw(1))
+                           ->from('staff')
+                           ->whereColumn('staff.id', 'stock_receipts.received_by')
+                           ->where('staff.location_branch', $location);
+                    });
+                }
+                $monthlyPurchaseCost = $monthlyPurchaseCostQuery->sum('final_buying_cost');
+
+                // ── Recent stock transfers (last 8)
+                $recentTransfers = $applyLocation(\App\Models\StockTransfer::where('user_id', $ownerId), 'requested_by', false)
+                    ->with(['productVariant.product', 'requestedBy', 'approvedBy'])
+                    ->orderBy('created_at', 'desc')
+                    ->limit(8)
+                    ->get();
+
+                // ── Revenue last 7 days
+                $revenueTrend = $applyLocation(\App\Models\BarOrder::where('user_id', $ownerId))
+                    ->where('payment_status', 'paid')
+                    ->where('created_at', '>=', now()->subDays(6)->startOfDay())
+                    ->selectRaw('DATE(created_at) as date, SUM(total_amount) as revenue, COUNT(*) as orders')
+                    ->groupBy('date')
+                    ->orderBy('date')
+                    ->get();
+
+                // ── Top selling products this month
+                $topProducts = \App\Models\OrderItem::whereHas('order', function($q) use ($ownerId, $location) {
+                    $q->where('user_id', $ownerId)
+                      ->where('payment_status', 'paid')
+                      ->whereMonth('created_at', now()->month);
+                    if ($location) {
+                        $q->where(function($sq) use ($location) {
+                            $sq->whereExists(function ($ssq) use ($location) {
+                                $ssq->select(\DB::raw(1))
+                                   ->from('staff')
+                                   ->whereColumn('staff.id', 'orders.waiter_id')
+                                   ->where('staff.location_branch', $location);
+                            })->orWhereHas('table', function($ssq) use ($location) {
+                                $ssq->where('location', $location);
+                            });
+                        });
+                    }
+                })
+                ->join('product_variants', 'order_items.product_variant_id', '=', 'product_variants.id')
+                ->selectRaw('product_variants.name as display_name, SUM(order_items.quantity) as total_sold, SUM(order_items.total_price) as total_revenue')
+                ->groupBy('product_variants.name')
+                ->orderByDesc('total_sold')
+                ->limit(8)
+                ->get();
+                
+                // ── Warehouse stock statistics
+                // Filter by variants that have been received or transferred into this branch context
+                $warehouseStockItemsQuery = \App\Models\ProductVariant::whereHas('product', function($query) use ($ownerId) {
+                    $query->where('user_id', $ownerId);
+                })
+                ->whereHas('stockLocations', function($query) use ($ownerId) {
+                    $query->where('user_id', $ownerId)->where('location', 'warehouse')->where('quantity', '>', 0);
+                });
+
+                if ($location) {
+                    // Filter variants that have some activity in this branch (receipts or orders)
+                    $warehouseStockItemsQuery->where(function($q) use ($location) {
+                        $q->whereExists(function($sq) use ($location) {
+                            $sq->select(\DB::raw(1))
+                               ->from('stock_receipts')
+                               ->join('staff', 'stock_receipts.received_by', '=', 'staff.id')
+                               ->whereColumn('stock_receipts.product_variant_id', 'product_variants.id')
+                               ->where('staff.location_branch', $location);
+                        })->orWhereExists(function($sq) use ($location) {
+                            $sq->select(\DB::raw(1))
+                               ->from('order_items')
+                               ->join('orders', 'order_items.order_id', '=', 'orders.id')
+                               ->join('staff', 'orders.waiter_id', '=', 'staff.id')
+                               ->whereColumn('order_items.product_variant_id', 'product_variants.id')
+                               ->where('staff.location_branch', $location);
+                        });
+                    });
+                }
+                $warehouseStockItems = $warehouseStockItemsQuery->count();
+
+                $counterStockItemsQuery = \App\Models\ProductVariant::whereHas('product', function($query) use ($ownerId) {
+                    $query->where('user_id', $ownerId);
+                })
+                ->whereHas('stockLocations', function($query) use ($ownerId) {
+                    $query->where('user_id', $ownerId)->where('location', 'counter')->where('quantity', '>', 0);
+                });
+
+                if ($location) {
+                    $counterStockItemsQuery->where(function($q) use ($location) {
+                        $q->whereExists(function($sq) use ($location) {
+                            $sq->select(\DB::raw(1))
+                               ->from('stock_receipts')
+                               ->join('staff', 'stock_receipts.received_by', '=', 'staff.id')
+                               ->whereColumn('stock_receipts.product_variant_id', 'product_variants.id')
+                               ->where('staff.location_branch', $location);
+                        })->orWhereExists(function($sq) use ($location) {
+                            $sq->select(\DB::raw(1))
+                               ->from('order_items')
+                               ->join('orders', 'order_items.order_id', '=', 'orders.id')
+                               ->join('staff', 'orders.waiter_id', '=', 'staff.id')
+                               ->whereColumn('order_items.product_variant_id', 'product_variants.id')
+                               ->where('staff.location_branch', $location);
+                        });
+                    });
+                }
+                $counterStockItems = $counterStockItemsQuery->count();
+
+                $lowStockThreshold = \App\Models\SystemSetting::get('low_stock_threshold_' . $ownerId, 10);
+                $lowStockListQuery = \App\Models\ProductVariant::whereHas('product', function($query) use ($ownerId) {
+                    $query->where('user_id', $ownerId);
+                })
+                ->with(['product', 'stockLocations' => function($query) use ($ownerId) {
+                    $query->where('user_id', $ownerId);
+                }]);
+
+                if ($location) {
+                    $lowStockListQuery->where(function($q) use ($location) {
+                        $q->whereExists(function($sq) use ($location) {
+                            $sq->select(\DB::raw(1))
+                               ->from('stock_receipts')
+                               ->join('staff', 'stock_receipts.received_by', '=', 'staff.id')
+                               ->whereColumn('stock_receipts.product_variant_id', 'product_variants.id')
+                               ->where('staff.location_branch', $location);
+                        });
+                    });
+                }
+
+                $lowStockList = $lowStockListQuery->get()
+                ->filter(function($variant) use ($lowStockThreshold) {
+                    $warehouseQty = optional($variant->stockLocations->where('location', 'warehouse')->first())->quantity ?? 0;
+                    $counterQty   = optional($variant->stockLocations->where('location', 'counter')->first())->quantity ?? 0;
+                    $totalQty = $warehouseQty + $counterQty;
+                    return $totalQty > 0 && $totalQty < $lowStockThreshold;
+                })
+                ->take(10);
+
+                // ── Category Distribution (this month)
+                $categoryDistribution = \App\Models\OrderItem::whereHas('order', function($q) use ($ownerId, $location) {
+                    $q->where('user_id', $ownerId)
+                      ->where('payment_status', 'paid')
+                      ->whereMonth('created_at', now()->month);
+                    if ($location) {
+                        $q->where(function($sq) use ($location) {
+                            $sq->whereExists(function ($ssq) use ($location) {
+                                $ssq->select(\DB::raw(1))
+                                   ->from('staff')
+                                   ->whereColumn('staff.id', 'orders.waiter_id')
+                                   ->where('staff.location_branch', $location);
+                            })->orWhereHas('table', function($ssq) use ($location) {
+                                $ssq->where('location', $location);
+                            });
+                        });
+                    }
+                })
+                ->join('product_variants', 'order_items.product_variant_id', '=', 'product_variants.id')
+                ->join('products', 'product_variants.product_id', '=', 'products.id')
+                ->selectRaw('products.category, SUM(order_items.quantity) as total_sold')
+                ->groupBy('products.category')
+                ->orderByDesc('total_sold')
+                ->get();
+
+                return view('dashboard.manager', compact(
+                    'staff', 'owner',
+                    'todayRevenue', 'monthRevenue', 'todayOrders', 'pendingOrders',
+                    'pendingTransfers', 'approvedTransfers', 'completedTransfersToday',
+                    'totalTransferSalesValue', 'monthlyPurchaseCost',
+                    'recentReceipts', 'recentTransfers',
+                    'revenueTrend', 'topProducts',
+                    'warehouseStockItems', 'counterStockItems',
+                    'lowStockList', 'categoryDistribution'
+                ));
+            }
+
+            // Stock Keeper and other roles
+            if ($roleName === 'stock keeper' || $roleName === 'stockkeeper' || ($staff->role && $staff->role->hasPermission('inventory', 'view'))) {
                 // Warehouse stock statistics
                 $statistics['warehouseStockItems'] = \App\Models\ProductVariant::whereHas('product', function($query) use ($ownerId) {
                     $query->where('user_id', $ownerId);
@@ -86,8 +360,7 @@ class DashboardController extends Controller
                     $query->where('user_id', $ownerId)->where('location', 'warehouse')->where('quantity', '>', 0);
                 })
                 ->count();
-                
-                // Counter stock statistics
+
                 $statistics['counterStockItems'] = \App\Models\ProductVariant::whereHas('product', function($query) use ($ownerId) {
                     $query->where('user_id', $ownerId);
                 })
@@ -95,17 +368,13 @@ class DashboardController extends Controller
                     $query->where('user_id', $ownerId)->where('location', 'counter')->where('quantity', '>', 0);
                 })
                 ->count();
-                
-                // Pending transfers
+
                 $statistics['pendingTransfers'] = \App\Models\StockTransfer::where('user_id', $ownerId)
-                    ->where('status', 'pending')
-                    ->count();
-                
-                // Get low stock threshold from settings
-                $lowStockThreshold = \App\Models\SystemSetting::get('low_stock_threshold_' . $ownerId, 10);
+                    ->where('status', 'pending')->count();
+
+                $lowStockThreshold    = \App\Models\SystemSetting::get('low_stock_threshold_' . $ownerId, 10);
                 $criticalStockThreshold = \App\Models\SystemSetting::get('critical_stock_threshold_' . $ownerId, 5);
-                
-                // Low stock items count and list
+
                 $lowStockVariants = \App\Models\ProductVariant::whereHas('product', function($query) use ($ownerId) {
                     $query->where('user_id', $ownerId);
                 })
@@ -114,38 +383,31 @@ class DashboardController extends Controller
                 }])
                 ->get()
                 ->filter(function($variant) use ($lowStockThreshold) {
-                    $warehouseStock = $variant->stockLocations->where('location', 'warehouse')->first();
-                    $counterStock = $variant->stockLocations->where('location', 'counter')->first();
-                    $warehouseQty = $warehouseStock ? $warehouseStock->quantity : 0;
-                    $counterQty = $counterStock ? $counterStock->quantity : 0;
+                    $warehouseQty = optional($variant->stockLocations->where('location', 'warehouse')->first())->quantity ?? 0;
+                    $counterQty   = optional($variant->stockLocations->where('location', 'counter')->first())->quantity ?? 0;
                     $totalQty = $warehouseQty + $counterQty;
                     return $totalQty > 0 && $totalQty < $lowStockThreshold;
                 });
-                
+
                 $statistics['lowStockItems'] = $lowStockVariants->count();
-                
-                // Low stock items list
                 $statistics['lowStockItemsList'] = $lowStockVariants->take(10)->map(function($variant) use ($criticalStockThreshold) {
-                    $warehouseStock = $variant->stockLocations->where('location', 'warehouse')->first();
-                    $counterStock = $variant->stockLocations->where('location', 'counter')->first();
-                    $warehouseQty = $warehouseStock ? $warehouseStock->quantity : 0;
-                    $counterQty = $counterStock ? $counterStock->quantity : 0;
-                    $totalQty = $warehouseQty + $counterQty;
-                    
+                    $warehouseQty = optional($variant->stockLocations->where('location', 'warehouse')->first())->quantity ?? 0;
+                    $counterQty   = optional($variant->stockLocations->where('location', 'counter')->first())->quantity ?? 0;
                     return [
-                        'id' => $variant->id,
+                        'id'           => $variant->id,
                         'product_name' => $variant->product->name,
-                        'variant' => $variant->measurement,
-                        'warehouse_qty' => $warehouseQty,
-                        'counter_qty' => $counterQty,
-                        'total_qty' => $totalQty,
-                        'is_critical' => $totalQty < $criticalStockThreshold,
+                        'variant'      => $variant->measurement,
+                        'warehouse_qty'=> $warehouseQty,
+                        'counter_qty'  => $counterQty,
+                        'total_qty'    => $warehouseQty + $counterQty,
+                        'is_critical'  => ($warehouseQty + $counterQty) < $criticalStockThreshold,
                     ];
                 });
             }
-            
+
             return view('dashboard.staff', compact('staff', 'owner', 'statistics'));
         }
+
         
         // Regular users should not have role in URL - redirect to clean URL if role is present
         if ($role) {

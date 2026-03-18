@@ -43,7 +43,19 @@ class StockReceiptController extends Controller
             ->orderBy('received_date', 'desc')
             ->paginate(20);
 
-        return view('bar.stock-receipts.index', compact('receipts'));
+        // Role-based visibility: Hide revenue/profit for Stock Keepers
+        $showRevenue = true;
+        if (session('is_staff')) {
+            $staff = \App\Models\Staff::with('role')->find(session('staff_id'));
+            if ($staff && $staff->role) {
+                $roleName = strtolower(trim($staff->role->name ?? ''));
+                if (in_array($roleName, ['stock keeper', 'stockkeeper'])) {
+                    $showRevenue = false;
+                }
+            }
+        }
+
+        return view('bar.stock-receipts.index', compact('receipts', 'showRevenue'));
     }
 
     /**
@@ -71,22 +83,16 @@ class StockReceiptController extends Controller
             ->orderBy('name')
             ->get();
 
-        $loadGroups = [
-            // Load by Distributor Label
-            'BONITE', 'SBC (PEPSI)', 'AZAM', 'TBL BEERS', 'SBL BEERS', 
-            // Load by Core Category
-            'BEER/LAGER', 'BRANDY/WHISKY/RUM/GIN', 'CAN BEER', 
-            'ENERGIES', 'MIXED', 'SODA', 'SOFT DRINKS', 
-            'SPIRITS', 'WATER', 'WINE BY BOTTLE'
-        ];
-
-        $categories = $products->pluck('category')
-            ->merge($loadGroups)
+        // Get all unique active brands as Distributors
+        $distributorGroups = $products->pluck('brand')
+            ->map(fn($b) => strtoupper(trim($b)))
             ->unique()
             ->filter()
+            ->sort()
             ->values()
             ->all();
 
+        // Preparing productsData for JavaScript
         $productsData = $products->map(function($product) use ($ownerId) {
             return [
                 'id' => $product->id,
@@ -94,13 +100,17 @@ class StockReceiptController extends Controller
                 'brand' => $product->brand,
                 'category' => $product->category,
                 'variants' => $product->variants->map(function($variant) use ($ownerId) {
-                    // Get existing warehouse stock for this variant
                     $warehouseStock = StockLocation::where('user_id', $ownerId)
                         ->where('product_variant_id', $variant->id)
                         ->where('location', 'warehouse')
                         ->first();
                     
-                    $existingQuantity = $warehouseStock ? $warehouseStock->quantity : 0;
+                    $lastReceipt = StockReceipt::where('user_id', $ownerId)
+                        ->where('product_variant_id', $variant->id)
+                        ->latest('received_date')
+                        ->first();
+                    
+                    $existingQuantity = $warehouseStock ? (float)$warehouseStock->quantity : 0;
                     $itemsPerPackage = $variant->items_per_package ?? 1;
                     $existingPackages = $itemsPerPackage > 0 ? floor($existingQuantity / $itemsPerPackage) : 0;
                     
@@ -119,12 +129,27 @@ class StockReceiptController extends Controller
                         'existing_quantity' => $existingQuantity,
                         'existing_packages' => $existingPackages,
                         'average_buying_price' => $warehouseStock ? (float)$warehouseStock->average_buying_price : ($variant->buying_price_per_unit ? (float)$variant->buying_price_per_unit : 0),
+                        'last_supplier_id' => $lastReceipt ? $lastReceipt->supplier_id : null,
                     ];
                 })->values()->all()
             ];
         })->all();
 
-        return view('bar.stock-receipts.create', compact('suppliers', 'products', 'productsData', 'categories'));
+        // Role-based visibility: Hide revenue/profit for Stock Keepers
+        // Owners (non-staff) and Accountants will always see full details.
+        $showRevenue = true;
+        if (session('is_staff')) {
+            $staff = \App\Models\Staff::with('role')->find(session('staff_id'));
+            if ($staff && $staff->role) {
+                $roleName = strtolower(trim($staff->role->name ?? ''));
+                // ONLY hide for stock keepers. Accountants and others should see it.
+                if (in_array($roleName, ['stock keeper', 'stockkeeper'])) {
+                    $showRevenue = false;
+                }
+            }
+        }
+
+        return view('bar.stock-receipts.create', compact('suppliers', 'products', 'productsData', 'distributorGroups', 'showRevenue'));
     }
 
 
@@ -352,7 +377,20 @@ class StockReceiptController extends Controller
 
         if ($receipts->count() > 0) {
             $receiptNumber = $idOrNumber;
-            return view('bar.stock-receipts.show_batch', compact('receipts', 'receiptNumber'));
+
+            // Role-based visibility
+            $showRevenue = true;
+            if (session('is_staff')) {
+                $staff = \App\Models\Staff::with('role')->find(session('staff_id'));
+                if ($staff && $staff->role) {
+                    $roleName = strtolower(trim($staff->role->name ?? ''));
+                    if (in_array($roleName, ['stock keeper', 'stockkeeper'])) {
+                        $showRevenue = false;
+                    }
+                }
+            }
+
+            return view('bar.stock-receipts.show_batch', compact('receipts', 'receiptNumber', 'showRevenue'));
         }
 
         // Fallback to single ID if needed (for legacy links)
@@ -724,6 +762,18 @@ class StockReceiptController extends Controller
         $receivedBy = $receipts->first()->receivedBy;
         $notes = $receipts->first()->notes;
 
-        return view('bar.stock-receipts.print', compact('receipts', 'receiptNumber', 'supplier', 'receivedDate', 'receivedBy', 'notes'));
+        // Role-based visibility
+        $showRevenue = true;
+        if (session('is_staff')) {
+            $staff = \App\Models\Staff::with('role')->find(session('staff_id'));
+            if ($staff && $staff->role) {
+                $roleName = strtolower(trim($staff->role->name ?? ''));
+                if (in_array($roleName, ['stock keeper', 'stockkeeper'])) {
+                    $showRevenue = false;
+                }
+            }
+        }
+
+        return view('bar.stock-receipts.print', compact('receipts', 'receiptNumber', 'supplier', 'receivedDate', 'receivedBy', 'notes', 'showRevenue'));
     }
 }

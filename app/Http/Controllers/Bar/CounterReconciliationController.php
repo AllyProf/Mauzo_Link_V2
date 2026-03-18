@@ -39,11 +39,25 @@ class CounterReconciliationController extends Controller
         // Get location from session (branch switcher)
         $location = session('active_location');
 
-        // Get all waiters with their sales for the date
+        // Get waiters, or anyone who placed an order today, or has a reconciliation today
         $waitersQuery = Staff::query()
             ->where('is_active', true)
-            ->whereHas('role', function($q) {
-                $q->where('name', 'Waiter');
+            ->where(function ($query) use ($date, $location) {
+                $query->whereHas('role', function($q) {
+                    $q->whereIn('slug', ['waiter']);
+                })
+                ->orWhereHas('barOrders', function($q) use ($date, $location) {
+                    $q->whereDate('created_at', $date)
+                      ->when($location && $location !== 'all', function($sq) use ($location) {
+                          $sq->whereHas('table', function($tsq) use ($location) {
+                              $tsq->where('location', $location);
+                          });
+                      });
+                })
+                ->orWhereHas('dailyReconciliations', function($q) use ($date) {
+                    $q->where('reconciliation_date', $date)
+                      ->where('reconciliation_type', 'bar');
+                });
             })
             ->when($location && $location !== 'all', function($q) use ($location) {
                 $q->where('location_branch', $location);

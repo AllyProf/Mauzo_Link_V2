@@ -406,6 +406,16 @@ class AccountantController extends Controller
         $location = session('active_location');
         $tab = $request->get('tab', 'financial'); // 'financial' or 'waiters' or 'payments'
         $canReconcile = $this->hasPermission('finance', 'edit');
+        
+        // Determine if we should filter by department (Counter = bar, Chef = food)
+        $currentStaff = $this->getCurrentStaff();
+        $roleSlug = strtolower(trim($currentStaff->role->slug ?? ''));
+        $deptFilter = null;
+        if (in_array($roleSlug, ['counter', 'waiter'])) {
+            $deptFilter = 'bar';
+        } elseif ($roleSlug === 'chef') {
+            $deptFilter = 'food';
+        }
 
         // ── Financial Reconciliations Aggregate (By Date & Type)
         // 1. Get already submitted/verified reconciliations
@@ -415,6 +425,11 @@ class AccountantController extends Controller
                 $q->whereHas('waiter', function($sq) use ($location) {
                     $sq->where('location_branch', $location);
                 });
+            })
+            ->when($deptFilter, function($q) use ($deptFilter) {
+                // In DB, reconciliation_type for food might be 'kitchen' or 'food', but controller uses 'food'
+                $dbType = $deptFilter === 'food' ? ['food', 'kitchen'] : [$deptFilter];
+                $q->whereIn('reconciliation_type', $dbType);
             })
             ->whereBetween('reconciliation_date', [Carbon::parse($startDate)->startOfDay(), Carbon::parse($endDate)->endOfDay()])
             ->selectRaw('reconciliation_date, reconciliation_type, SUM(expected_amount) as total_expected, SUM(submitted_amount) as total_submitted, SUM(cash_collected) as total_cash, SUM(mobile_money_collected) as total_mobile, SUM(bank_collected) as total_bank, SUM(card_collected) as total_card, COUNT(waiter_id) as waiter_count, MIN(status) as status_indicator, MAX(notes) as notes')
@@ -446,7 +461,7 @@ class AccountantController extends Controller
             
             // Bar Sales (Drinks)
             $barAmount = $order->items->sum('total_price');
-            if ($barAmount > 0) {
+            if ($barAmount > 0 && (!$deptFilter || $deptFilter === 'bar')) {
                 $key = $dateStr . '_bar';
                 if (!isset($pendingAggr[$key])) {
                     $pendingAggr[$key] = [
@@ -479,7 +494,7 @@ class AccountantController extends Controller
 
             // Chef Sales (Food)
             $foodAmount = $order->kitchenOrderItems->sum('total_price');
-            if ($foodAmount > 0) {
+            if ($foodAmount > 0 && (!$deptFilter || $deptFilter === 'food')) {
                 $key = $dateStr . '_food';
                 if (!isset($pendingAggr[$key])) {
                     $pendingAggr[$key] = [

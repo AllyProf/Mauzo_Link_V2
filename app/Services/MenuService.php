@@ -186,10 +186,6 @@ class MenuService
                     return $isCounter;
                 }
                 
-                // Disallow Counter/Chef from accountant generic slug
-                if (($isCounter || $isChef) && $menu->slug === 'accountant') {
-                    return false;
-                }
                 
                 // Managers always see Stock Audit
                 $isManager = in_array($roleName, ['manager', 'general manager', 'administrator']) || in_array($roleSlug, ['manager', 'admin']);
@@ -295,7 +291,7 @@ class MenuService
         // Role-based route overrides for core functionality
         $overrides = [
             'counter' => [
-                'bar.counter.dashboard', 'bar.counter.waiter-orders', 'bar.counter.reconciliation',
+                'bar.counter.dashboard', 'bar.counter.waiter-orders', 'bar.counter.reconciliation', 'accountant.reconciliations',
                 'bar.counter.counter-stock', 'bar.counter.warehouse-stock', 'bar.counter.analytics',
                 'bar.counter.customer-orders', 'bar.counter.verify-reconciliation', 'bar.counter.mark-paid',
                 'bar.counter.mark-all-paid', 'bar.counter.update-order-status',
@@ -321,7 +317,7 @@ class MenuService
                 'bar.chef.dashboard', 'bar.chef.kds', 'bar.chef.update-item-status', 'bar.chef.latest-orders',
                 'bar.chef.food-items', 'bar.chef.ingredients', 'bar.chef.ingredient-receipts',
                 'bar.chef.ingredient-batches', 'bar.chef.ingredient-stock-movements', 'bar.chef.reports',
-                'bar.chef.reconciliation'
+                'bar.chef.reconciliation', 'accountant.reconciliations'
             ],
             'manager' => [
                 'accountant.reconciliations',

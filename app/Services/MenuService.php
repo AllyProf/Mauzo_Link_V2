@@ -175,7 +175,7 @@ class MenuService
                 $menu->children = $this->getCommonMenuChildrenForStaff($menu, $staffRole);
                 return $menu;
             })
-            ->filter(function($menu) use ($staffRole, $isCounter, $isStockKeeper, $isAccountant, $isHR, $roleName, $roleSlug) {
+            ->filter(function($menu) use ($staffRole, $isCounter, $isStockKeeper, $isAccountant, $isHR, $isChef, $roleName, $roleSlug) {
                 // Dashboard is always shown
                 if ($menu->slug === 'dashboard') {
                     return true;

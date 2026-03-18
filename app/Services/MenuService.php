@@ -307,12 +307,18 @@ class MenuService
                 'bar.chef.ingredient-batches', 'bar.chef.ingredient-stock-movements', 'bar.chef.reports',
                 'accountant.reconciliations', // Link for chef to see their food reconciliations
                 'bar.chef.reconciliation'
+            ],
+            'manager' => [
+                'accountant.reconciliations'
             ]
         ];
 
+        $isManager = in_array($roleName, ['manager', 'general manager', 'administrator']) || in_array($roleSlug, ['manager', 'admin']);
+
         if ($isCounter && in_array($menu->route, $overrides['counter'])) return true;
-        if ($isStockKeeper && in_array($menu->route, $overrides['stock_keeper'])) return true;
+        if ($isStockKeeper && in_array($roleSlug, ['stock_keeper']) && in_array($menu->route, $overrides['stock_keeper'])) return true;
         if ($isChef && in_array($menu->route, $overrides['chef'])) return true;
+        if ($isManager && in_array($menu->route, $overrides['manager'])) return true;
 
         // Map routes to permissions
         $routePermissions = $this->getRoutePermissions();

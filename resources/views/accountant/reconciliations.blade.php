@@ -94,6 +94,48 @@
 
 
         @if($tab === 'financial')
+          <!-- High Level Summary for Managers/Owners -->
+          @php
+              $summaryExpected = $financialReconciliations->sum('total_expected');
+              $summaryCollected = $financialReconciliations->sum(function($fr) {
+                  $paid = 0;
+                  if(preg_match('/\[ShortagePaidTotal:(\d+)\]/', $fr->notes ?? '', $m)) $paid = (int)$m[1];
+                  return $fr->total_submitted + $paid;
+              });
+              $summaryShortage = $summaryExpected - $summaryCollected;
+              
+              $isManagerView = auth()->user()->role === 'admin' || auth()->user()->role === 'customer' || (auth()->user()->role === 'staff' && in_array(strtolower(auth()->user()->staff->role->name ?? ''), ['manager', 'administrator', 'general manager']));
+          @endphp
+
+          @if($isManagerView)
+          <div class="row mb-4">
+              <div class="col-md-4">
+                  <div class="widget-small primary coloured-icon"><i class="icon fa fa-shopping-cart fa-3x"></i>
+                      <div class="info">
+                          <p class="text-uppercase small font-weight-bold">Total Expected (Sales)</p>
+                          <p><b>TSh {{ number_format($summaryExpected) }}</b></p>
+                      </div>
+                  </div>
+              </div>
+              <div class="col-md-4">
+                  <div class="widget-small success coloured-icon"><i class="icon fa fa-money fa-3x"></i>
+                      <div class="info">
+                          <p class="text-uppercase small font-weight-bold">Total Collected (Actual)</p>
+                          <p><b>TSh {{ number_format($summaryCollected) }}</b></p>
+                      </div>
+                  </div>
+              </div>
+              <div class="col-md-4">
+                  <div class="widget-small {{ $summaryShortage > 0 ? 'danger' : 'info' }} coloured-icon"><i class="icon fa {{ $summaryShortage > 0 ? 'fa-minus-circle' : 'fa-check-circle' }} fa-3x"></i>
+                      <div class="info">
+                          <p class="text-uppercase small font-weight-bold">Outstanding Shortage</p>
+                          <p><b>TSh {{ number_format($summaryShortage) }}</b></p>
+                      </div>
+                  </div>
+              </div>
+          </div>
+          @endif
+
           <!-- Financial Summary Tab -->
           <div class="table-responsive">
             <table class="table table-hover table-bordered">

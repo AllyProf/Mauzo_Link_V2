@@ -105,8 +105,20 @@
               $summaryShortage = $summaryExpected - $summaryCollected;
               
               $user = auth()->user();
-              $staffRoleName = strtolower($user->staff?->role?->name ?? '');
-              $isManagerView = $user->role === 'admin' || $user->role === 'customer' || in_array($staffRoleName, ['manager', 'administrator', 'general manager']);
+              $isOwner = !session('is_staff');
+              $isStaffManager = false;
+              
+              if (session('is_staff')) {
+                  $staff = \App\Models\Staff::with('role')->find(session('staff_id'));
+                  if ($staff && $staff->role) {
+                      $roleName = strtolower(trim($staff->role->name ?? ''));
+                      if (in_array($roleName, ['manager', 'general manager', 'administrator'])) {
+                          $isStaffManager = true;
+                      }
+                  }
+              }
+              
+              $isManagerView = $isOwner || $isStaffManager;
           @endphp
 
           @if($isManagerView)

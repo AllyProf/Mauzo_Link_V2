@@ -1484,10 +1484,8 @@ class AccountantController extends Controller
                 $amount = (int)$validated['amount'];
                 
                 // 1. AUTO-DETECT THE BEST CHANNEL
-                // We re-query the original system-recorded payments to find where the gap is
-                $query = ($type === 'bar') ? \App\Models\BarOrder::query() : \App\Models\FoodOrder::query();
-                $orders = $query->where('reconciliation_date', $date)
-                               ->where('status', '!=', 'cancelled')
+                // We re-query the original system-recorded payments linked to this reconciliation
+                $orders = \App\Models\BarOrder::where('reconciliation_id', $recon->id)
                                ->with('orderPayments')
                                ->get();
                                
@@ -1495,6 +1493,13 @@ class AccountantController extends Controller
                 foreach ($orders as $o) {
                     foreach ($o->orderPayments as $p) {
                         $m = $p->payment_method;
+                        
+                        // Heuristic: If we are paying a 'FOOD' shortage, we only look at food components of the order?
+                        // No, let's keep it simple: the order belongs to this reconciliation, 
+                        // so all its payments are part of this audit.
+                        if ($type === 'bar' && !$o->hasBarItems()) continue;
+                        if ($type === 'food' && !$o->hasFoodItems()) continue;
+
                         if(isset($systemTotals[$m])) $systemTotals[$m] += $p->amount;
                     }
                 }

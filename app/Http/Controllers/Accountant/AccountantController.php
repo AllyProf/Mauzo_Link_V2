@@ -396,7 +396,7 @@ class AccountantController extends Controller
      */
     public function reconciliations(Request $request)
     {
-        if (!$this->hasPermission('finance', 'view') && !$this->hasPermission('reports', 'view')) {
+        if (!$this->hasPermission('finance', 'view') && !$this->hasPermission('reports', 'view') && !$this->hasPermission('bar_orders', 'view')) {
             abort(403, 'You do not have permission to view reconciliations.');
         }
 

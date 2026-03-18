@@ -72,6 +72,7 @@
             <i class="fa fa-money"></i> Financial Summary
           </a>
         </li>
+        @if($isManagerView)
         <li class="nav-item">
           <a class="nav-link tab-staff {{ $tab === 'waiters' ? 'active' : '' }}" 
              href="{{ route('accountant.reconciliations', ['tab' => 'waiters', 'start_date' => $startDate, 'end_date' => $endDate]) }}">
@@ -84,6 +85,7 @@
             <i class="fa fa-list-alt"></i> Detailed Audit Log
           </a>
         </li>
+        @endif
       </ul>
   </div>
 </div>
@@ -103,22 +105,6 @@
                   return $fr->total_submitted + $paid;
               });
               $summaryShortage = $summaryExpected - $summaryCollected;
-              
-              $user = auth()->user();
-              $isOwner = !session('is_staff');
-              $isStaffManager = false;
-              
-              if (session('is_staff')) {
-                  $staff = \App\Models\Staff::with('role')->find(session('staff_id'));
-                  if ($staff && $staff->role) {
-                      $roleName = strtolower(trim($staff->role->name ?? ''));
-                      if (in_array($roleName, ['manager', 'general manager', 'administrator'])) {
-                          $isStaffManager = true;
-                      }
-                  }
-              }
-              
-              $isManagerView = $isOwner || $isStaffManager;
           @endphp
 
           @if($isManagerView)

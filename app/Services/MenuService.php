@@ -13,8 +13,7 @@ class MenuService
      * Common menu slugs that appear at the top
      */
     protected const COMMON_SLUGS = [
-        'dashboard', 'sales', 'products', 'customers', 'staff', 
-        'hr', 'reports', 'marketing', 'settings', 'accountant', 'stock-audit'
+        'hr', 'reports', 'marketing', 'settings', 'accountant', 'stock-audit', 'counter-reconciliation'
     ];
 
     /**
@@ -180,6 +179,16 @@ class MenuService
                     return true;
                 }
                 
+                // Show Counter Reconciliation only for Counter
+                if ($menu->slug === 'counter-reconciliation') {
+                    return $isCounter;
+                }
+                
+                // Disallow Counter/Chef from accountant generic slug
+                if (($isCounter || $isChef) && $menu->slug === 'accountant') {
+                    return false;
+                }
+                
                 // Managers always see Stock Audit
                 $isManager = in_array($roleName, ['manager', 'general manager', 'administrator']) || in_array($roleSlug, ['manager', 'admin']);
                 if ($isManager && $menu->slug === 'stock-audit') {
@@ -288,7 +297,6 @@ class MenuService
                 'bar.counter.counter-stock', 'bar.counter.warehouse-stock', 'bar.counter.analytics',
                 'bar.counter.customer-orders', 'bar.counter.verify-reconciliation', 'bar.counter.mark-paid',
                 'bar.counter.mark-all-paid', 'bar.counter.update-order-status',
-                'accountant.reconciliations', // Link to the new unified view
                 'bar.stock-transfers.available', 'bar.stock-transfers.index', 'bar.stock-transfers.create',
                 'bar.stock-transfers.history', 'bar.counter.stock-transfer-requests', 'bar.counter.request-stock-transfer',
                 'bar.orders.index', 'bar.orders.drinks', 'bar.orders.food', 'bar.orders.juice', 'bar.orders.create',
@@ -311,7 +319,6 @@ class MenuService
                 'bar.chef.dashboard', 'bar.chef.kds', 'bar.chef.update-item-status', 'bar.chef.latest-orders',
                 'bar.chef.food-items', 'bar.chef.ingredients', 'bar.chef.ingredient-receipts',
                 'bar.chef.ingredient-batches', 'bar.chef.ingredient-stock-movements', 'bar.chef.reports',
-                'accountant.reconciliations', // Link for chef to see their food reconciliations
                 'bar.chef.reconciliation'
             ],
             'manager' => [

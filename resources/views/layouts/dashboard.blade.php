@@ -326,26 +326,8 @@
                 }
                 
                 // Generate full URL
-                // Generate full URL — override routes for specific staff roles
-                $menuRoute = $menu->route;
-                if ($menuRoute === 'accountant.reconciliations' && session('is_staff')) {
-                    $staffRoleSlug = session('staff_role_slug');
-                    
-                    // Fallback for users who haven't re-logged in
-                    if (!$staffRoleSlug && session('staff_id')) {
-                        $staffInfo = \App\Models\Staff::with('role')->find(session('staff_id'));
-                        $staffRoleSlug = strtolower($staffInfo->role->slug ?? '');
-                        // Cache it for the rest of the session
-                        session(['staff_role_slug' => $staffRoleSlug]);
-                    }
-
-                    if (in_array($staffRoleSlug, ['counter', 'waiter'])) {
-                        $menuRoute = 'bar.counter.reconciliation';
-                    } elseif ($staffRoleSlug === 'chef') {
-                        $menuRoute = 'bar.chef.reconciliation';
-                    }
-                }
-                $menu->full_url = $menuRoute ? route($menuRoute) : '#';
+                // Generate full URL
+                $menu->full_url = $menu->route ? route($menu->route) : '#';
                 
                 // Check if this is a common menu or business-specific menu
                 $isCommonMenu = in_array($menu->slug, $commonMenuSlugs);

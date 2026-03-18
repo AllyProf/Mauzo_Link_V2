@@ -14,7 +14,7 @@ class MenuService
      */
     protected const COMMON_SLUGS = [
         'dashboard', 'sales', 'products', 'customers', 'staff', 
-        'hr', 'reports', 'marketing', 'settings', 'accountant'
+        'hr', 'reports', 'marketing', 'settings', 'accountant', 'stock-audit'
     ];
 
     /**
@@ -174,9 +174,15 @@ class MenuService
                 $menu->children = $this->getCommonMenuChildrenForStaff($menu, $staffRole);
                 return $menu;
             })
-            ->filter(function($menu) use ($staffRole, $isCounter, $isStockKeeper, $isAccountant, $isHR) {
+            ->filter(function($menu) use ($staffRole, $isCounter, $isStockKeeper, $isAccountant, $isHR, $roleName, $roleSlug) {
                 // Dashboard is always shown
                 if ($menu->slug === 'dashboard') {
+                    return true;
+                }
+                
+                // Managers always see Stock Audit
+                $isManager = in_array($roleName, ['manager', 'general manager', 'administrator']) || in_array($roleSlug, ['manager', 'admin']);
+                if ($isManager && $menu->slug === 'stock-audit') {
                     return true;
                 }
                 
@@ -786,6 +792,7 @@ class MenuService
             'accountant.reports' => ['module' => 'reports', 'action' => 'view'],
             'reports.stock-receipts' => ['module' => 'reports', 'action' => 'view'],
             'reports.stock-transfers' => ['module' => 'reports', 'action' => 'view'],
+            'manager.stock-audit' => ['module' => 'reports', 'action' => 'view'],
             // HR Routes
             'hr.dashboard' => ['module' => 'hr', 'action' => 'view'],
             'hr.attendance' => ['module' => 'hr', 'action' => 'view'],

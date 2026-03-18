@@ -627,6 +627,19 @@ class AccountantController extends Controller
             $chartData['collected'][] = $vals['collected'];
         }
 
+        // ── Estimated Profit Calculation (Manager Utility) ──
+        $summaryProfit = \App\Models\OrderItem::whereHas('order', function($q) use ($ownerId, $startDate, $endDate, $location) {
+            $q->where('user_id', $ownerId)
+              ->where('status', 'served')
+              ->whereBetween('created_at', [Carbon::parse($startDate)->startOfDay(), Carbon::parse($endDate)->endOfDay()]);
+            if($location && $location !== 'all') {
+                $q->whereHas('table', function($sq) use ($location) { $sq->where('location', $location); });
+            }
+        })
+        ->join('product_variants', 'order_items.product_variant_id', '=', 'product_variants.id')
+        ->selectRaw('SUM((order_items.unit_price - product_variants.buying_price_per_unit) * order_items.quantity) as profit')
+        ->value('profit') ?? 0;
+
         return view('accountant.reconciliations', compact(
             'financialReconciliations',
             'waiterReconciliations',
@@ -636,7 +649,8 @@ class AccountantController extends Controller
             'tab',
             'staffMembers',
             'canReconcile',
-            'chartData'
+            'chartData',
+            'summaryProfit'
         ));
     }
 

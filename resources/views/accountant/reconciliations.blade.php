@@ -123,7 +123,7 @@
 
           @if($isManagerView)
           <div class="row mb-4">
-              <div class="col-md-4">
+              <div class="col-md-3">
                   <div class="widget-small primary coloured-icon"><i class="icon fa fa-shopping-cart fa-3x"></i>
                       <div class="info">
                           <p class="text-uppercase small font-weight-bold">Total Expected (Sales)</p>
@@ -131,7 +131,7 @@
                       </div>
                   </div>
               </div>
-              <div class="col-md-4">
+              <div class="col-md-3">
                   <div class="widget-small success coloured-icon"><i class="icon fa fa-money fa-3x"></i>
                       <div class="info">
                           <p class="text-uppercase small font-weight-bold" style="color: #000 !important;">Total Collected (Actual)</p>
@@ -139,11 +139,19 @@
                       </div>
                   </div>
               </div>
-              <div class="col-md-4">
+              <div class="col-md-3">
                   <div class="widget-small {{ $summaryShortage > 0 ? 'danger' : 'info' }} coloured-icon"><i class="icon fa {{ $summaryShortage > 0 ? 'fa-minus-circle' : 'fa-check-circle' }} fa-3x"></i>
                       <div class="info">
                           <p class="text-uppercase small font-weight-bold">Outstanding Shortage</p>
                           <p><b>TSh {{ number_format($summaryShortage) }}</b></p>
+                      </div>
+                  </div>
+              </div>
+              <div class="col-md-3">
+                  <div class="widget-small warning coloured-icon"><i class="icon fa fa-line-chart fa-3x"></i>
+                      <div class="info">
+                          <p class="text-uppercase small font-weight-bold">Estimated Gross Profit</p>
+                          <p><b>TSh {{ number_format($summaryProfit) }}</b></p>
                       </div>
                   </div>
               </div>

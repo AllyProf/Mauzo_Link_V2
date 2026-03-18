@@ -132,19 +132,27 @@
                       @endif
                     </td>
                     <td><strong>TSh {{ number_format($fr->total_expected) }}</strong></td>
-                    <td><strong>TSh {{ number_format($fr->total_submitted) }}</strong></td>
+                    <td>
+                        <strong>TSh {{ number_format($fr->total_submitted + $rowTotalPaid) }}</strong>
+                        @if($rowTotalPaid > 0)
+                            <br><small class="text-muted">(Incl. TSh {{ number_format($rowTotalPaid) }} paid)</small>
+                        @endif
+                    </td>
                     <td>TSh {{ number_format($fr->total_cash) }}</td>
                     <td>TSh {{ number_format($fr->total_mobile) }}</td>
                     <td>TSh {{ number_format($fr->total_bank ?? 0) }}</td>
                     <td>TSh {{ number_format($fr->total_card ?? 0) }}</td>
                     <td>
-                      @php $diff = $fr->total_submitted - $fr->total_expected; @endphp
-                      @if($diff < 0)
-                        <span class="text-danger">TSh {{ number_format($diff) }}</span>
-                      @elseif($diff > 0)
-                        <span class="text-success">+TSh {{ number_format($diff) }}</span>
+                      @php 
+                        $netSubmitted = $fr->total_submitted + $rowTotalPaid;
+                        $netDiff = $netSubmitted - $fr->total_expected; 
+                      @endphp
+                      @if($netDiff < 0)
+                        <span class="text-danger">TSh {{ number_format($netDiff) }}</span>
+                      @elseif($netDiff > 0)
+                        <span class="text-success">+TSh {{ number_format($netDiff) }}</span>
                       @else
-                        <span class="text-muted">Balanced</span>
+                        <span class="text-success small font-weight-bold"><i class="fa fa-check-circle"></i> Balanced</span>
                       @endif
                     </td>
                     <td>

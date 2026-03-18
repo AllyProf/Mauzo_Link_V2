@@ -329,7 +329,16 @@
                 // Generate full URL — override routes for specific staff roles
                 $menuRoute = $menu->route;
                 if ($menuRoute === 'accountant.reconciliations' && session('is_staff')) {
-                    $staffRoleSlug = session('staff_role_slug') ?? '';
+                    $staffRoleSlug = session('staff_role_slug');
+                    
+                    // Fallback for users who haven't re-logged in
+                    if (!$staffRoleSlug && session('staff_id')) {
+                        $staffInfo = \App\Models\Staff::with('role')->find(session('staff_id'));
+                        $staffRoleSlug = strtolower($staffInfo->role->slug ?? '');
+                        // Cache it for the rest of the session
+                        session(['staff_role_slug' => $staffRoleSlug]);
+                    }
+
                     if (in_array($staffRoleSlug, ['counter', 'waiter'])) {
                         $menuRoute = 'bar.counter.reconciliation';
                     } elseif ($staffRoleSlug === 'chef') {

@@ -134,8 +134,8 @@
               <div class="col-md-4">
                   <div class="widget-small success coloured-icon"><i class="icon fa fa-money fa-3x"></i>
                       <div class="info">
-                          <p class="text-uppercase small font-weight-bold">Total Collected (Actual)</p>
-                          <p><b>TSh {{ number_format($summaryCollected) }}</b></p>
+                          <p class="text-uppercase small font-weight-bold" style="color: #000 !important;">Total Collected (Actual)</p>
+                          <p><b style="color: #000 !important;">TSh {{ number_format($summaryCollected) }}</b></p>
                       </div>
                   </div>
               </div>

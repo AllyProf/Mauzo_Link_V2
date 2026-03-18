@@ -13,6 +13,7 @@ class MenuService
      * Common menu slugs that appear at the top
      */
     protected const COMMON_SLUGS = [
+        'dashboard', 'sales', 'products', 'customers', 'staff', 
         'hr', 'reports', 'marketing', 'settings', 'accountant', 'stock-audit', 'counter-reconciliation'
     ];
 
@@ -163,6 +164,7 @@ class MenuService
         $isStockKeeper = in_array($roleName, ['stock keeper', 'stockkeeper']) || in_array($roleSlug, ['stock-keeper', 'stockkeeper']);
         $isAccountant = in_array($roleName, ['accountant', 'finance manager', 'finance']) || in_array($roleSlug, ['accountant']);
         $isHR = in_array($roleName, ['hr', 'hr manager', 'human resources']) || in_array($roleSlug, ['hr-manager', 'hr']);
+        $isChef = in_array($roleName, ['chef', 'head chef', 'cook']) || in_array($roleSlug, ['chef']);
         
         $menus = MenuItem::whereIn('slug', self::COMMON_SLUGS)
             ->whereNull('parent_id')

@@ -201,7 +201,7 @@
                                         <span class="badge badge-danger p-2 mb-1 d-block"><i class="fa fa-warning"></i> Remaining: TSh {{ number_format($remaining) }}</span>
                                         <span class="badge badge-warning p-2 d-block"><i class="fa fa-clock-o"></i> Total Paid: TSh {{ number_format($totalPaid) }} ({{ $percent }}%)</span>
                                     @else
-                                        <span class="badge badge-danger p-2 d-block"><i class="fa fa-warning"></i> Shortage: TSh {{ number_format(abs($diff)) }}</span>
+                                        <span class="badge badge-danger p-2 d-block"><i class="fa fa-warning"></i> Shortage: TSh {{ number_format(abs($rowDiff)) }}</span>
                                     @endif
                                 </div>
                                 <button class="btn btn-sm btn-success pay-shortage-btn mr-2" 

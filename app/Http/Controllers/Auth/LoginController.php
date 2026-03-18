@@ -179,6 +179,7 @@ class LoginController extends Controller
             $request->session()->put('staff_email', $staff->email);
             $request->session()->put('staff_role_id', $staff->role_id);
             $request->session()->put('staff_user_id', $staff->user_id);
+            $request->session()->put('staff_role_slug', strtolower($staff->role->slug ?? ''));
             $request->session()->put('is_staff', true);
 
             // Ensure session is saved
@@ -228,6 +229,7 @@ class LoginController extends Controller
                 'staff_email',
                 'staff_role_id',
                 'staff_user_id',
+                'staff_role_slug',
                 'is_staff'
             ]);
         }

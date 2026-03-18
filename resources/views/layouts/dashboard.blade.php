@@ -326,7 +326,17 @@
                 }
                 
                 // Generate full URL
-                $menu->full_url = $menu->route ? route($menu->route) : '#';
+                // Generate full URL — override routes for specific staff roles
+                $menuRoute = $menu->route;
+                if ($menuRoute === 'accountant.reconciliations' && session('is_staff')) {
+                    $staffRoleSlug = session('staff_role_slug') ?? '';
+                    if (in_array($staffRoleSlug, ['counter', 'waiter'])) {
+                        $menuRoute = 'bar.counter.reconciliation';
+                    } elseif ($staffRoleSlug === 'chef') {
+                        $menuRoute = 'bar.chef.reconciliation';
+                    }
+                }
+                $menu->full_url = $menuRoute ? route($menuRoute) : '#';
                 
                 // Check if this is a common menu or business-specific menu
                 $isCommonMenu = in_array($menu->slug, $commonMenuSlugs);

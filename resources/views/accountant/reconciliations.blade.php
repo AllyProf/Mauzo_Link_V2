@@ -175,14 +175,14 @@
                                 data-card-recorded="{{ $fr->total_card ?? 0 }}">
                             <i class="fa fa-check-circle"></i> Reconcile Now
                         </button>
-                        @elseif($diff < 0)
+                        @elseif($rowDiff < 0)
                         <div class="d-flex align-items-center">
                             @php
                                 $totalPaid = 0;
                                 if(preg_match('/\[ShortagePaidTotal:(\d+)\]/', $fr->notes ?? '', $m)) $totalPaid = (int)$m[1];
-                                $isFullyPaid = $totalPaid >= abs($diff);
-                                $remaining = abs($diff) - $totalPaid;
-                                $percent = abs($diff) > 0 ? round(($totalPaid / abs($diff)) * 100) : 0;
+                                $isFullyPaid = $totalPaid >= abs($rowDiff);
+                                $remaining = abs($rowDiff) - $totalPaid;
+                                $percent = abs($rowDiff) > 0 ? round(($totalPaid / abs($rowDiff)) * 100) : 0;
                             @endphp
 
                             @if($isFullyPaid)

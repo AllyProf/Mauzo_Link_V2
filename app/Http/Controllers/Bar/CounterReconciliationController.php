@@ -46,7 +46,7 @@ class CounterReconciliationController extends Controller
                 $query->whereHas('role', function($q) {
                     $q->whereIn('slug', ['waiter']);
                 })
-                ->orWhereHas('barOrders', function($q) use ($date, $location) {
+                ->orWhereHas('orders', function($q) use ($date, $location) {
                     $q->whereDate('created_at', $date)
                       ->when($location && $location !== 'all', function($sq) use ($location) {
                           $sq->whereHas('table', function($tsq) use ($location) {

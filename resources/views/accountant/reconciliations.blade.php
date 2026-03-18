@@ -119,7 +119,7 @@
                   @php
                       $rowDiff = $fr->total_submitted - $fr->total_expected;
                       $rowTotalPaid = 0;
-                      if(preg_match('/\[ShortagePaidTotal:(\d+)\]/', $fr->notes, $m)) $rowTotalPaid = (int)$m[1];
+                      if(preg_match('/\[ShortagePaidTotal:(\d+)\]/', $fr->notes ?? '', $m)) $rowTotalPaid = (int)$m[1];
                       $hasActiveShortage = $rowDiff < 0 && $rowTotalPaid < abs($rowDiff);
                   @endphp
                   <tr class="{{ $hasActiveShortage ? 'table-danger' : ($rowDiff < 0 ? 'table-success-light' : '') }}" style="{{ $hasActiveShortage ? 'background-color: #fff5f5;' : '' }}">
@@ -171,7 +171,7 @@
                         <div class="d-flex align-items-center">
                             @php
                                 $totalPaid = 0;
-                                if(preg_match('/\[ShortagePaidTotal:(\d+)\]/', $fr->notes, $m)) $totalPaid = (int)$m[1];
+                                if(preg_match('/\[ShortagePaidTotal:(\d+)\]/', $fr->notes ?? '', $m)) $totalPaid = (int)$m[1];
                                 $isFullyPaid = $totalPaid >= abs($diff);
                                 $remaining = abs($diff) - $totalPaid;
                                 $percent = abs($diff) > 0 ? round(($totalPaid / abs($diff)) * 100) : 0;

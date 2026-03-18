@@ -459,7 +459,8 @@ class AccountantController extends Controller
                         'total_bank' => 0,
                         'total_card' => 0,
                         'waiter_count' => 0,
-                        'status_indicator' => 'pending'
+                        'status_indicator' => 'pending',
+                        'notes' => ''
                     ];
                 }
                 $pendingAggr[$key]['total_expected'] += $barAmount;
@@ -491,7 +492,8 @@ class AccountantController extends Controller
                         'total_bank' => 0,
                         'total_card' => 0,
                         'waiter_count' => 0,
-                        'status_indicator' => 'pending'
+                        'status_indicator' => 'pending',
+                        'notes' => ''
                     ];
                 }
                 $pendingAggr[$key]['total_expected'] += $foodAmount;

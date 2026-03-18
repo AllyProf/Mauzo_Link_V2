@@ -100,12 +100,12 @@ class StockAuditController extends Controller
         }
 
         $sales = TransferSale::where('stock_transfer_id', $transfer->id)
-            ->with(['orderItem.order.waiterStaff'])
+            ->with(['orderItem.order.waiter'])
             ->get()
             ->map(function($ts) {
                 return [
-                    'order_number' => $ts->orderItem->order->order_number,
-                    'waiter' => $ts->orderItem->order->waiterStaff->name ?? 'System',
+                    'order_number' => $ts->orderItem->order->order_number ?? 'N/A',
+                    'waiter' => $ts->orderItem->order->waiter->name ?? 'System',
                     'qty' => $ts->quantity,
                     'unit_price' => $ts->unit_price,
                     'total_price' => $ts->total_price,

@@ -75,9 +75,12 @@
               <tr>
                 <th style="border-top-left-radius: 8px;">Product Variant</th>
                 <th class="text-center">Qty (Pkgs)</th>
-                <th class="text-center">Total Units</th>
-                <th class="text-right">Buying Cost</th>
-                <th class="text-right" style="border-top-right-radius: 8px;">Profit Margin</th>
+                <th class="text-center">Units</th>
+                <th class="text-right">Buy Price</th>
+                <th class="text-right">Sell Price</th>
+                <th class="text-right">Discount</th>
+                <th class="text-right">Total Cost</th>
+                <th class="text-right" style="border-top-right-radius: 8px;">Total Profit</th>
               </tr>
             </thead>
             <tbody>
@@ -85,7 +88,7 @@
               @forelse($receipts as $receipt)
                 @if($lastReceiptNumber !== $receipt->receipt_number)
                   <tr style="background-color: #f0f4f8; border-top: 3px solid #dee2e6;">
-                    <td colspan="5" class="py-3">
+                    <td colspan="8" class="py-3">
                         <div class="d-flex justify-content-between align-items-center">
                             <div>
                                 <span class="badge badge-dark p-2" style="font-size: 0.9rem; border-radius: 6px;">
@@ -113,12 +116,21 @@
                   </td>
                   <td class="text-center font-weight-bold" style="color: #555;">{{ $receipt->quantity_received }}</td>
                   <td class="text-center font-weight-bold" style="color: #555;">{{ $receipt->total_units }}</td>
+                  <td class="text-right" style="color: #666;">TSh {{ number_format($receipt->buying_price_per_unit) }}</td>
+                  <td class="text-right" style="color: #666;">TSh {{ number_format($receipt->selling_price_per_unit) }}</td>
+                  <td class="text-right text-info">
+                      @if($receipt->discount_amount > 0)
+                        {{ $receipt->discount_type == 'percent' ? $receipt->discount_amount.'%' : 'TSh '.number_format($receipt->discount_amount) }}
+                      @else
+                        -
+                      @endif
+                  </td>
                   <td class="text-right text-danger font-weight-bold" style="font-size: 1.05rem;">TSh {{ number_format($receipt->final_buying_cost) }}</td>
                   <td class="text-right text-success font-weight-bold" style="font-size: 1.05rem;">TSh {{ number_format($receipt->total_profit) }}</td>
                 </tr>
               @empty
               <tr>
-                <td colspan="5" class="text-center text-muted py-5">
+                <td colspan="8" class="text-center text-muted py-5">
                     <i class="fa fa-info-circle fa-3x mb-3 d-block opacity-50"></i>
                     No stock receipts found for the selected period.
                 </td>
@@ -126,6 +138,10 @@
               @endforelse
             </tbody>
           </table>
+        </div>
+
+        <div class="d-flex justify-content-center mt-3">
+            {!! $receipts->appends(request()->query())->links() !!}
         </div>
       </div>
     </div>

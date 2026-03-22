@@ -1387,7 +1387,7 @@ class AccountantController extends Controller
             })
             ->with(['supplier', 'productVariant.product', 'receivedBy'])
             ->orderBy('received_date', 'desc')
-            ->get();
+            ->paginate(50);
 
         $groupSummary = \App\Models\StockReceipt::where('user_id', $ownerId)
             ->whereBetween('received_date', [$startDate, $endDate])

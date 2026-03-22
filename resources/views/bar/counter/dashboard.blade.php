@@ -134,25 +134,29 @@
     <!-- Statistics Cards -->
     <div class="row">
       <div class="col-md-3">
-        <div class="widget-small primary coloured-icon">
-          <i class="icon fa fa-archive fa-3x"></i>
-          <div class="info">
-            <h4>Warehouse Stock</h4>
-            <p><b>{{ $warehouseStockItems ?? 0 }} items</b></p>
-          </div>
-        </div>
+        <a href="{{ route('bar.counter.warehouse-stock') }}" style="text-decoration: none;">
+            <div class="widget-small primary coloured-icon">
+              <i class="icon fa fa-archive fa-3x"></i>
+              <div class="info">
+                <h4>Warehouse Stock</h4>
+                <p><b>{{ $warehouseStockItems ?? 0 }} items</b></p>
+              </div>
+            </div>
+        </a>
       </div>
       <div class="col-md-3">
-        <div class="widget-small info coloured-icon">
-          <i class="icon fa fa-cubes fa-3x"></i>
-          <div class="info">
-            <h4>Counter Stock Items</h4>
-            <p><b>{{ $counterStockItems }}</b></p>
-            @if($lowStockItems > 0)
-              <small class="text-warning">{{ $lowStockItems }} low stock</small>
-            @endif
-          </div>
-        </div>
+        <a href="{{ route('bar.counter.counter-stock') }}" style="text-decoration: none;">
+            <div class="widget-small info coloured-icon">
+              <i class="icon fa fa-cubes fa-3x"></i>
+              <div class="info">
+                <h4>Counter Stock Items</h4>
+                <p><b>{{ $counterStockItems }}</b></p>
+                @if($lowStockItems > 0)
+                  <small class="text-warning">{{ $lowStockItems }} low stock</small>
+                @endif
+              </div>
+            </div>
+        </a>
       </div>
       <div class="col-md-3">
         <div class="widget-small warning coloured-icon">
@@ -207,6 +211,12 @@
                 <a href="{{ route('bar.counter.counter-stock') }}" class="btn btn-success btn-block btn-lg">
                   <i class="fa fa-cubes fa-2x"></i><br>
                   Counter Stock
+                </a>
+              </div>
+              <div class="col-md-3 mb-3">
+                <a href="{{ route('bar.counter.warehouse-stock') }}" class="btn btn-secondary btn-block btn-lg">
+                  <i class="fa fa-archive fa-2x"></i><br>
+                  Warehouse Stock
                 </a>
               </div>
               <div class="col-md-3 mb-3">

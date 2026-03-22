@@ -640,11 +640,12 @@ class CounterController extends Controller
                     'category' => $variant->product->category ?? 'General',
                     'variant' => $variant->measurement,
                     'packaging' => $variant->packaging,
+                    'items_per_package' => $variant->items_per_package ?? 1,
                     'product_image' => $variant->product->image,
                     'warehouse_quantity' => $warehouseStock->quantity,
                     'counter_quantity' => $counterStock ? $counterStock->quantity : 0,
                     'buying_price' => $warehouseStock->average_buying_price ?? $variant->buying_price_per_unit ?? 0,
-                    'selling_price' => $counterStock ? ($counterStock->selling_price ?? $variant->selling_price_per_unit ?? 0) : ($variant->selling_price_per_unit ?? 0),
+                    'selling_price' => $variant->selling_price_per_unit ?? 0,
                 ];
             });
 

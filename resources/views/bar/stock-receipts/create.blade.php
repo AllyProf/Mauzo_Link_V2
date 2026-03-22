@@ -609,8 +609,22 @@ $(document).ready(function() {
                         <div class="font-weight-bold text-dark mb-1" style="font-size:14px;">${item.name} ${item.packaging} (${item.conversion_qty} Btl/Pc)</div>
                         
                         <div class="d-flex align-items-center mb-1 smallest">
-                            <span class="badge badge-light border text-muted mr-2">
-                                <i class="fa fa-home"></i> Stock: ${item.existing_quantity || 0} unit(s)
+                            <span class="badge ${item.existing_quantity <= 0 ? 'badge-danger' : (item.existing_quantity < (item.items_per_package || 1) ? 'badge-warning' : 'badge-success')} border mr-2 font-weight-bold shadow-sm" style="font-size: 10px; padding: 3px 8px;">
+                                <i class="fa fa-cubes"></i> ${item.existing_quantity || 0} 
+                                ${(() => {
+                                    const u = (item.unit || '').toLowerCase();
+                                    if(u.includes('btl') || u.includes('ml') || u.includes('bottle') || !u) return 'btl';
+                                    if(u.includes('pc')) return 'pc';
+                                    return u.substring(0,3);
+                                })()}s
+                                (${(item.existing_quantity / (item.items_per_package || 1)) % 1 === 0 ? (item.existing_quantity / (item.items_per_package || 1)) : (item.existing_quantity / (item.items_per_package || 1)).toFixed(1)} 
+                                ${(() => {
+                                    const p = (item.packaging || 'pkg').toLowerCase();
+                                    if(p.includes('crate')) return 'crt';
+                                    if(p.includes('carton')) return 'ctn';
+                                    if(p.includes('piece')) return 'pc';
+                                    return p.substring(0,3);
+                                })()}s)
                             </span>
                             ${item.buying_price_per_unit != item.last_known_buy ? `
                                 <span class="text-warning font-weight-bold" title="Price changed from previous reception">
@@ -862,100 +876,98 @@ $(document).ready(function() {
 
     $('#stockReceiptForm').on('submit', function(e) {
         e.preventDefault();
+        
         if(receiptItems.length === 0) { showToast('error', 'List is empty!'); return; }
         if(!$('#supplier_id').val()) { showToast('error', 'Select supplier.'); return; }
 
         const myForm = this;
         const btn = $('#submitBtn');
         const oldHtml = btn.html();
-        
         const entriesToSubmit = receiptItems.filter(item => cleanNum(item.quantity_received) > 0);
-        
+
         if(entriesToSubmit.length === 0) { 
             showToast('error', 'Please enter quantity for at least one item.');
-            btn.prop('disabled', false).html(oldHtml);
             return; 
         }
 
-        // --- STRICT VALIDATION ---
-        let validationError = null;
-        entriesToSubmit.forEach(item => {
-            const buyingPrice = cleanNum(item.buying_price_per_unit);
-            const sellingPrice = cleanNum(item.selling_price_per_unit);
-            const totPrice = cleanNum(item.selling_price_per_tot);
-            
-            if (buyingPrice <= 0) {
-                validationError = `Set buying price for: ${item.name}`;
-                return;
-            }
-
-            // Force based on selling type
-            if ((item.selling_type === 'bottle' || item.selling_type === 'mixed') && sellingPrice <= 0) {
-                validationError = `Set Bottle selling price for: ${item.name}`;
-                return;
-            }
-
-            if ((item.selling_type === 'glass' || item.selling_type === 'mixed') && totPrice <= 0) {
-                validationError = `Set Glass/Portion price for: ${item.name}`;
-                return;
-            }
-        });
-
-        if (validationError) {
-            showToast('error', validationError);
-            btn.prop('disabled', false).html(oldHtml);
-            return;
-        }
-        // -------------------------
-
-        const formData = new FormData(myForm);
-        formData.delete('items');
-
-        entriesToSubmit.forEach((item, index) => {
-            formData.append(`items[${index}][product_variant_id]`, item.product_variant_id);
-            formData.append(`items[${index}][quantity_received]`, item.quantity_received); 
-            formData.append(`items[${index}][buying_price_per_unit]`, item.buying_price_per_unit);
-            formData.append(`items[${index}][selling_price_per_unit]`, item.selling_price_per_unit);
-            formData.append(`items[${index}][selling_price_per_tot]`, item.selling_price_per_tot || 0);
-            formData.append(`items[${index}][expiry_date]`, item.expiry_date || '');
-            formData.append(`items[${index}][discount_type]`, item.discount_type);
-            formData.append(`items[${index}][discount_amount]`, item.discount_amount);
-        });
-
-        fetch(myForm.action, {
-            method: 'POST',
-            body: formData,
-            headers: { 'X-Requested-With': 'XMLHttpRequest' }
-        })
-        .then(res => res.json())
-        .then(data => {
-            if(data.alert_success || data.success) {
-                const receiptNum = data.receipt_number;
+        Swal.fire({
+            title: 'Confirm Stock Batch',
+            text: `Post this receipt with ${entriesToSubmit.length} items to Warehouse now?`,
+            icon: 'question',
+            showCancelButton: true,
+            confirmButtonColor: '#940000',
+            confirmButtonText: 'Yes, Post Receipt!',
+            cancelButtonText: 'Review More'
+        }).then((result) => {
+            if (result.isConfirmed) {
                 Swal.fire({
-                    title: 'Stock Updated!',
-                    text: data.message || 'Receipt posted successfully.',
-                    icon: 'success',
-                    showCancelButton: true,
-                    confirmButtonColor: '#940000',
-                    cancelButtonColor: '#6c757d',
-                    confirmButtonText: '<i class="fa fa-print"></i> PRINT RECEIPT',
-                    cancelButtonText: 'Go to List'
-                }).then((result) => {
-                    if (result.isConfirmed) {
-                        window.location.href = `{{ url('bar/stock-receipts/print-batch') }}/${receiptNum}?auto_print=1`;
-                    } else {
-                        window.location.href = "{{ route('bar.stock-receipts.index') }}";
+                    title: 'Processing...',
+                    text: 'Updating inventory and costs. Please wait.',
+                    allowOutsideClick: false,
+                    didOpen: () => {
+                        Swal.showLoading();
                     }
                 });
-            } else {
-                showToast('error', data.message || 'Error occurred.');
-                btn.prop('disabled', false).html(oldHtml);
+
+                // --- VALIDATION ---
+                let validationError = null;
+                entriesToSubmit.forEach(item => {
+                    if (cleanNum(item.buying_price_per_unit) <= 0) validationError = `Set buying price for: ${item.name}`;
+                    if ((item.selling_type === 'bottle' || item.selling_type === 'mixed') && cleanNum(item.selling_price_per_unit) <= 0) validationError = `Set Bottle selling price for: ${item.name}`;
+                    if ((item.selling_type === 'glass' || item.selling_type === 'mixed') && cleanNum(item.selling_price_per_tot) <= 0) validationError = `Set Glass/Portion price for: ${item.name}`;
+                });
+
+                if (validationError) {
+                    Swal.fire('Validation Error', validationError, 'error');
+                    return;
+                }
+
+                const formData = new FormData(myForm);
+                formData.delete('items');
+                entriesToSubmit.forEach((item, index) => {
+                    formData.append(`items[${index}][product_variant_id]`, item.product_variant_id);
+                    formData.append(`items[${index}][quantity_received]`, item.quantity_received); 
+                    formData.append(`items[${index}][buying_price_per_unit]`, item.buying_price_per_unit);
+                    formData.append(`items[${index}][selling_price_per_unit]`, item.selling_price_per_unit);
+                    formData.append(`items[${index}][selling_price_per_tot]`, item.selling_price_per_tot || 0);
+                    formData.append(`items[${index}][expiry_date]`, item.expiry_date || '');
+                    formData.append(`items[${index}][discount_type]`, item.discount_type);
+                    formData.append(`items[${index}][discount_amount]`, item.discount_amount);
+                });
+
+                fetch(myForm.action, {
+                    method: 'POST',
+                    body: formData,
+                    headers: { 'X-Requested-With': 'XMLHttpRequest' }
+                })
+                .then(res => res.json())
+                .then(data => {
+                    if(data.alert_success || data.success) {
+                        const receiptNum = data.receipt_number;
+                        Swal.fire({
+                            title: 'Stock Updated!',
+                            text: data.message || 'Receipt posted successfully.',
+                            icon: 'success',
+                            showCancelButton: true,
+                            confirmButtonColor: '#940000',
+                            confirmButtonText: '<i class="fa fa-print"></i> PRINT RECEIPT',
+                            cancelButtonText: 'Go to List'
+                        }).then((res2) => {
+                            if (res2.isConfirmed) {
+                                window.location.href = `{{ url('bar/stock-receipts/print-batch') }}/${receiptNum}?auto_print=1`;
+                            } else {
+                                window.location.href = "{{ route('bar.stock-receipts.index') }}";
+                            }
+                        });
+                    } else {
+                        Swal.fire('Error', data.message || 'Error occurred.', 'error');
+                    }
+                })
+                .catch(err => {
+                    console.error(err);
+                    Swal.fire('Server Error', 'Could not connect to server.', 'error');
+                });
             }
-        })
-        .catch(err => {
-            console.error(err);
-            showToast('error', 'Server error.');
-            btn.prop('disabled', false).html(oldHtml);
         });
     });
 });

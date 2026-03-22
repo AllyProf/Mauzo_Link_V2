@@ -84,68 +84,75 @@
           <div class="col-md-9">
               <label class="control-label font-weight-bold">Quick Filters (Categories & Brands)</label>
               <div class="category-tabs-wrapper">
-                  <div class="d-flex align-items-center overflow-auto no-scrollbar py-1" id="categoryContainer">
-                      <button class="btn btn-sm btn-outline-primary active filter-pill mr-1 mb-1" data-filter="all" data-filter-type="category">
-                          ALL ITEMS
-                      </button>
-                      @foreach($categories as $label)
-                          <button class="btn btn-sm btn-outline-primary filter-pill mr-1 mb-1" data-filter="{{ Str::slug($label) }}" data-filter-type="category">
-                              {{ strtoupper($label) }}
-                          </button>
-                      @endforeach
-                      <div class="mx-2 border-right h-100" style="height: 24px !important;"></div>
-                      @foreach($brands as $label)
-                          <button class="btn btn-sm btn-outline-info filter-pill mr-1 mb-1" data-filter="{{ Str::slug($label) }}" data-filter-type="brand">
-                              {{ $label }}
-                          </button>
-                      @endforeach
-                  </div>
-              </div>
-          </div>
-      </div>
+                    <div class="d-flex align-items-center overflow-auto no-scrollbar py-1" id="categoryContainer">
+                        <button class="btn btn-sm btn-outline-primary active filter-pill mr-1 mb-1" data-filter="all" data-filter-type="category">
+                            ALL ITEMS
+                        </button>
+                        @foreach($categories as $label)
+                            <button class="btn btn-sm btn-outline-primary filter-pill mr-1 mb-1" data-filter="{{ Str::slug($label) }}" data-filter-type="category">
+                                {{ strtoupper($label) }}
+                            </button>
+                        @endforeach
+                    </div>
+                </div>
+            </div>
+        </div>
 
-      <hr class="mb-4">
+        <hr class="mb-4">
 
-      <div class="tile-body">
-        @if(count($variants) > 0)
-          
-          <!-- INVENTORY GRID -->
-          <div class="row mt-2" id="inventoryGrid">
-            @foreach($variants as $variant)
-            @php
-              $catSlug   = \Illuminate\Support\Str::slug($variant['category']);
-              $brandSlug = \Illuminate\Support\Str::slug($variant['brand']);
-              $qty       = $variant['warehouse_quantity'];
-              $counter   = $variant['counter_quantity'];
-              
-              // Build full title
-              $displayTitle = $variant['product_name'];
-              if (!empty($variant['variant_name']) && $variant['variant_name'] !== $variant['product_name']) {
-                  $displayTitle = $variant['product_name'] . ' (' . $variant['variant_name'] . ')';
-              }
-            @endphp
-            <div class="col-md-4 mb-4 product-card-wrapper" 
-                 data-category="{{ $catSlug }}" 
-                 data-brand="{{ $brandSlug }}"
-                 data-name="{{ strtolower($displayTitle) }} {{ strtolower($variant['brand'] ?? '') }} {{ strtolower($variant['category']) }}">
-              
-              <div class="tile p-3 h-100 mb-0 shadow-sm border-0 inventory-item-card transition-all" style="border-radius: 15px;">
-                  <div class="d-flex justify-content-between align-items-start mb-2">
-                      <div class="flex-grow-1 pr-2">
-                          <h6 class="font-weight-bold text-primary mb-1 line-clamp-1" title="{{ $displayTitle }}">{{ $displayTitle }}</h6>
-                          <p class="text-muted smallest mb-0">{{ $variant['brand'] }} • {{ $variant['category'] }}</p>
-                      </div>
-                      <span class="badge badge-secondary px-2 py-1 smallest">{{ $variant['variant'] }}</span>
-                  </div>
+        <div class="tile-body">
+            @if(count($variants) > 0)
+            
+            <!-- INVENTORY GRID -->
+            <div class="row mt-2" id="inventoryGrid">
+                @foreach($variants as $variant)
+                @php
+                    $catSlug   = \Illuminate\Support\Str::slug($variant['category']);
+                    $brandSlug = \Illuminate\Support\Str::slug($variant['brand'] ?? 'none');
+                    $qty       = $variant['warehouse_quantity'];
+                    $counter   = $variant['counter_quantity'];
+                    
+                    // Simplify: Just use Variant Name if available (e.g. Fanta Orange)
+                    $displayTitle = !empty($variant['variant_name']) ? $variant['variant_name'] : $variant['product_name'];
+                @endphp
+                <div class="col-md-4 mb-4 product-card-wrapper" 
+                    data-category="{{ $catSlug }}" 
+                    data-brand="{{ $brandSlug }}"
+                    data-name="{{ strtolower($displayTitle) }} {{ strtolower($variant['category']) }}">
+                
+                <div class="tile p-3 h-100 mb-0 shadow-sm border-0 inventory-item-card transition-all" style="border-radius: 15px;">
+                    <div class="d-flex justify-content-between align-items-start mb-2">
+                        <div class="flex-grow-1 pr-2">
+                            <h6 class="font-weight-bold text-primary mb-1 line-clamp-1" title="{{ $displayTitle }}">{{ $displayTitle }}</h6>
+                            <p class="text-muted smallest mb-0">{{ $variant['category'] }}</p>
+                        </div>
+                        <span class="badge badge-secondary px-2 py-1 smallest">{{ $variant['variant'] }}</span>
+                    </div>
 
                   <div class="bg-light p-2 rounded mb-3">
+                      @php
+                         $conv = $variant['items_per_package'] ?: 1;
+                         // Standardize package labels
+                         $pkgRaw = strtolower($variant['packaging'] ?? 'pkg');
+                         $pkgShort = 'pkg';
+                         if (strpos($pkgRaw, 'crate') !== false) $pkgShort = 'crt';
+                         elseif (strpos($pkgRaw, 'carton') !== false) $pkgShort = 'ctn';
+                         elseif (strpos($pkgRaw, 'piece') !== false) $pkgShort = 'pc';
+
+                         // Calculate package units
+                         $warehousePkg = $qty / $conv;
+                         $counterPkg = $counter / $conv;
+                         
+                         $fmtWh = ($warehousePkg == (int)$warehousePkg) ? (int)$warehousePkg : number_format($warehousePkg, 1);
+                         $fmtCr = ($counterPkg == (int)$counterPkg) ? (int)$counterPkg : number_format($counterPkg, 1);
+                      @endphp
                       <div class="d-flex justify-content-between small mb-1">
                           <span class="text-muted">Warehouse stock:</span>
-                          <strong class="text-info">{{ number_format($qty) }} btl</strong>
+                          <strong class="text-info">{{ number_format($qty) }} btl ({{ $fmtWh }} {{ $pkgShort }}s)</strong>
                       </div>
                       <div class="d-flex justify-content-between smallest border-top pt-1 mt-1">
                           <span class="text-muted">Currently at counter:</span>
-                          <strong class="text-{{ $counter > 0 ? 'success' : 'muted' }}">{{ number_format($counter) }} btl</strong>
+                          <strong class="text-{{ $counter > 0 ? 'success' : 'muted' }}">{{ number_format($counter) }} btl ({{ $fmtCr }} {{ $pkgShort }}s)</strong>
                       </div>
                   </div>
 
@@ -193,11 +200,24 @@
                       @foreach($variants as $variant)
                         @php
                           $catSlug = Str::slug($variant['category']);
-                          $brandSlug = Str::slug($variant['brand']);
-                          $displayTitle = $variant['product_name'];
-                          if (!empty($variant['variant_name']) && $variant['variant_name'] !== $variant['product_name']) {
-                              $displayTitle = $variant['product_name'] . ' (' . $variant['variant_name'] . ')';
-                          }
+                          $brandSlug = Str::slug($variant['brand'] ?? '');
+                          $displayTitle = !empty($variant['variant_name']) ? $variant['variant_name'] : $variant['product_name'];
+                          
+                          $qty = $variant['warehouse_quantity'];
+                          $counter = $variant['counter_quantity'];
+                          $conv = $variant['items_per_package'] ?: 1;
+
+                          $pkgRaw = strtolower($variant['packaging'] ?? 'pkg');
+                          $pkgShort = 'pkg';
+                          if (strpos($pkgRaw, 'crate') !== false) $pkgShort = 'crt';
+                          elseif (strpos($pkgRaw, 'carton') !== false) $pkgShort = 'ctn';
+                          elseif (strpos($pkgRaw, 'piece') !== false) $pkgShort = 'pc';
+
+                          $warehousePkg = $qty / $conv;
+                          $counterPkg = $counter / $conv;
+                          
+                          $fmtWh = ($warehousePkg == (int)$warehousePkg) ? (int)$warehousePkg : number_format($warehousePkg, 1);
+                          $fmtCr = ($counterPkg == (int)$counterPkg) ? (int)$counterPkg : number_format($counterPkg, 1);
                         @endphp
                         <tr class="product-card-wrapper" 
                             data-category="{{ $catSlug }}" 
@@ -208,12 +228,12 @@
                                 <strong>{{ $variant['brand'] }}</strong><br>
                                 <span class="badge badge-light border smallest text-muted">{{ $variant['category'] }}</span>
                             </td>
-                            <td><strong class="text-info">{{ number_format($variant['warehouse_quantity']) }} units</strong></td>
+                            <td><strong class="text-info">{{ number_format($qty) }} btl ({{ $fmtWh }} {{ $pkgShort }}s)</strong></td>
                             <td>
-                                @if($variant['counter_quantity'] > 0)
-                                    <span class="badge badge-success">{{ number_format($variant['counter_quantity']) }} units</span>
+                                @if($counter > 0)
+                                    <span class="badge badge-success">{{ number_format($counter) }} btl ({{ $fmtCr }} {{ $pkgShort }}s)</span>
                                 @else
-                                    <span class="text-muted">0 units</span>
+                                    <span class="text-muted">0 btl</span>
                                 @endif
                             </td>
                             <td>TSh {{ number_format($variant['buying_price']) }}</td>

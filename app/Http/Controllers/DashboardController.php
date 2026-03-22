@@ -360,6 +360,18 @@ class DashboardController extends Controller
                     })->sum('total_price');
                 $foodTargetProgress = $foodMonthlyTarget > 0 ? min(100, round(($foodMonthRevenue / $foodMonthlyTarget) * 100)) : 0;
 
+                // ── Master Sheet Financials (Manager Context)
+                $monthProfit = \App\Models\DailyCashLedger::where('user_id', $ownerId)
+                    ->whereMonth('ledger_date', now()->month)
+                    ->whereYear('ledger_date', now()->year)
+                    ->where('status', 'closed')
+                    ->sum('profit_submitted_to_boss');
+
+                $masterSheetTrend = \App\Models\DailyCashLedger::where('user_id', $ownerId)
+                    ->where('ledger_date', '>=', now()->subDays(6)->startOfDay())
+                    ->orderBy('ledger_date')
+                    ->get();
+
                 return view('dashboard.manager', compact(
                     'staff', 'owner',
                     'todayRevenue', 'monthRevenue', 'todayOrders', 'pendingOrders',
@@ -369,7 +381,8 @@ class DashboardController extends Controller
                     'revenueTrend', 'topProducts',
                     'warehouseStockItems', 'counterStockItems',
                     'lowStockList', 'categoryDistribution',
-                    'barMonthlyTarget', 'foodMonthlyTarget', 'barTargetProgress', 'foodTargetProgress', 'foodMonthRevenue'
+                    'barMonthlyTarget', 'foodMonthlyTarget', 'barTargetProgress', 'foodTargetProgress', 'foodMonthRevenue',
+                    'monthProfit', 'masterSheetTrend'
                 ));
             }
 
@@ -525,6 +538,13 @@ class DashboardController extends Controller
             ->orderBy('sort_order')
             ->get();
         
+        // Get pending cash handovers
+        $pendingHandovers = \App\Models\FinancialHandover::where('user_id', $user->id)
+            ->where('status', 'pending')
+            ->with('accountant')
+            ->orderBy('handover_date', 'desc')
+            ->get();
+        
         return view('dashboard.index', compact(
             'subscription', 
             'currentPlan', 
@@ -533,7 +553,8 @@ class DashboardController extends Controller
             'trialDaysRemaining',
             'trialExpired',
             'upgradePlans',
-            'pendingSubscription'
+            'pendingSubscription',
+            'pendingHandovers'
         ));
     }
 

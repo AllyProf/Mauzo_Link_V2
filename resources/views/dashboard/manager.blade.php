@@ -67,6 +67,14 @@
       </div>
     </div>
   </div>
+  <div class="col-md-3">
+    <div class="widget-small success coloured-icon"><i class="icon fa fa-trophy fa-3x"></i>
+      <div class="info">
+        <h4>Boss Profit (M)</h4>
+        <p><b>TSh {{ number_format($monthProfit) }}</b></p>
+      </div>
+    </div>
+  </div>
 </div>
 
 {{-- ═══════════════════════════════════════╗
@@ -204,6 +212,9 @@
           </a>
           <a href="{{ route('accountant.reconciliations') }}" class="btn btn-outline-danger mb-3 text-left">
             <i class="fa fa-money mr-2"></i> Reconciliation Center
+          </a>
+          <a href="{{ route('manager.master-sheet.analytics') }}" class="btn btn-outline-success mb-3 text-left">
+            <i class="fa fa-line-chart mr-2"></i> Financial Analytics (Audit)
           </a>
           <div class="border-top mb-3 pt-3 text-muted small font-weight-bold ml-2">REPORTS</div>
           <a href="{{ route('reports.stock-receipts') }}" class="btn btn-outline-dark mb-3 text-left">

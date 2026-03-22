@@ -51,7 +51,7 @@
 
 <!-- Statistics Cards -->
 <div class="row mb-3">
-  <div class="col-md-3">
+  <div class="col-md">
     <div class="widget-small primary coloured-icon"><i class="icon fa fa-money fa-3x"></i>
       <div class="info">
         <h4>Today Revenue</h4>
@@ -59,7 +59,7 @@
       </div>
     </div>
   </div>
-  <div class="col-md-3">
+  <div class="col-md">
     <div class="widget-small success coloured-icon"><i class="icon fa fa-bank fa-3x"></i>
       <div class="info">
         <h4>Cash Collected</h4>
@@ -67,7 +67,7 @@
       </div>
     </div>
   </div>
-  <div class="col-md-3">
+  <div class="col-md">
     <div class="widget-small info coloured-icon"><i class="icon fa fa-mobile fa-3x"></i>
       <div class="info">
         <h4>Mobile Money</h4>
@@ -75,7 +75,15 @@
       </div>
     </div>
   </div>
-  <div class="col-md-3">
+  <div class="col-md">
+    <div class="widget-small danger coloured-icon"><i class="icon fa fa-shopping-cart fa-3x"></i>
+      <div class="info">
+        <h4>Today Expenses</h4>
+        <p><b>TSh {{ number_format($todayExpenses ?? 0) }}</b></p>
+      </div>
+    </div>
+  </div>
+  <div class="col-md">
     <div class="widget-small warning coloured-icon"><i class="icon fa fa-clock-o fa-3x"></i>
       <div class="info">
         <h4>Unpaid Served</h4>

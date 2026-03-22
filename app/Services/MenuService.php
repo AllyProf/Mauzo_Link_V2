@@ -14,7 +14,7 @@ class MenuService
      */
     protected const COMMON_SLUGS = [
         'dashboard', 'sales', 'products', 'customers', 'staff', 
-        'hr', 'reports', 'marketing', 'settings', 'accountant', 'stock-audit', 'counter-reconciliation', 'targets', 'purchase-requests'
+        'hr', 'reports', 'marketing', 'settings', 'accountant-parent', 'stock-audit', 'counter-reconciliation', 'chef-reconciliation', 'targets', 'common-purchase-requests'
     ];
 
     /**
@@ -186,6 +186,10 @@ class MenuService
                     return $isCounter;
                 }
                 
+                // Show Chef Reconciliation only for Chef
+                if ($menu->slug === 'chef-reconciliation') {
+                    return $isChef;
+                }
                 
                 // Managers always see Stock Audit
                 $isManager = in_array($roleName, ['manager', 'general manager', 'administrator']) || in_array($roleSlug, ['manager', 'admin']);
@@ -322,12 +326,17 @@ class MenuService
                 'bar.chef.reconciliation', 'purchase-requests.index'
             ],
             'accountant' => [
-                'accountant.reconciliations', 'purchase-requests.index'
+                'accountant.reconciliations', 'accountant.cash-ledger', 'purchase-requests.index', 'accountant.daily-master-sheet', 'accountant.daily-master-sheet.history'
             ],
             'manager' => [
                 'accountant.reconciliations',
                 'manager.stock-audit',
                 'manager.targets.index',
+                'manager.master-sheet.analytics',
+                'manager.master-sheet.collections',
+                'manager.master-sheet.confirm-handover',
+                'accountant.daily-master-sheet.history',
+                'accountant.daily-master-sheet',
                 'purchase-requests.index'
             ]
         ];

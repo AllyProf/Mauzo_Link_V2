@@ -2,6 +2,28 @@
 
 @section('title', 'Daily Reconciliation')
 
+@push('styles')
+<link rel="stylesheet" type="text/css" href="https://cdn.datatables.net/1.13.6/css/dataTables.bootstrap4.min.css">
+<link rel="stylesheet" type="text/css" href="https://cdn.datatables.net/responsive/2.5.0/css/responsive.bootstrap4.min.css">
+<style>
+  #waiters-table { border-collapse: collapse !important; border-radius: 8px; overflow: hidden; }
+  #waiters-table th, #waiters-table td { vertical-align: middle; white-space: nowrap; border: 1px solid #dee2e6 !important; }
+  #waiters-table thead th { background-color: #f8f9fa; color: #333; font-weight: 700; text-transform: uppercase; font-size: 0.75rem; border-bottom: 2px solid #009688 !important; }
+  .table-responsive { overflow-x: auto; -webkit-overflow-scrolling: touch; border: 1px solid #dee2e6; border-radius: 5px; }
+  
+  /* Audit Columns Highlight */
+  .audit-col-bg { background-color: rgba(0, 150, 136, 0.03); }
+  .diff-col-bg { background-color: rgba(0, 0, 0, 0.02); }
+  
+  #waiters-table_wrapper .row { margin-bottom: 15px; }
+  .badge { font-weight: 600; padding: 5px 8px; }
+  @media (max-width: 768px) {
+    .widget-small { margin-bottom: 10px; }
+    .tile-title { font-size: 1.2rem; }
+  }
+</style>
+@endpush
+
 @section('content')
 <div class="app-title">
   <div>
@@ -11,7 +33,7 @@
   <ul class="app-breadcrumb breadcrumb">
     <li class="breadcrumb-item"><i class="fa fa-home fa-lg"></i></li>
     <li class="breadcrumb-item"><a href="{{ route('dashboard') }}">Dashboard</a></li>
-    <li class="breadcrumb-item">{{ Route::currentRouteName() === 'accountant.counter-reconciliation' ? 'Accountant' : 'Counter' }}</li>
+    <li class="breadcrumb-item">{{ Route::currentRouteName() === 'accountant.counter.reconciliation' ? 'Accountant' : 'Counter' }}</li>
     <li class="breadcrumb-item">Reconciliation</li>
   </ul>
 </div>
@@ -20,27 +42,26 @@
 <div class="row mb-3">
   <div class="col-md-12">
     <div class="tile">
-      <form method="GET" action="{{ Route::currentRouteName() === 'accountant.counter-reconciliation' ? route('accountant.counter-reconciliation') : route('bar.counter.reconciliation') }}" class="form-inline">
+      <form method="GET" action="{{ Route::currentRouteName() === 'accountant.counter.reconciliation' ? route('accountant.counter.reconciliation') : route('bar.counter.reconciliation') }}" class="form-inline">
         <div class="form-group mr-3">
           <label for="date" class="mr-2">Select Date:</label>
           <input type="date" name="date" id="date" class="form-control" value="{{ $date }}" required>
+        </div>
+        <div class="form-group mr-3">
+          <label for="status-filter" class="mr-2">Status:</label>
+          <select id="status-filter" class="form-control">
+            <option value="">All Statuses</option>
+            <option value="verified">Verified</option>
+            <option value="submitted">Submitted</option>
+            <option value="paid">Paid</option>
+            <option value="partial">Partial</option>
+            <option value="pending">Pending</option>
+          </select>
         </div>
         <button type="submit" class="btn btn-primary">
           <i class="fa fa-search"></i> View Reconciliation
         </button>
       </form>
-    </div>
-  </div>
-</div>
-
-<!-- Search Waiter -->
-<div class="row mb-3">
-  <div class="col-md-12">
-    <div class="tile">
-      <div class="form-group">
-        <label for="search-waiter">Search Waiter:</label>
-        <input type="text" id="search-waiter" class="form-control" placeholder="Type waiter name or email to search...">
-      </div>
     </div>
   </div>
 </div>
@@ -93,31 +114,32 @@
       <h3 class="tile-title">Waiters Reconciliation - {{ \Carbon\Carbon::parse($date)->format('F d, Y') }}</h3>
       <div class="tile-body">
         @if($waiters->count() > 0)
-          <div class="table-responsive">
-            <table class="table table-hover" id="waiters-table">
+          <div class="table-responsive shadow-sm">
+            <table class="table table-hover table-bordered table-striped" id="waiters-table">
               <thead>
                 <tr>
-                  <th>#</th>
-                  <th>Waiter Name</th>
+                  <th class="all">#</th>
+                  <th class="all">Staff</th>
                   <th>Bar Sales</th>
-                  <th>Bar Orders</th>
-                  <th>Food Orders</th>
+                  <th>Orders</th>
+                  <th class="none">Food</th>
                   <th>Cash</th>
-                  <th>Digital Money</th>
-                  <th>Expected</th>
-                  <th>Recorded</th>
-                  <th>Submitted</th>
-                  <th>Difference</th>
-                  <th>Status</th>
-                  <th>Actions</th>
+                  <th>Digital</th>
+                  <th class="all audit-col-bg">Expected</th>
+                  <th class="all audit-col-bg">Recorded</th>
+                  <th class="all audit-col-bg">Submitted</th>
+                  <th class="all diff-col-bg">Diff</th>
+                  <th class="all text-center">Status</th>
+                  <th class="all">Actions</th>
                 </tr>
               </thead>
               <tbody>
                 @foreach($waiters as $index => $data)
                 <tr data-waiter-id="{{ $data['waiter']->id }}" class="waiter-row">
                   <td>{{ $index + 1 }}</td>
-                  <td>
-                    <strong>{{ $data['waiter']->full_name }}</strong><br>
+                   <td>
+                    <strong>{{ $data['waiter']->full_name }}</strong>
+                    <span class="badge badge-secondary ml-1">{{ $data['waiter']->role->name ?? 'Staff' }}</span><br>
                     <small class="text-muted">{{ $data['waiter']->email }}</small>
                   </td>
                   <td>
@@ -130,39 +152,37 @@
                   <td><span class="badge badge-secondary">{{ $data['food_orders_count'] }}</span></td>
                   <td>TSh {{ number_format($data['cash_collected'], 0) }}</td>
                   <td>TSh {{ number_format($data['mobile_money_collected'], 0) }}</td>
-                  <td><strong>TSh {{ number_format($data['expected_amount'], 0) }}</strong></td>
-                  <td>
+                  <td class="audit-col-bg"><strong>TSh {{ number_format($data['expected_amount'], 0) }}</strong></td>
+                   <td class="audit-col-bg">
                     @if(isset($data['recorded_amount']) && $data['recorded_amount'] > 0)
                       <strong class="text-info">TSh {{ number_format($data['recorded_amount'], 0) }}</strong>
-                      <br><small class="text-muted">By Waiter</small>
                     @else
                       <span class="text-muted">-</span>
                     @endif
                   </td>
-                  <td>
+                  <td class="audit-col-bg">
                     @if($data['submitted_amount'] > 0)
                       <strong class="text-success">TSh {{ number_format($data['submitted_amount'], 0) }}</strong>
-                      <br><small class="text-muted">Reconciled</small>
                     @else
-                      <span class="text-muted">Not Submitted</span>
+                      <span class="text-muted">Waiting</span>
                     @endif
                   </td>
-                  <td>
+                  <td class="diff-col-bg text-center">
                     @if($data['submitted_amount'] > 0 || $data['reconciliation'])
-                      <span class="{{ $data['difference'] >= 0 ? 'text-success' : 'text-danger' }}">
+                      <strong class="{{ $data['difference'] >= 0 ? 'text-success' : 'text-danger' }}">
                         @if($data['difference'] > 0)
-                          +TSh {{ number_format($data['difference'], 0) }}
+                          +{{ number_format($data['difference'], 0) }}
                         @elseif($data['difference'] < 0)
-                          TSh {{ number_format($data['difference'], 0) }}
+                          {{ number_format($data['difference'], 0) }}
                         @else
-                          TSh 0
+                          0
                         @endif
-                      </span>
+                      </strong>
                     @else
                       <span class="text-muted">-</span>
                     @endif
                   </td>
-                  <td>
+                  <td class="text-center">
                     @if($data['status'] === 'verified')
                       <span class="badge badge-success">Verified</span>
                     @elseif($data['status'] === 'submitted')
@@ -177,32 +197,43 @@
                       <span class="badge badge-warning">Pending</span>
                     @endif
                   </td>
-                  <td>
-                    <div class="btn-group-vertical" style="width: 100%;">
-                      <button class="btn btn-sm btn-info view-orders-btn mb-1" 
-                              data-waiter-id="{{ $data['waiter']->id }}"
-                              data-waiter-name="{{ $data['waiter']->full_name }}">
-                        <i class="fa fa-eye"></i> View Orders
+                  <td class="text-nowrap">
+                    <!-- Always show View Orders -->
+                    <button class="btn btn-sm btn-info view-orders-btn mr-1 mb-1" 
+                            data-waiter-id="{{ $data['waiter']->id }}"
+                            data-waiter-name="{{ $data['waiter']->full_name }}" title="View Orders">
+                      <i class="fa fa-eye"></i> View
+                    </button>
+                    
+                    @if(Route::currentRouteName() === 'accountant.counter-reconciliation' && $data['reconciliation'] && $data['status'] === 'submitted')
+                      <button class="btn btn-sm btn-success verify-btn mr-1 mb-1" 
+                              data-reconciliation-id="{{ $data['reconciliation']->id }}" title="Verify">
+                        <i class="fa fa-check"></i> Verify
                       </button>
-                      @if(Route::currentRouteName() === 'accountant.counter-reconciliation' && $data['reconciliation'] && $data['status'] === 'submitted')
-                        <button class="btn btn-sm btn-success verify-btn mb-1" 
-                                data-reconciliation-id="{{ $data['reconciliation']->id }}">
-                          <i class="fa fa-check"></i> Verify
-                        </button>
-                      @endif
-                      @if($data['has_unpaid_orders'])
-                        <button class="btn btn-sm btn-primary mark-all-paid-btn mb-1" 
-                                data-waiter-id="{{ $data['waiter']->id }}"
-                                data-date="{{ $date }}"
-                                data-total-amount="{{ $data['expected_amount'] }}"
-                                data-recorded-amount="{{ $data['recorded_amount'] ?? 0 }}"
-                                data-submitted-amount="{{ $data['submitted_amount'] ?? 0 }}"
-                                data-difference="{{ $data['difference'] ?? 0 }}"
-                                data-waiter-name="{{ $data['waiter']->full_name }}">
-                          <i class="fa fa-money"></i> Submit Payment
-                        </button>
-                      @endif
-                    </div>
+                    @endif
+
+                    {{-- Show Reconcile button if not verified and either (pending/partial) OR (Paid but not yet formally submitted) --}}
+                    @if($data['status'] !== 'verified' && ($data['status'] === 'pending' || $data['status'] === 'partial' || ($data['status'] === 'paid' && $data['submitted_amount'] == 0)))
+                      <button class="btn btn-sm btn-success mark-all-paid-btn mr-1 mb-1 font-weight-bold" 
+                              data-waiter-id="{{ $data['waiter']->id }}"
+                              data-date="{{ $date }}"
+                              data-total-amount="{{ $data['expected_amount'] }}"
+                              data-recorded-amount="{{ $data['recorded_amount'] ?? 0 }}"
+                              data-submitted-amount="{{ $data['submitted_amount'] ?? 0 }}"
+                              data-difference="{{ $data['difference'] ?? 0 }}"
+                              data-breakdown="{{ json_encode($data['platform_totals'] ?? []) }}"
+                              data-waiter-name="{{ $data['waiter']->full_name }}" title="{{ $data['status'] === 'paid' ? 'Submit Collection' : 'Reconcile Staff' }}">
+                        <i class="fa fa-hand-holding-usd"></i> {{ $data['status'] === 'paid' ? 'Submit' : 'Reconcile' }}
+                      </button>
+                    @endif
+
+                    {{-- Show Undo button if a reconciliation record exists and it's not verified --}}
+                    @if($data['reconciliation'] && $data['status'] !== 'verified')
+                      <button class="btn btn-sm btn-outline-danger reset-btn mb-1" 
+                              data-reconciliation-id="{{ $data['reconciliation']->id }}" title="Reset/Undo Reconciliation">
+                        <i class="fa fa-undo"></i> Undo
+                      </button>
+                    @endif
                   </td>
                 </tr>
                 @endforeach
@@ -212,6 +243,221 @@
         @else
           <div class="alert alert-info">
             <i class="fa fa-info-circle"></i> No waiters with orders found for this date.
+          </div>
+        @endif
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Handover to Accountant -->
+<div class="row">
+  <div class="col-md-12">
+    <div class="tile">
+      <h3 class="tile-title"><i class="fa fa-handshake-o"></i> My Handover to Accountant</h3>
+      <div class="tile-body">
+        @if($todayHandover)
+          <div class="alert {{ $todayHandover->status === 'verified' ? 'alert-success' : ($todayHandover->status === 'disputed' ? 'alert-danger' : 'alert-info') }}">
+            <h4>Handover {{ ucfirst($todayHandover->status) }}</h4>
+            <p>You submitted your daily physical and digital collections on {{ $todayHandover->created_at->format('h:i A') }}.</p>
+            <hr>
+            <div class="row">
+              <div class="col-md-6">
+                <strong>Total Amount:</strong> TSh {{ number_format($todayHandover->amount, 0) }}<br>
+                @if($todayHandover->payment_breakdown)
+                  <ul class="mb-0 mt-2">
+                    @foreach($todayHandover->payment_breakdown as $method => $amount)
+                      @if($amount > 0)
+                        <li><strong>{{ strtoupper(str_replace('_', ' ', $method)) }}:</strong> TSh {{ number_format($amount, 0) }}</li>
+                      @endif
+                    @endforeach
+                  </ul>
+                @endif
+              </div>
+              <div class="col-md-6">
+                <strong>Accountant:</strong> {{ $todayHandover->recipientStaff->full_name ?? 'N/A' }}<br>
+                @if($todayHandover->notes)
+                  <strong>Notes:</strong> {{ $todayHandover->notes }}<br>
+                @endif
+                @if($todayHandover->dispute_reason)
+                  <strong class="text-danger">Dispute Reason:</strong> {{ $todayHandover->dispute_reason }}
+                @endif
+              </div>
+            </div>
+
+            @if($todayHandover->status === 'pending')
+              <hr>
+              <div class="text-right">
+                <button class="btn btn-outline-danger btn-sm reset-handover-btn" data-date="{{ $date }}">
+                  <i class="fa fa-undo"></i> Reset Handover & Redo Reconciliation
+                </button>
+                <p class="small text-muted mt-2 mb-0 font-italic">Clicking this will cancel your submission and allow you to adjust the waiter rows again.</p>
+              </div>
+            @endif
+          </div>
+        @elseif($accountant)
+
+          @php
+            $totalCashHandover = 0;
+            $totalDigitalHandover = 0;
+            $platformTotals = [];
+            
+            $totalCashRecordedArr = 0;
+            $totalDigitalRecordedArr = 0;
+            
+            foreach($waiters as $data) {
+                $totalCashHandover += $data['cash_collected'];
+                $totalDigitalHandover += $data['mobile_money_collected'];
+                $totalCashRecordedArr += $data['recorded_cash'];
+                $totalDigitalRecordedArr += $data['recorded_digital'];
+                
+                // For platform breakdown, we prioritize the saved breakdown in 'notes' if it exists.
+                $savedBreakdown = null;
+                if ($data['reconciliation'] && $data['reconciliation']->notes) {
+                    try {
+                        $notesData = json_decode($data['reconciliation']->notes, true);
+                        if (is_array($notesData) && isset($notesData['submitted_breakdown'])) {
+                            $savedBreakdown = $notesData['submitted_breakdown'];
+                        }
+                    } catch (\Exception $e) {}
+                }
+
+                if ($savedBreakdown) {
+                    // Update the totals to match the saved submitted breakdown
+                    // Note: cash_collected and mobile_money_collected are already reconciled in Controller
+                    foreach($savedBreakdown as $label => $amt) {
+                        if ($label === 'cash') continue;
+                        $platformTotals[strtoupper(str_replace('_', ' ', $label))] = ($platformTotals[strtoupper(str_replace('_', ' ', $label))] ?? 0) + $amt;
+                    }
+                } else {
+                    foreach($data['orders'] as $order) {
+                        if ($order->orderPayments->count() > 0) {
+                            foreach($order->orderPayments as $payment) {
+                                if ($payment->payment_method === 'cash') continue;
+                                
+                                $provider = strtolower(trim($payment->mobile_money_number ?? 'mobile'));
+                                $label = 'MOBILE MONEY';
+                                if (str_contains($provider, 'm-pesa') || str_contains($provider, 'mpesa')) { $label = 'M-PESA'; }
+                                elseif (str_contains($provider, 'mixx')) { $label = 'MIXX BY YAS'; }
+                                elseif (str_contains($provider, 'halo')) { $label = 'HALOPESA'; }
+                                elseif (str_contains($provider, 'tigo')) { $label = 'TIGO PESA'; }
+                                elseif (str_contains($provider, 'airtel')) { $label = 'AIRTEL MONEY'; }
+                                elseif (str_contains($provider, 'nmb')) { $label = 'NMB BANK'; }
+                                elseif (str_contains($provider, 'crdb')) { $label = 'CRDB BANK'; }
+                                elseif (str_contains($provider, 'kcb')) { $label = 'KCB BANK'; }
+                                
+                                $platformTotals[$label] = ($platformTotals[$label] ?? 0) + $payment->amount;
+                            }
+                        }
+                    }
+                }
+            }
+            $overallTotalHandover = $totalCashHandover + $totalDigitalHandover;
+            
+            $keyMap = [
+                'M-PESA' => 'mpesa_amount',
+                'MIXX BY YAS' => 'mixx_amount',
+                'HALOPESA' => 'halopesa_amount',
+                'TIGO PESA' => 'tigo_pesa_amount',
+                'AIRTEL MONEY' => 'airtel_money_amount',
+                'NMB BANK' => 'nmb_amount',
+                'CRDB BANK' => 'crdb_amount',
+                'KCB BANK' => 'kcb_amount',
+                'MOBILE MONEY' => 'mobile_money_amount'
+            ];
+          @endphp
+
+          <div class="alert alert-info border-primary mb-4 p-3 shadow-sm rounded">
+            <h5><i class="fa fa-calculator"></i> Handover Summary</h5>
+            <div class="row text-center mt-3">
+              <div class="col-md-4 mb-2 mb-md-0">
+                <small class="text-uppercase font-weight-bold text-muted">Total Cash</small>
+                <h4 class="text-warning mb-0">TSh {{ number_format($totalCashHandover, 0) }}</h4>
+                @if($totalCashHandover < $totalCashRecordedArr)
+                  <small class="text-danger font-weight-bold">Short: -{{ number_format($totalCashRecordedArr - $totalCashHandover, 0) }}</small>
+                @elseif($totalCashHandover > $totalCashRecordedArr)
+                  <small class="text-success font-weight-bold">Surplus: +{{ number_format($totalCashHandover - $totalCashRecordedArr, 0) }}</small>
+                @endif
+              </div>
+              <div class="col-md-4 mb-2 mb-md-0" style="border-left: 1px solid #dee2e6; border-right: 1px solid #dee2e6;">
+                <small class="text-uppercase font-weight-bold text-muted">Total Digital</small>
+                <h4 class="text-success mb-0">TSh {{ number_format($totalDigitalHandover, 0) }}</h4>
+                @if($totalDigitalHandover < $totalDigitalRecordedArr)
+                  <small class="text-danger font-weight-bold">Short: -{{ number_format($totalDigitalRecordedArr - $totalDigitalHandover, 0) }}</small>
+                @elseif($totalDigitalHandover > $totalDigitalRecordedArr)
+                  <small class="text-success font-weight-bold">Surplus: +{{ number_format($totalDigitalHandover - $totalDigitalRecordedArr, 0) }}</small>
+                @endif
+              </div>
+              <div class="col-md-4">
+                <small class="text-uppercase font-weight-bold text-muted">Overall Handover</small>
+                <h4 class="text-primary mb-0">TSh {{ number_format($overallTotalHandover, 0) }}</h4>
+              </div>
+            </div>
+          </div>
+
+          <form action="{{ route('bar.counter.handover') }}" method="POST">
+            @csrf
+            <input type="hidden" name="date" value="{{ $date }}">
+            
+            <div class="alert alert-warning">
+              <h5><i class="fa fa-warning"></i> Ready to Close Your Day?</h5>
+              <p>Please confirm the totals gathered from waiter reconciliations today.</p>
+            </div>
+
+            <div class="row">
+              @if($totalCashHandover > 0)
+              <div class="col-md-3 form-group">
+                <label>Physical Cash</label>
+                <div class="input-group">
+                  <div class="input-group-prepend"><span class="input-group-text">TSh</span></div>
+                  <input type="number" name="cash_amount" class="form-control handover-input bg-light" value="{{ round($totalCashHandover) }}" readonly>
+                </div>
+              </div>
+              @endif
+
+              @foreach($platformTotals as $label => $amount)
+                @if($amount > 0)
+                <div class="col-md-3 form-group" title="{{ $label }} breakdown">
+                  <label>{{ $label }}</label>
+                  <div class="input-group">
+                    <div class="input-group-prepend"><span class="input-group-text">TSh</span></div>
+                    <input type="number" name="{{ $keyMap[$label] ?? 'mobile_money_amount' }}" class="form-control handover-input bg-light" value="{{ round($amount) }}" readonly>
+                  </div>
+                </div>
+                @endif
+              @endforeach
+              
+              @if($overallTotalHandover == 0)
+              <div class="col-md-12">
+                <div class="alert alert-info border-info">
+                  <i class="fa fa-info-circle"></i> No collections recorded today. Waiters must reconcile their orders before you can handover.
+                </div>
+              </div>
+              @endif
+            </div>
+
+            <div class="row mt-3">
+              <div class="col-md-12">
+                <div class="p-3 bg-light rounded text-right mb-3">
+                  <h4 class="mb-0">Total Declaration: <span id="handover-total" class="text-primary font-weight-bold">TSh {{ number_format($overallTotalHandover, 0) }}</span></h4>
+                </div>
+              </div>
+            </div>
+
+            <div class="row">
+              <div class="col-md-12 form-group">
+                <label>Notes / Comments (Optional)</label>
+                <textarea name="notes" class="form-control" rows="2" placeholder="Any explanations for shortages or extra cash..."></textarea>
+              </div>
+            </div>
+            
+            <button type="submit" class="btn btn-primary btn-block">
+              <i class="fa fa-paper-plane"></i> Submit Detailed Handover to Accountant
+            </button>
+          </form>
+        @else
+          <div class="alert alert-warning">
+            <i class="fa fa-exclamation-triangle"></i> No active accountant found. You cannot handover money until an accountant is registered by the owner.
           </div>
         @endif
       </div>
@@ -246,44 +492,36 @@
 @endsection
 
 @push('scripts')
+<script type="text/javascript" src="https://cdn.datatables.net/1.13.6/js/jquery.dataTables.min.js"></script>
+<script type="text/javascript" src="https://cdn.datatables.net/1.13.6/js/dataTables.bootstrap4.min.js"></script>
+<script type="text/javascript" src="https://cdn.datatables.net/responsive/2.5.0/js/dataTables.responsive.min.js"></script>
+<script type="text/javascript" src="https://cdn.datatables.net/responsive/2.5.0/js/responsive.bootstrap4.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 <script>
 $(document).ready(function() {
-  // Search waiter functionality
-  $('#search-waiter').on('keyup', function() {
-    const searchTerm = $(this).val().toLowerCase().trim();
-    let visibleCount = 0;
-    
-    // Remove any existing no-results message
-    $('#no-results-message').remove();
-    
-    $('#waiters-table tbody tr').each(function() {
-      // Skip the no-results message row if it exists
-      if ($(this).attr('id') === 'no-results-message') {
-        return;
-      }
-      
-      const waiterName = $(this).find('td:nth-child(2)').text().toLowerCase();
-      if (searchTerm === '' || waiterName.includes(searchTerm)) {
-        $(this).show();
-        visibleCount++;
-      } else {
-        $(this).hide();
+  // Initialize DataTables
+  if ($('#waiters-table').length > 0) {
+    const table = $('#waiters-table').DataTable({
+      "pageLength": 25,
+      "responsive": true,
+      "language": {
+        "search": "_INPUT_",
+        "searchPlaceholder": "Search Waiter..."
       }
     });
-    
-    // Show message if no results
-    if (searchTerm !== '' && visibleCount === 0) {
-      $('#waiters-table tbody').append('<tr id="no-results-message"><td colspan="11" class="text-center text-muted py-3"><i class="fa fa-info-circle"></i> No waiters found matching "' + searchTerm + '"</td></tr>');
-    }
-  });
-  
-  // Clear search when date changes (after form submission)
-  $('#date').on('change', function() {
-    setTimeout(function() {
-      $('#search-waiter').val('').trigger('keyup');
-    }, 100);
-  });
+
+    // Custom Status Filter
+    $('#status-filter').on('change', function() {
+      const statusValue = $(this).val();
+      if (statusValue) {
+        // Regex exactly matches the selected status (case-insensitive) in the 12th column (Status)
+        table.column(11).search('^' + statusValue + '$', true, false).draw();
+      } else {
+        // Clear filter
+        table.column(11).search('').draw();
+      }
+    });
+  }
   
   // View orders button
   $(document).on('click', '.view-orders-btn', function() {
@@ -296,7 +534,7 @@ $(document).ready(function() {
     $('#ordersModal').modal('show');
     
     $.ajax({
-      url: '{{ Route::currentRouteName() === "accountant.counter-reconciliation" ? route("accountant.counter.reconciliation.waiter-orders", ":id") : route("bar.counter.reconciliation.waiter-orders", ":id") }}'.replace(':id', waiterId),
+      url: '{{ Route::currentRouteName() === "accountant.counter.reconciliation" ? route("accountant.counter.reconciliation.waiter-orders", ":id") : route("bar.counter.reconciliation.waiter-orders", ":id") }}'.replace(':id', waiterId),
       method: 'GET',
       data: { date: date },
       success: function(response) {
@@ -325,109 +563,103 @@ $(document).ready(function() {
             html += '<td><strong>' + order.order_number + '</strong></td>';
             html += '<td>' + new Date(order.created_at).toLocaleTimeString() + '</td>';
             html += '<td>';
-            // Display order source/platform
             if (order.order_source) {
               const source = order.order_source.toLowerCase();
               let badgeClass = 'secondary';
               let displayText = order.order_source;
-              
-              if (source === 'mobile') {
-                badgeClass = 'info';
-                displayText = 'Mobile';
-              } else if (source === 'web') {
-                badgeClass = 'primary';
-                displayText = 'Web';
-              } else if (source === 'kiosk') {
-                badgeClass = 'warning';
-                displayText = 'Kiosk';
-              }
-              
+              if (source === 'mobile') { badgeClass = 'info'; displayText = 'Mobile'; }
+              else if (source === 'web') { badgeClass = 'primary'; displayText = 'Web'; }
+              else if (source === 'kiosk') { badgeClass = 'warning'; displayText = 'Kiosk'; }
               html += '<span class="badge badge-' + badgeClass + '">' + displayText + '</span>';
             } else {
               html += '<span class="text-muted">-</span>';
             }
             html += '</td>';
             html += '<td>';
-            
             if (order.items && order.items.length > 0) {
               order.items.forEach(function(item) {
                 html += '<span class="badge badge-primary">' + item.quantity + 'x ' + (item.product_variant?.product?.name || 'N/A') + '</span> ';
               });
-            } else {
-              html += '<span class="text-muted">-</span>';
-            }
-            
+            } else { html += '<span class="text-muted">-</span>'; }
             html += '</td>';
             html += '<td>';
-            
             if (order.kitchen_order_items && order.kitchen_order_items.length > 0) {
               order.kitchen_order_items.forEach(function(item) {
                 html += '<span class="badge badge-info">' + item.quantity + 'x ' + item.food_item_name + '</span> ';
               });
-            } else {
-              html += '<span class="text-muted">-</span>';
-            }
-            
+            } else { html += '<span class="text-muted">-</span>'; }
             html += '</td>';
             html += '<td><strong>TSh ' + barAmount.toLocaleString() + '</strong></td>';
             html += '<td><strong>TSh ' + foodAmount.toLocaleString() + '</strong></td>';
             html += '<td><strong>TSh ' + parseFloat(order.total_amount).toLocaleString() + '</strong></td>';
             html += '<td>';
-            if (order.payment_method) {
-              if (order.payment_method === 'mobile_money') {
-                // mobile_money_number contains the platform name (M-PESA, NMB, CRDB, Mixx by Yas, etc.)
-                const providerName = order.mobile_money_number || 'MOBILE MONEY';
-                // Format provider name nicely
-                let displayProvider = providerName.toUpperCase();
-                // Handle special cases like "Mixx by Yas" -> "MIXX BY YAS"
-                if (providerName.toLowerCase().includes('mixx')) {
-                  displayProvider = 'MIXX BY YAS';
-                } else if (providerName.toLowerCase().includes('halopesa')) {
-                  displayProvider = 'HALOPESA';
-                } else if (providerName.toLowerCase().includes('tigo')) {
-                  displayProvider = 'TIGO PESA';
-                } else if (providerName.toLowerCase().includes('airtel')) {
-                  displayProvider = 'AIRTEL MONEY';
+            if (order.order_payments && order.order_payments.length > 0) {
+              // Iterate through all payments if the NEW system is used
+              order.order_payments.forEach(function(payment, idx) {
+                if (idx > 0) html += '<hr class="my-1">';
+                
+                const method = payment.payment_method || 'N/A';
+                const provider = (payment.mobile_money_number || 'MOBILE').toLowerCase();
+                let displayLabel = method.toUpperCase();
+                let badgeClass = 'secondary';
+                
+                if (method === 'cash') {
+                  displayLabel = 'CASH';
+                  badgeClass = 'warning';
+                } else {
+                  badgeClass = 'success';
+                  if (provider.includes('mpesa')) displayLabel = 'M-PESA';
+                  else if (provider.includes('mixx')) displayLabel = 'MIXX BY YAS';
+                  else if (provider.includes('halo')) displayLabel = 'HALOPESA';
+                  else if (provider.includes('tigo')) displayLabel = 'TIGO PESA';
+                  else if (provider.includes('airtel')) displayLabel = 'AIRTEL MONEY';
+                  else if (provider.includes('nmb')) displayLabel = 'NMB BANK';
+                  else if (provider.includes('crdb')) displayLabel = 'CRDB BANK';
+                  else if (provider.includes('kcb')) displayLabel = 'KCB BANK';
                 }
                 
-                html += '<span class="badge badge-success" style="font-size: 0.9rem;">' + displayProvider + '</span>';
-                if (order.transaction_reference) {
-                  html += '<br><small class="text-muted" style="font-size: 0.8rem; margin-top: 3px; display: block;"><i class="fa fa-hashtag"></i> Ref: ' + order.transaction_reference + '</small>';
+                html += '<span class="badge badge-' + badgeClass + '">' + displayLabel + '</span>';
+                html += '<div style="font-size: 0.8rem;" class="mt-1">';
+                html += '<strong>TSh ' + parseFloat(payment.amount).toLocaleString() + '</strong>';
+                if (payment.transaction_reference) {
+                   html += '<br><small class="text-muted"><i class="fa fa-hashtag"></i> Ref: ' + payment.transaction_reference + '</small>';
                 }
-              } else if (order.payment_method === 'cash') {
-                html += '<span class="badge badge-warning">CASH</span>';
-              } else {
-                const badgeClass = order.payment_method === 'cash' ? 'warning' : 'success';
-                html += '<span class="badge badge-' + badgeClass + '">' + order.payment_method.replace('_', ' ').toUpperCase() + '</span>';
+                html += '</div>';
+              });
+            } else if (order.payment_method) {
+              // Fallback for OLD system using order fields
+              const method = order.payment_method;
+              const providerName = (order.mobile_money_number || 'MOBILE').toLowerCase();
+              let displayProvider = method.toUpperCase();
+              let badgeClass = method === 'cash' ? 'warning' : 'success';
+              
+              if (method === 'mobile_money' || method === 'bank') {
+                if (providerName.includes('mpesa')) displayProvider = 'M-PESA';
+                else if (providerName.includes('mixx')) displayProvider = 'MIXX BY YAS';
+                else if (providerName.includes('halo')) displayProvider = 'HALOPESA';
+                else if (providerName.includes('tigo')) displayProvider = 'TIGO PESA';
+                else if (providerName.includes('airtel')) displayProvider = 'AIRTEL MONEY';
+                else if (providerName.includes('nmb')) displayProvider = 'NMB BANK';
+                else if (providerName.includes('crdb')) displayProvider = 'CRDB BANK';
+                else if (providerName.includes('kcb')) displayProvider = 'KCB BANK';
+              }
+              
+              html += '<span class="badge badge-' + badgeClass + '">' + displayProvider + '</span>';
+              if (order.transaction_reference) {
+                html += '<br><small class="text-muted" style="font-size: 0.8rem; margin-top: 3px; display: block;"><i class="fa fa-hashtag"></i> Ref: ' + order.transaction_reference + '</small>';
               }
             } else {
               html += '<span class="badge badge-secondary">Not Set</span>';
             }
             html += '</td>';
             html += '<td>';
-            if (order.payment_status === 'paid') {
+            if (order.payment_status === 'paid' || order.paid_by_waiter_id || (order.order_payments && order.order_payments.length > 0)) {
               html += '<span class="badge badge-success">Paid</span>';
-              if (order.paid_by_waiter && order.paid_by_waiter.full_name) {
-                html += '<br><small class="text-muted">Paid by ' + order.paid_by_waiter.full_name + '</small>';
-              } else if (order.paid_by_waiter) {
-                html += '<br><small class="text-muted">Paid by ' + order.paid_by_waiter + '</small>';
-              }
-            } else if (order.payment_status === 'partial') {
-              html += '<span class="badge badge-warning">Partial</span>';
-              if (order.paid_by_waiter && order.paid_by_waiter.full_name) {
-                html += '<br><small class="text-muted">Paid by ' + order.paid_by_waiter.full_name + '</small>';
-              } else if (order.paid_by_waiter) {
-                html += '<br><small class="text-muted">Paid by ' + order.paid_by_waiter + '</small>';
-              }
-            } else if ((order.order_payments && order.order_payments.length > 0) || order.paid_by_waiter_id) {
-              // Payment has been recorded by waiter but not yet reconciled
-              html += '<span class="badge badge-info">Paid</span>';
-              if (order.paid_by_waiter && order.paid_by_waiter.full_name) {
-                html += '<br><small class="text-muted">Paid by ' + order.paid_by_waiter.full_name + '</small>';
-              } else if (order.paid_by_waiter) {
-                html += '<br><small class="text-muted">Paid by ' + order.paid_by_waiter + '</small>';
-              } else if (order.order_payments && order.order_payments.length > 0) {
-                html += '<br><small class="text-muted">Paid by waiter</small>';
+              if (order.paid_by_waiter?.full_name) html += '<br><small class="text-muted">Paid by ' + order.paid_by_waiter.full_name + '</small>';
+              else if (order.paid_by_waiter) {
+                // Determine name if paidByWaiter is an object, or use fallback
+                const recorder = typeof order.paid_by_waiter === 'object' ? order.paid_by_waiter.full_name : order.paid_by_waiter;
+                html += '<br><small class="text-muted">Paid by ' + recorder + '</small>';
               }
             } else {
               html += '<span class="badge badge-warning">Pending</span>';
@@ -435,7 +667,6 @@ $(document).ready(function() {
             html += '</td>';
             html += '</tr>';
           });
-          
           html += '</tbody></table></div>';
           $('#orders-content').html(html);
         } else {
@@ -454,7 +685,6 @@ $(document).ready(function() {
   $(document).on('click', '.verify-btn', function() {
     const reconciliationId = $(this).data('reconciliation-id');
     const btn = $(this);
-    
     Swal.fire({
       title: 'Verify Reconciliation?',
       text: 'Are you sure you want to verify this reconciliation?',
@@ -467,34 +697,18 @@ $(document).ready(function() {
     }).then((result) => {
       if (result.isConfirmed) {
         btn.prop('disabled', true).html('<i class="fa fa-spinner fa-spin"></i> Verifying...');
-        
         $.ajax({
-          url: '{{ Route::currentRouteName() === "accountant.counter-reconciliation" ? route("accountant.counter.verify-reconciliation", ":id") : route("bar.counter.verify-reconciliation", ":id") }}'.replace(':id', reconciliationId),
+          url: '{{ Route::currentRouteName() === "accountant.counter.reconciliation" ? route("accountant.counter.verify-reconciliation", ":id") : route("bar.counter.verify-reconciliation", ":id") }}'.replace(':id', reconciliationId),
           method: 'POST',
-          data: {
-            _token: '{{ csrf_token() }}'
-          },
+          data: { _token: '{{ csrf_token() }}' },
           success: function(response) {
             if (response.success) {
-              Swal.fire({
-                icon: 'success',
-                title: 'Verified!',
-                text: 'Reconciliation verified successfully.',
-                confirmButtonText: 'OK',
-                timer: 2000,
-                timerProgressBar: true
-              }).then(() => {
-                location.reload();
-              });
+              Swal.fire({ icon: 'success', title: 'Verified!', text: 'Reconciliation verified successfully.', timer: 2000, timerProgressBar: true }).then(() => { location.reload(); });
             }
           },
           error: function(xhr) {
             const error = xhr.responseJSON?.error || 'Failed to verify reconciliation';
-            Swal.fire({
-              icon: 'error',
-              title: 'Error',
-              text: error
-            });
+            Swal.fire({ icon: 'error', title: 'Error', text: error });
             btn.prop('disabled', false).html('<i class="fa fa-check"></i> Verify');
           }
         });
@@ -506,245 +720,200 @@ $(document).ready(function() {
   $(document).on('click', '.mark-all-paid-btn', function() {
     const waiterId = $(this).data('waiter-id');
     const date = $(this).data('date');
-    const totalAmount = $(this).data('total-amount');
+    const totalAmount = parseFloat($(this).data('total-amount'));
     const recordedAmount = parseFloat($(this).data('recorded-amount')) || 0;
     const submittedAmount = parseFloat($(this).data('submitted-amount')) || 0;
     const difference = parseFloat($(this).data('difference')) || 0;
     const waiterName = $(this).data('waiter-name') || 'this waiter';
+    const breakdown = $(this).data('breakdown') || {};
     const btn = $(this);
     
-    // Calculate remaining amount to submit
-    const remainingAmount = totalAmount - submittedAmount;
+    let platformHtml = '';
+    // Add Cash field first
+    platformHtml += `
+      <div class="form-group mb-2">
+        <label class="small font-weight-bold mb-1">CASH COLLECTION</label>
+        <div class="input-group input-group-sm">
+          <div class="input-group-prepend"><span class="input-group-text">TSh</span></div>
+          <input type="number" class="form-control platform-input" data-platform="cash" value="${recordedAmount > 0 ? (recordedAmount - Object.values(breakdown).reduce((a, b) => a + b, 0)) : totalAmount}" placeholder="0">
+        </div>
+      </div>
+    `;
     
-    // Calculate the amount to submit:
-    // - If already submitted, default to remaining amount
-    // - Otherwise, default to recorded amount if available, else expected amount
+    // Add Digital platforms
+    Object.keys(breakdown).forEach(platform => {
+      platformHtml += `
+        <div class="form-group mb-2">
+          <label class="small font-weight-bold mb-1">${platform.toUpperCase()}</label>
+          <div class="input-group input-group-sm">
+            <div class="input-group-prepend"><span class="input-group-text">TSh</span></div>
+            <input type="number" class="form-control platform-input" data-platform="${platform}" value="${breakdown[platform]}" placeholder="0">
+          </div>
+        </div>
+      `;
+    });
+
+    const remainingAmount = totalAmount - submittedAmount;
     const defaultSubmitAmount = submittedAmount > 0 ? Math.max(0, remainingAmount) : (recordedAmount > 0 ? recordedAmount : totalAmount);
     
-    // Format difference with color
-    let differenceHtml = '';
-    if (difference > 0) {
-      differenceHtml = `<span class="text-success">+TSh ${Math.abs(difference).toLocaleString()}</span>`;
-    } else if (difference < 0) {
-      differenceHtml = `<span class="text-danger">TSh ${difference.toLocaleString()}</span>`;
-    } else {
-      differenceHtml = `<span class="text-muted">TSh 0</span>`;
-    }
+    let differenceHtml = difference > 0 ? `<span class="text-success">+TSh ${Math.abs(difference).toLocaleString()}</span>` : (difference < 0 ? `<span class="text-danger">TSh ${difference.toLocaleString()}</span>` : `<span class="text-muted">TSh 0</span>`);
     
     Swal.fire({
       title: 'Submit Payment',
+      width: '450px',
       html: `
         <div class="text-left">
-          <p>Mark bar orders (drinks) for <strong>${waiterName}</strong> as paid.</p>
-          <div class="alert alert-light border">
-            <div class="row">
-              <div class="col-6"><strong>Expected Amount:</strong></div>
-              <div class="col-6 text-right"><strong>TSh ${parseFloat(totalAmount).toLocaleString()}</strong></div>
-            </div>
-            ${recordedAmount > 0 ? `
-            <div class="row mt-2">
-              <div class="col-6"><strong>Recorded Amount:</strong></div>
-              <div class="col-6 text-right text-info"><strong>TSh ${recordedAmount.toLocaleString()}</strong></div>
-            </div>
-            ` : ''}
-            ${submittedAmount > 0 ? `
-            <div class="row mt-2">
-              <div class="col-6"><strong>Already Submitted:</strong></div>
-              <div class="col-6 text-right text-success"><strong>TSh ${submittedAmount.toLocaleString()}</strong></div>
-            </div>
-            ` : ''}
-            <div class="row mt-2">
-              <div class="col-6"><strong>Difference:</strong></div>
-              <div class="col-6 text-right"><strong>${differenceHtml}</strong></div>
-            </div>
-            ${submittedAmount > 0 ? `
-            <div class="row mt-2">
-              <div class="col-6"><strong>Remaining Amount:</strong></div>
-              <div class="col-6 text-right"><strong class="text-primary">TSh ${remainingAmount.toLocaleString()}</strong></div>
-            </div>
-            ` : ''}
+          <p class="mb-2">Record actual collections for <strong>${waiterName}</strong>.</p>
+          <div class="alert alert-light border p-2 mb-3">
+            <div class="row small"><div class="col-6">Expected:</div><div class="col-6 text-right"><strong>TSh ${totalAmount.toLocaleString()}</strong></div></div>
+            ${recordedAmount > 0 ? `<div class="row small mt-1"><div class="col-6">Recorded:</div><div class="col-6 text-right text-info"><strong>TSh ${recordedAmount.toLocaleString()}</strong></div></div>` : ''}
+            <div class="row small mt-1"><div class="col-6">Difference:</div><div class="col-6 text-right"><strong>${differenceHtml}</strong></div></div>
           </div>
-          <hr>
-          <div class="form-group">
-            <label for="payment-amount">Amount to Submit:</label>
+          
+          <div id="platform-breakdown-container">
+            ${platformHtml}
+          </div>
+          
+          <hr class="my-3">
+          
+          <div class="form-group mb-0">
+            <label class="font-weight-bold">Total Amount to Submit:</label>
             <div class="input-group">
-              <div class="input-group-prepend">
-                <span class="input-group-text">TSh</span>
-              </div>
-              <input type="number" 
-                     id="payment-amount" 
-                     class="form-control" 
-                     value="${defaultSubmitAmount > 0 ? defaultSubmitAmount : ''}" 
-                     min="0" 
-                     max="${submittedAmount > 0 ? remainingAmount : parseFloat(totalAmount)}" 
-                     step="0.01"
-                     placeholder="${submittedAmount > 0 ? 'Enter remaining amount (max: TSh ' + remainingAmount.toLocaleString() + ')' : 'Enter amount'}">
+              <div class="input-group-prepend"><span class="input-group-text">TSh</span></div>
+              <input type="number" id="payment-amount" class="form-control font-weight-bold text-primary" value="${defaultSubmitAmount > 0 ? defaultSubmitAmount : ''}" readonly>
             </div>
-            <small class="form-text text-muted">
-              ${submittedAmount > 0 
-                ? `Enter the additional amount to submit. Maximum remaining: TSh ${remainingAmount.toLocaleString()}.`
-                : 'Enter the amount the waiter has collected. You can submit the full amount or a partial amount.'}
-              ${difference < 0 ? '<br><span class="text-danger"><i class="fa fa-exclamation-triangle"></i> Note: There is a shortfall of TSh ' + Math.abs(difference).toLocaleString() + '.</span>' : ''}
-            </small>
+            <small class="text-muted">This is automatically summed from the individual platform fields above.</small>
           </div>
-          <div class="btn-group btn-group-sm w-100 mt-2" role="group">
-            ${submittedAmount > 0 ? `
-            <button type="button" class="btn btn-outline-primary" id="btn-remaining-amount">
-              Remaining Amount (TSh ${remainingAmount.toLocaleString()})
-            </button>
-            ` : `
-            <button type="button" class="btn btn-outline-primary" id="btn-full-amount">
-              Full Amount (TSh ${parseFloat(totalAmount).toLocaleString()})
-            </button>
-            `}
-            ${recordedAmount > 0 && submittedAmount === 0 ? `
-            <button type="button" class="btn btn-outline-info" id="btn-recorded-amount">
-              Recorded Amount (TSh ${recordedAmount.toLocaleString()})
-            </button>
-            ` : ''}
-            <button type="button" class="btn btn-outline-secondary" id="btn-custom-amount">
-              Custom Amount
-            </button>
-          </div>
-          <small class="text-muted d-block mt-2">Note: Only bar orders (drinks) will be marked as paid. Food orders are handled separately.</small>
         </div>
       `,
-      icon: 'question',
       showCancelButton: true,
-      confirmButtonColor: '#28a745',
-      cancelButtonColor: '#d33',
       confirmButtonText: 'Submit Payment',
-      cancelButtonText: 'Cancel',
-      focusConfirm: false,
+      didOpen: () => {
+        const updateTotal = () => {
+          let total = 0;
+          $('.platform-input').each(function() {
+            total += parseFloat($(this).val()) || 0;
+          });
+          $('#payment-amount').val(total);
+        };
+        $('.platform-input').on('input', updateTotal);
+        updateTotal(); // Run initially
+      },
       preConfirm: () => {
         const amount = parseFloat(document.getElementById('payment-amount').value);
-        if (!amount || amount <= 0) {
-          Swal.showValidationMessage('Please enter a valid amount greater than 0');
-          return false;
-        }
-        const maxAmount = submittedAmount > 0 ? remainingAmount : parseFloat(totalAmount);
-        if (amount > maxAmount) {
-          Swal.showValidationMessage(`Amount cannot exceed ${submittedAmount > 0 ? 'the remaining amount' : 'the expected amount'} (TSh ${maxAmount.toLocaleString()})`);
-          return false;
-        }
-        return amount;
-      },
-      didOpen: () => {
-        // Ensure default value is set when modal opens
-        const paymentInput = document.getElementById('payment-amount');
-        if (paymentInput && !paymentInput.value && defaultSubmitAmount > 0) {
-          paymentInput.value = defaultSubmitAmount;
-        }
+        if (!amount || amount <= 0) { Swal.showValidationMessage('Enter a valid amount'); return false; }
         
-        // Remaining amount button (if already submitted)
-        const remainingBtn = document.getElementById('btn-remaining-amount');
-        if (remainingBtn) {
-          remainingBtn.addEventListener('click', function() {
-            paymentInput.value = remainingAmount;
-          });
-        }
-        
-        // Full amount button (if not yet submitted)
-        const fullAmountBtn = document.getElementById('btn-full-amount');
-        if (fullAmountBtn) {
-          fullAmountBtn.addEventListener('click', function() {
-            paymentInput.value = parseFloat(totalAmount);
-          });
-        }
-        
-        // Recorded amount button (if exists and not yet submitted)
-        const recordedBtn = document.getElementById('btn-recorded-amount');
-        if (recordedBtn) {
-          recordedBtn.addEventListener('click', function() {
-            paymentInput.value = recordedAmount;
-          });
-        }
-        
-        // Custom amount button - focus on input
-        document.getElementById('btn-custom-amount').addEventListener('click', function() {
-          paymentInput.focus();
-          paymentInput.select();
+        const finalBreakdown = {};
+        $('.platform-input').each(function() {
+          const platform = $(this).data('platform');
+          finalBreakdown[platform] = parseFloat($(this).val()) || 0;
         });
+        
+        return { amount: amount, breakdown: finalBreakdown };
       }
     }).then((result) => {
-      if (result.isConfirmed && result.value) {
-        const submittedAmount = result.value;
-        btn.prop('disabled', true).html('<i class="fa fa-spinner fa-spin"></i> Processing...');
-        
+      if (result.isConfirmed) {
+        btn.prop('disabled', true).html('<i class="fa fa-spinner fa-spin"></i> Submitting...');
         $.ajax({
           url: '{{ route("bar.counter.mark-all-paid") }}',
           method: 'POST',
-          data: {
-            _token: '{{ csrf_token() }}',
-            waiter_id: waiterId,
-            date: date,
-            submitted_amount: submittedAmount
+          data: { 
+            _token: '{{ csrf_token() }}', 
+            waiter_id: waiterId, 
+            date: date, 
+            submitted_amount: result.value.amount,
+            breakdown: result.value.breakdown
           },
           success: function(response) {
             if (response.success) {
-              // Store row reference before removing button
-              const row = btn.closest('tr');
-              
-              // Get expected amount from response or row
-              const expectedAmount = parseFloat(response.expected_amount || 0);
-              const submittedAmount = parseFloat(response.submitted_amount || response.total_amount || 0);
-              
-              // Hide the button (remove just the button, not the entire div)
-              btn.remove();
-              
-              // Update the Submitted column
-              const submittedCell = row.find('td:nth-child(9)'); // Submitted column
-              submittedCell.html('<strong>TSh ' + submittedAmount.toLocaleString() + '</strong>');
-              
-              // Update the Difference column
-              const differenceCell = row.find('td:nth-child(10)'); // Difference column
-              const difference = submittedAmount - expectedAmount;
-              let differenceHtml = '';
-              if (difference > 0) {
-                differenceHtml = '<span class="text-success">+TSh ' + difference.toLocaleString() + '</span>';
-              } else if (difference < 0) {
-                differenceHtml = '<span class="text-danger">TSh ' + difference.toLocaleString() + '</span>';
-              } else {
-                differenceHtml = '<span class="text-success">TSh 0</span>';
-              }
-              differenceCell.html(differenceHtml);
-              
-              // Update status if partial payment
-              if (submittedAmount < expectedAmount) {
-                const statusCell = row.find('td:nth-child(11)'); // Status column
-                statusCell.html('<span class="badge badge-warning">Partial</span>');
-              } else if (submittedAmount >= expectedAmount) {
-                const statusCell = row.find('td:nth-child(11)'); // Status column
-                statusCell.html('<span class="badge badge-info">Submitted</span>');
-              }
-              
-              // Show success message
-              let successMessage = response.message || 'Payment submitted successfully.';
-              if (submittedAmount < expectedAmount) {
-                successMessage = `Partial payment submitted: TSh ${submittedAmount.toLocaleString()} (Expected: TSh ${expectedAmount.toLocaleString()})`;
-              }
-              
-              Swal.fire({
-                icon: 'success',
-                title: 'Success!',
-                html: successMessage,
-                confirmButtonText: 'OK',
-                timer: 2000,
-                timerProgressBar: true
-              }).then(() => {
-                // Reload page to show updated reconciliation data
-                location.reload();
-              });
+              Swal.fire({ icon: 'success', title: 'Success!', text: 'Reconciliation submitted.', timer: 2000 }).then(() => { location.reload(); });
             }
           },
           error: function(xhr) {
-            const error = xhr.responseJSON?.error || 'Failed to mark orders as paid';
-            Swal.fire({
-              icon: 'error',
-              title: 'Error',
-              text: error
-            });
-            btn.prop('disabled', false).html('<i class="fa fa-money"></i> Submit Payment');
+            Swal.fire({ icon: 'error', title: 'Error', text: xhr.responseJSON?.error || 'Failed' });
+            btn.prop('disabled', false).html('<i class="fa fa-hand-holding-usd"></i> Reconcile');
+          }
+        });
+      }
+    });
+  });
+
+  
+  // Reset reconciliation button
+  $(document).on('click', '.reset-btn', function() {
+    const reconciliationId = $(this).data('reconciliation-id');
+    const btn = $(this);
+    Swal.fire({
+      title: 'Reset Reconciliation?',
+      text: 'This will reopen the staff row so you can adjust the submitted amount. Continue?',
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonColor: '#d33',
+      cancelButtonColor: '#3085d6',
+      confirmButtonText: 'Yes, Reset',
+      cancelButtonText: 'Cancel'
+    }).then((result) => {
+      if (result.isConfirmed) {
+        btn.prop('disabled', true).html('<i class="fa fa-spinner fa-spin"></i> Resetting...');
+        $.ajax({
+          url: '{{ route("bar.counter.reset-reconciliation", ":id") }}'.replace(':id', reconciliationId),
+          method: 'POST',
+          data: { _token: '{{ csrf_token() }}' },
+          success: function(response) {
+            if (response.success) {
+              Swal.fire({ icon: 'success', title: 'Reset!', text: 'Row reopened.', timer: 2000 }).then(() => { location.reload(); });
+            }
+          },
+          error: function(xhr) {
+            Swal.fire({ icon: 'error', title: 'Error', text: xhr.responseJSON?.error || 'Failed to reset' });
+            btn.prop('disabled', false).html('<i class="fa fa-undo"></i> Reset');
+          }
+        });
+      }
+    });
+  });
+
+  // Auto-calculate handover total
+  $('.handover-input').on('input', function() {
+    let total = 0;
+    $('.handover-input').each(function() {
+      total += parseFloat($(this).val()) || 0;
+    });
+    $('#handover-total').text('TSh ' + total.toLocaleString());
+  });
+  
+  // Trigger calculation on load
+  $('.handover-input').first().trigger('input');
+
+  // Reset Handover Button
+  $(document).on('click', '.reset-handover-btn', function() {
+    const date = $(this).data('date');
+    const btn = $(this);
+    Swal.fire({
+      title: 'Reset Entire Handover?',
+      text: 'This will cancel your handover and allow you to adjust each waiter row again. Continue?',
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonColor: '#d33',
+      confirmButtonText: 'Yes, Reset Everything'
+    }).then((result) => {
+      if (result.isConfirmed) {
+        btn.prop('disabled', true).html('<i class="fa fa-spinner fa-spin"></i> Resetting...');
+        $.ajax({
+          url: '{{ route("bar.counter.reset-handover") }}',
+          method: 'POST',
+          data: { _token: '{{ csrf_token() }}', date: date },
+          success: function(response) {
+            if (response.success) {
+              Swal.fire({ icon: 'success', title: 'Reset!', text: 'The day has been re-opened.', timer: 2000 }).then(() => { location.reload(); });
+            } else {
+              Swal.fire({ icon: 'error', title: 'Error', text: response.error || 'Failed to reset' });
+              btn.prop('disabled', false).html('<i class="fa fa-undo"></i> Reset Handover');
+            }
+          },
+          error: function(xhr) {
+            Swal.fire({ icon: 'error', title: 'Error', text: 'Server error' });
+            btn.prop('disabled', false).html('<i class="fa fa-undo"></i> Reset Handover');
           }
         });
       }

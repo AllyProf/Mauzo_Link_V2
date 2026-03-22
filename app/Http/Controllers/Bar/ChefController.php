@@ -1107,7 +1107,26 @@ class ChefController extends Controller
             ->sortByDesc('food_sales') // Sort by food sales (most relevant for chef)
             ->values();
 
-        return view('bar.chef.reconciliation', compact('waiters', 'date'));
+        // Load the chef's own handovers to accountant
+        $chefHandovers = \App\Models\FinancialHandover::where('user_id', $ownerId)
+            ->where('accountant_id', session('staff_id'))
+            ->where('handover_type', 'staff_to_accountant')
+            ->orderByDesc('handover_date')
+            ->take(30)
+            ->get();
+
+        // Check if today's handover already exists
+        $todayHandover = $chefHandovers->where('handover_date', $date)->first();
+
+        // Find accountant for this owner
+        $accountant = \App\Models\Staff::where('user_id', $ownerId)
+            ->whereHas('role', function($q) {
+                $q->where('slug', 'accountant');
+            })
+            ->where('is_active', true)
+            ->first();
+
+        return view('bar.chef.reconciliation', compact('waiters', 'date', 'chefHandovers', 'todayHandover', 'accountant'));
     }
 
     /**
@@ -1551,5 +1570,76 @@ class ChefController extends Controller
         $ingredients = Ingredient::where('user_id', $ownerId)->where('is_active', true)->orderBy('name')->get();
 
         return view('bar.chef.ingredient-batches.index', compact('batches', 'ingredients'));
+    }
+
+    /**
+     * Store financial handover to accountant
+     */
+    public function storeHandover(Request $request)
+    {
+        $ownerId = $this->getOwnerId();
+        $staff = $this->getCurrentStaff();
+        $date = $request->input('date', date('Y-m-d'));
+        
+        $request->validate([
+            'cash_amount' => 'required|numeric|min:0',
+            'mpesa_amount' => 'nullable|numeric|min:0',
+            'nmb_amount' => 'nullable|numeric|min:0',
+            'kcb_amount' => 'nullable|numeric|min:0',
+            'crdb_amount' => 'nullable|numeric|min:0',
+            'mixx_amount' => 'nullable|numeric|min:0',
+            'tigo_pesa_amount' => 'nullable|numeric|min:0',
+            'airtel_money_amount' => 'nullable|numeric|min:0',
+            'halopesa_amount' => 'nullable|numeric|min:0',
+        ]);
+
+        // Calculate total amount
+        $breakdown = [
+            'cash' => $request->input('cash_amount', 0),
+            'mpesa' => $request->input('mpesa_amount', 0),
+            'nmb' => $request->input('nmb_amount', 0),
+            'kcb' => $request->input('kcb_amount', 0),
+            'crdb' => $request->input('crdb_amount', 0),
+            'mixx' => $request->input('mixx_amount', 0),
+            'tigo_pesa' => $request->input('tigo_pesa_amount', 0),
+            'airtel_money' => $request->input('airtel_money_amount', 0),
+            'halopesa' => $request->input('halopesa_amount', 0),
+        ];
+        
+        $totalAmount = array_sum($breakdown);
+
+        // Check if already exists
+        $existing = \App\Models\FinancialHandover::where('user_id', $ownerId)
+            ->where('accountant_id', $staff->id)
+            ->whereDate('handover_date', $date)
+            ->where('handover_type', 'staff_to_accountant')
+            ->first();
+
+        if ($existing) {
+            return back()->with('error', 'Handover for this date already exists.');
+        }
+
+        // Find an active accountant for the owner to be the recipient
+        $accountant = \App\Models\Staff::where('user_id', $ownerId)
+            ->whereHas('role', function($q) {
+                $q->where('slug', 'accountant');
+            })
+            ->where('is_active', true)
+            ->first();
+
+        \App\Models\FinancialHandover::create([
+            'user_id' => $ownerId,
+            'accountant_id' => $staff->id, // Performing Staff (Chef)
+            'handover_type' => 'staff_to_accountant',
+            'recipient_id' => $accountant ? $accountant->id : null,
+            'department' => 'food',
+            'amount' => $totalAmount,
+            'payment_breakdown' => $breakdown,
+            'handover_date' => $date,
+            'status' => 'pending',
+            'notes' => $request->notes
+        ]);
+
+        return back()->with('success', 'Handover mapped and sent to Accountant successful! Awaiting confirmation.');
     }
 }

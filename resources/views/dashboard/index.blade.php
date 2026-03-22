@@ -123,6 +123,47 @@
 </div>
 @endif
 
+@if($pendingHandovers->count() > 0)
+<div class="row">
+  <div class="col-md-12">
+    <div class="tile">
+      <h3 class="tile-title text-primary"><i class="fa fa-money"></i> Pending Cash Handovers (Wait for Confirmation)</h3>
+      <div class="table-responsive">
+        <table class="table table-hover">
+          <thead>
+            <tr>
+              <th>Date</th>
+              <th>Accountant</th>
+              <th>Amount</th>
+              <th>Status</th>
+              <th>Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            @foreach($pendingHandovers as $ph)
+              <tr>
+                <td>{{ $ph->handover_date->format('M d, Y') }}</td>
+                <td>{{ $ph->accountant->full_name ?? 'Accountant' }}</td>
+                <td><strong>TSh {{ number_format($ph->amount) }}</strong></td>
+                <td><span class="badge badge-warning">Awaiting Your Confirmation</span></td>
+                <td>
+                  <form action="{{ route('accountant.cash-ledger.confirm', $ph->id) }}" method="POST" style="display:inline;" onsubmit="return confirm('Confirm receipt of TSh {{ number_format($ph->amount) }}?')">
+                    @csrf
+                    <button type="submit" class="btn btn-success btn-sm">
+                      <i class="fa fa-check"></i> I have received this Cash
+                    </button>
+                  </form>
+                </td>
+              </tr>
+            @endforeach
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+@endif
+
 @if($hasPendingPayment)
 <div class="row">
   <div class="col-md-12">

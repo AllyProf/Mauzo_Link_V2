@@ -98,11 +98,41 @@
         @if($tab === 'financial')
           <!-- High Level Summary for Managers/Owners -->
           @php
-              $summaryExpected = $financialReconciliations->sum('total_expected');
-              $summaryCollected = $financialReconciliations->sum(function($fr) {
-                  $paid = 0;
-                  if(preg_match('/\[ShortagePaidTotal:(\d+)\]/', $fr->notes ?? '', $m)) $paid = (int)$m[1];
-                  return $fr->total_submitted + $paid;
+              // Prepare financial reconciliations for display and summary
+              // This involves filtering based on handover and calculating submitted totals
+              // Also, extracting shortage payment details for JS mapping
+              $processedFinancialReconciliations = $financialReconciliations
+                ->filter(function($r) use ($handoverMap) {
+                    // Only show to accountant if handover exists for the specific date and type
+                    $dateVal = $r->reconciliation_date;
+                    $dateStr = ($dateVal instanceof \Carbon\Carbon) ? $dateVal->format('Y-m-d') : date('Y-m-d', strtotime($dateVal));
+                    $key = $dateStr . '_' . $r->reconciliation_type;
+                    return isset($handoverMap[$key]);
+                })
+                ->map(function($r) {
+                    // For accurate display, ensure total_submitted is the sum of platforms
+                    // This is important if total_submitted was not correctly stored as sum of platforms
+                    $calculatedTotal = $r->total_cash + $r->total_mobile + ($r->total_bank ?? 0) + ($r->total_card ?? 0);
+                    // Only update if calculated total is positive, otherwise use existing (might be 0 or negative for some reason)
+                    if ($calculatedTotal > 0) {
+                        $r->total_submitted = $calculatedTotal;
+                    }
+                    
+                    // Track shortage payments for JS mapping
+                    $paid = 0;
+                    if(preg_match('/\[ShortagePaidTotal:(\d+)\]/', $r->notes ?? '', $m)) $paid = (int)$m[1];
+                    $r->shortage_paid = $paid; // Add new attribute for total paid
+                    
+                    $breakdown = "";
+                    if(preg_match('/\[ShortagePaidBreakdown:([^\]]+)\]/', $r->notes ?? '', $bm)) $breakdown = $bm[1];
+                    $r->shortage_breakdown = $breakdown; // Add new attribute for breakdown string
+
+                    return $r;
+                });
+
+              $summaryExpected = $processedFinancialReconciliations->sum('total_expected');
+              $summaryCollected = $processedFinancialReconciliations->sum(function($fr) {
+                  return $fr->total_submitted + $fr->shortage_paid;
               });
               $summaryShortage = $summaryExpected - $summaryCollected;
           @endphp
@@ -169,6 +199,7 @@
             <table class="table table-hover table-bordered">
               <thead class="bg-light">
                 <tr>
+                  <th style="width: 40px;"></th>
                   <th>Date</th>
                   <th>Department</th>
                   <th>Expected (Sales)</th>
@@ -187,10 +218,11 @@
               <tbody>
                 @forelse($financialReconciliations as $fr)
                   @php
-                      $rowDiff = $fr->total_submitted - $fr->total_expected;
                       $rowTotalPaid = 0;
                       if(preg_match('/\[ShortagePaidTotal:(\d+)\]/', $fr->notes ?? '', $m)) $rowTotalPaid = (int)$m[1];
-                      $hasActiveShortage = $rowDiff < 0 && $rowTotalPaid < abs($rowDiff);
+                      
+                      $netDiff = $fr->total_expected - ($fr->total_submitted + $rowTotalPaid);
+                      $hasActiveShortage = ($netDiff > 0);
 
                       $breakdown = [];
                       if(preg_match('/\[ShortagePaidBreakdown:([^\]]+)\]/', $fr->notes ?? '', $bm)) {
@@ -200,7 +232,12 @@
                           }
                       }
                   @endphp
-                  <tr class="{{ $hasActiveShortage ? 'table-danger' : ($rowDiff < 0 ? 'table-success-light' : '') }}" style="{{ $hasActiveShortage ? 'background-color: #fff5f5;' : '' }}">
+                  <tr class="revenue-breakdown-row {{ $hasActiveShortage ? 'table-danger' : ($netDiff > 0 ? 'table-warning-light' : ($netDiff < 0 ? 'table-success-light' : '')) }}" 
+                      style="cursor: pointer; {{ $hasActiveShortage ? 'background-color: #fff5f5;' : '' }}"
+                      data-date="{{ \Carbon\Carbon::parse($fr->reconciliation_date)->format('Y-m-d') }}" 
+                      data-type="{{ $fr->reconciliation_type }}"
+                      data-target-row="details-{{ $loop->index }}">
+                    <td class="text-center"><i class="fa fa-chevron-right toggle-icon"></i></td>
                     <td>{{ \Carbon\Carbon::parse($fr->reconciliation_date)->format('M d, Y') }}</td>
                     <td>
                       @if($fr->reconciliation_type === 'bar')
@@ -210,25 +247,30 @@
                       @endif
                     </td>
                     <td><strong>TSh {{ number_format($fr->total_expected) }}</strong></td>
+                    <td><strong>TSh {{ number_format($fr->total_submitted_bag + $rowTotalPaid) }}</strong></td>
                     <td>
-                        <strong>TSh {{ number_format($fr->total_submitted + $rowTotalPaid) }}</strong>
-                        @if($rowTotalPaid > 0)
-                            <br><small class="text-muted">(Incl. TSh {{ number_format($rowTotalPaid) }} paid)</small>
-                        @endif
+                      TSh {{ number_format($fr->submitted_cash + ($breakdown['cash'] ?? 0)) }}
+                      @if(($fr->submitted_cash + ($breakdown['cash'] ?? 0)) < $fr->total_cash)
+                        <br><small class="text-danger">Short: -{{ number_format($fr->total_cash - ($fr->submitted_cash + ($breakdown['cash'] ?? 0))) }}</small>
+                      @endif
                     </td>
-                    <td>TSh {{ number_format($fr->total_cash + ($breakdown['cash'] ?? 0)) }}</td>
-                    <td>TSh {{ number_format($fr->total_mobile + ($breakdown['mobile_money'] ?? 0)) }}</td>
-                    <td>TSh {{ number_format(($fr->total_bank ?? 0) + ($breakdown['bank_transfer'] ?? 0)) }}</td>
-                    <td>TSh {{ number_format(($fr->total_card ?? 0) + ($breakdown['pos_card'] ?? 0)) }}</td>
+                    <td>
+                      TSh {{ number_format($fr->submitted_mobile + ($breakdown['mobile_money'] ?? 0)) }}
+                      @if(($fr->submitted_mobile + ($breakdown['mobile_money'] ?? 0)) < $fr->total_mobile)
+                        <br><small class="text-danger">Short: -{{ number_format($fr->total_mobile - ($fr->submitted_mobile + ($breakdown['mobile_money'] ?? 0))) }}</small>
+                      @endif
+                    </td>
+                    <td>TSh {{ number_format(($fr->submitted_bank ?? 0) + ($breakdown['bank_transfer'] ?? 0)) }}</td>
+                    <td>TSh {{ number_format(($fr->submitted_card ?? 0) + ($breakdown['pos_card'] ?? 0)) }}</td>
                     <td>
                       @php 
-                        $netSubmitted = $fr->total_submitted + $rowTotalPaid;
-                        $netDiff = $netSubmitted - $fr->total_expected; 
+                        // Show Expected - Submitted so that Positive = Shortage
+                        $netDiff = $fr->total_expected - ($fr->total_submitted + $rowTotalPaid); 
                       @endphp
-                      @if($netDiff < 0)
-                        <span class="text-danger">TSh {{ number_format($netDiff) }}</span>
-                      @elseif($netDiff > 0)
-                        <span class="text-success">+TSh {{ number_format($netDiff) }}</span>
+                      @if($netDiff > 0)
+                        <span class="text-danger">TSh {{ number_format($netDiff) }} (Short)</span>
+                      @elseif($netDiff < 0)
+                        <span class="text-success">+TSh {{ number_format(abs($netDiff)) }} (Surplus)</span>
                       @else
                         <span class="text-success small font-weight-bold"><i class="fa fa-check-circle"></i> Balanced</span>
                       @endif
@@ -236,79 +278,159 @@
                     <td>
                       @if($fr->status_indicator === 'verified')
                         <span class="badge badge-success">Verified</span>
+                      @elseif($fr->status_indicator === 'submitted')
+                        <span class="badge badge-info">Submitted</span>
                       @else
                         <span class="badge badge-warning">Pending</span>
                       @endif
-                    </td>
-                    @if($canReconcile)
                     <td>
-                        @if($fr->status_indicator === 'pending')
-                        <button class="btn btn-sm btn-primary perform-dept-reconcile-btn" 
-                                data-date="{{ $fr->reconciliation_date->format('Y-m-d') }}" 
-                                data-type="{{ $fr->reconciliation_type }}"
-                                data-expected="{{ $fr->total_expected }}"
-                                data-cash-recorded="{{ $fr->total_cash }}"
-                                data-mobile-recorded="{{ $fr->total_mobile }}"
-                                data-bank-recorded="{{ $fr->total_bank ?? 0 }}"
-                                data-card-recorded="{{ $fr->total_card ?? 0 }}">
-                            <i class="fa fa-check-circle"></i> Reconcile Now
-                        </button>
-                        @elseif($rowDiff < 0)
-                        <div class="d-flex align-items-center">
-                            @php
-                                $totalPaid = 0;
-                                if(preg_match('/\[ShortagePaidTotal:(\d+)\]/', $fr->notes ?? '', $m)) $totalPaid = (int)$m[1];
-                                $isFullyPaid = $totalPaid >= abs($rowDiff);
-                                $remaining = abs($rowDiff) - $totalPaid;
-                                $percent = abs($rowDiff) > 0 ? round(($totalPaid / abs($rowDiff)) * 100) : 0;
-                            @endphp
-
-                            @if($isFullyPaid)
-                                <span class="badge badge-success p-2 mr-2"><i class="fa fa-money"></i> Fully Paid</span>
-                            @else
-                                <div class="mr-2">
-                                    @if($totalPaid > 0)
-                                        <span class="badge badge-danger p-2 mb-1 d-block"><i class="fa fa-warning"></i> Remaining: TSh {{ number_format($remaining) }}</span>
-                                        <span class="badge badge-warning p-2 d-block"><i class="fa fa-clock-o"></i> Total Paid: TSh {{ number_format($totalPaid) }} ({{ $percent }}%)</span>
-                                    @else
-                                        <span class="badge badge-danger p-2 d-block"><i class="fa fa-warning"></i> Shortage: TSh {{ number_format(abs($rowDiff)) }}</span>
-                                    @endif
-                                </div>
-                                <button class="btn btn-sm btn-success pay-shortage-btn mr-2" 
-                                        data-date="{{ $fr->reconciliation_date->format('Y-m-d') }}" 
-                                        data-type="{{ $fr->reconciliation_type }}"
-                                        data-shortage="{{ $remaining }}"
-                                        title="Pay Remaining Shortage">
-                                    <i class="fa fa-money"></i> Pay {{ $totalPaid > 0 ? 'Remaining' : '' }}
-                                </button>
-                            @endif
-                            
-                            <button class="btn btn-sm btn-outline-danger btn-reopen-shift" 
-                                    data-date="{{ $fr->reconciliation_date->format('Y-m-d') }}" 
+                      <div class="d-flex align-items-center">
+                        @if($fr->status_indicator !== 'verified')
+                          @if(in_array($fr->status_indicator, ['pending', 'submitted']))
+                            <button class="btn btn-sm btn-primary perform-dept-reconcile-btn mr-1" 
+                                    data-date="{{ \Carbon\Carbon::parse($fr->reconciliation_date)->format('Y-m-d') }}" 
                                     data-type="{{ $fr->reconciliation_type }}"
-                                    title="Re-open Shift to Edit">
-                                <i class="fa fa-undo"></i>
+                                    data-expected="{{ $fr->total_expected }}"
+                                    data-cash-recorded="{{ $fr->total_cash }}"
+                                    data-mobile-recorded="{{ $fr->total_mobile }}"
+                                    data-bank-recorded="{{ $fr->total_bank ?? 0 }}"
+                                    data-card-recorded="{{ $fr->total_card ?? 0 }}">
+                                <i class="fa fa-check-circle"></i> Reconcile
                             </button>
-                        </div>
-                        @else
-                        <div class="d-flex align-items-center">
-                            <span class="badge badge-success p-2 mr-2"><i class="fa fa-check"></i> Balanced & Verified</span>
-                            <button class="btn btn-sm btn-outline-danger btn-reopen-shift" 
-                                    data-date="{{ $fr->reconciliation_date->format('Y-m-d') }}" 
-                                    data-type="{{ $fr->reconciliation_type }}"
-                                    title="Re-open Shift to Edit">
-                                <i class="fa fa-undo"></i>
-                            </button>
-                        </div>
+                          @endif
                         @endif
+
+                        @if($netDiff > 0)
+                          <button class="btn btn-sm btn-outline-danger pay-shortage-btn mr-1" 
+                                  data-date="{{ \Carbon\Carbon::parse($fr->reconciliation_date)->format('Y-m-d') }}" 
+                                  data-type="{{ $fr->reconciliation_type }}"
+                                  data-shortage="{{ $netDiff }}"
+                                  title="Pay Shortage (Detected)">
+                              <i class="fa fa-money"></i> Pay
+                          </button>
+                        @endif
+
+                        <button class="btn btn-sm btn-info view-dept-details-btn ml-1" 
+                                data-date="{{ \Carbon\Carbon::parse($fr->reconciliation_date)->format('Y-m-d') }}" 
+                                data-type="{{ $fr->reconciliation_type }}">
+                            <i class="fa fa-eye"></i> Details
+                        </button>
+                      </div>
                     </td>
-                    @endif
                   </tr>
-                @empty
-                  <tr>
-                    <td colspan="8" class="text-center py-4">No financial data found for this period</td>
+                  <!-- Folded Payment Breakdown -->
+                  <tr id="details-{{ $loop->index }}" class="details-row d-none" style="background-color: #fbfbfc;">
+                    <td colspan="12">
+                      <div class="px-4 py-3 border-bottom shadow-sm">
+                         <div class="row">
+                            <!-- Column 1: Staff Submission (From Handover) -->
+                            <div class="col-md-8">
+                                <h6 class="text-success font-weight-bold"><i class="fa fa-hand-grab-o"></i> (1) Staff Handover (Submitted)</h6>
+                                <table class="table table-sm table-bordered mt-2" style="font-size: 0.85rem;">
+                                    <thead class="bg-light"><tr><th>Channel/Provider</th><th>Submitted</th><th>Recorded (Sales)</th><th>Audit</th></tr></thead>
+                                    <tbody>
+                                        @php 
+                                          $totalSub = 0; 
+                                          $totalRec = 0;
+                                          // Map platforms to check Recorded values
+                                          $channelMap = [
+                                              'cash' => 'total_cash',
+                                              'mpesa' => 'total_mobile',
+                                              'airtel_money' => 'total_mobile',
+                                              'tigo_pesa' => 'total_mobile',
+                                              'halopesa' => 'total_mobile',
+                                              'mixx' => 'total_mobile',
+                                          ];
+                                        @endphp
+                                        @php
+                                            // Combine all unique channels from both breakdowns
+                                            $allChannels = array_unique(array_merge(
+                                                array_keys($fr->submitted_platform_breakdown ?? []),
+                                                array_keys($fr->recorded_platform_breakdown ?? [])
+                                            ));
+                                            $totalSubVisible = 0;
+                                        @endphp
+                                        @forelse($allChannels as $channelKey)
+                                            @php 
+                                              // Original submission + Accountant's adjustment
+                                              $origAmt = $fr->submitted_platform_breakdown[$channelKey] ?? 0;
+                                              $adjAmt = $breakdown[$channelKey] ?? 0;
+                                              $amt = $origAmt + $adjAmt;
+
+                                              $recVal = $fr->recorded_platform_breakdown[$channelKey] ?? 0;
+                                              $totalSubVisible += (float)$origAmt; // Still track original visible subtotal for overall balance logic
+                                            @endphp
+                                            @if((float)$amt > 0 || $recVal > 0)
+                                                <tr>
+                                                  <td>{{ strtoupper(str_replace('_', ' ', $channelKey)) }}</td>
+                                                  <td>
+                                                     TSh {{ number_format($amt) }}
+                                                     @if($adjAmt > 0)
+                                                        <br><small class="text-info"><i class="fa fa-plus-circle"></i> Incl. Audit Pay: +{{ number_format($adjAmt) }}</small>
+                                                     @endif
+                                                  </td>
+                                                  <td class="text-muted">TSh {{ number_format($recVal) }}</td>
+                                                  <td>
+                                                    @if($amt < $recVal)
+                                                      <span class="text-danger font-weight-bold">Short: -{{ number_format($recVal - $amt) }}</span>
+                                                    @elseif($amt > $recVal)
+                                                      <span class="text-success font-weight-bold">Surplus: +{{ number_format($amt - $recVal) }}</span>
+                                                    @else
+                                                      <span class="text-success small">Balanced</span>
+                                                    @endif
+                                                  </td>
+                                                </tr>
+                                            @endif
+                                        @empty
+                                            <tr><td colspan="4" class="text-muted text-center italic">No platform details found</td></tr>
+                                        @endforelse
+
+                                        @if($rowTotalPaid > 0)
+                                          <tr class="table-info">
+                                            <td><i class="fa fa-plus-circle"></i> SHORTAGE PAYMENTS (ACCOUNTANT)</td>
+                                            <td colspan="2">TSh {{ number_format($rowTotalPaid) }}</td>
+                                            <td><span class="text-info small">Audit Adjusted</span></td>
+                                          </tr>
+                                        @endif
+
+                                        <tr class="table-success">
+                                            <td><strong>TOTAL DECLARED (With Adj.)</strong></td>
+                                            <td><strong>TSh {{ number_format(($totalSubVisible > 0 ? $totalSubVisible : $fr->total_submitted_bag) + $rowTotalPaid) }}</strong></td>
+                                            <td colspan="2"></td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+
+                            <!-- Column 3: Audit Summary & Action -->
+                            <div class="col-md-3 text-right">
+                                <h6 class="text-info font-weight-bold"><i class="fa fa-info-circle"></i> Audit Status</h6>
+                                <div class="card {{ $hasActiveShortage ? 'border-danger' : 'border-success' }} shadow-none">
+                                    <div class="card-body p-2 text-center">
+                                        @if($netDiff != 0)
+                                            <div class="{{ $netDiff > 0 ? 'text-danger' : 'text-success' }} h5 mb-1">
+                                                {{ $netDiff > 0 ? 'SHORTAGE' : 'SURPLUS' }}
+                                            </div>
+                                            <div class="font-weight-bold {{ $netDiff > 0 ? 'text-danger' : 'text-success' }}">
+                                                {{ $netDiff > 0 ? '' : '+' }}TSh {{ number_format(abs($netDiff)) }}
+                                            </div>
+                                            <button class="btn btn-sm {{ $netDiff > 0 ? 'btn-success' : 'btn-primary' }} pay-shortage-btn mt-2 w-100" 
+                                                    data-date="{{ \Carbon\Carbon::parse($fr->reconciliation_date)->format('Y-m-d') }}" 
+                                                    data-type="{{ $fr->reconciliation_type }}"
+                                                    data-shortage="{{ $netDiff }}">
+                                                <i class="fa fa-money"></i> {{ $netDiff > 0 ? 'Record Payment' : 'Record Adjustment' }}
+                                            </button>
+                                        @else
+                                            <div class="text-success h5 mb-1"><i class="fa fa-check-circle"></i> BALANCED</div>
+                                        @endif
+                                    </div>
+                                </div>
+                            </div>
+                         </div>
+                      </div>
+                    </td>
                   </tr>
-                @endforelse
+                @endforeach
               </tbody>
             </table>
           </div>
@@ -638,6 +760,115 @@
   </div>
 </div>
 
+<!-- Modal for Viewing Department Details (Orders & Payments) -->
+<div class="modal fade" id="viewDeptOrdersModal" tabindex="-1">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header bg-info text-white">
+        <h5 class="modal-title"><i class="fa fa-list"></i> Department Details - <span id="orders_modal_title"></span></h5>
+        <button type="button" class="close text-white" data-dismiss="modal"><span>&times;</span></button>
+      </div>
+      <div class="modal-body p-0">
+        <ul class="nav nav-tabs nav-justified" id="deptDetailsTabs" role="tablist">
+          <li class="nav-item">
+            <a class="nav-link" id="payments-tab" data-toggle="tab" href="#payments_breakdown_panel" role="tab">Audit Breakdown</a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" id="shortage-tab" data-toggle="tab" href="#shortage_history_panel" role="tab">Shortage Tracking</a>
+          </li>
+        </ul>
+        <div class="tab-content">
+          <!-- Orders Panel -->
+          <div class="tab-pane fade show active" id="orders_list_panel" role="tabpanel">
+            <div class="table-responsive">
+              <table class="table table-sm table-hover mb-0">
+                <thead class="bg-light">
+                  <tr>
+                    <th>Time</th>
+                    <th>Order #</th>
+                    <th>Waiter</th>
+                    <th>Table</th>
+                    <th>Amount</th>
+                    <th>Status</th>
+                  </tr>
+                </thead>
+                <tbody id="dept_orders_body">
+                  <!-- Loaded via AJAX -->
+                </tbody>
+              </table>
+            </div>
+          </div>
+          <!-- Payments Panel -->
+          <div class="tab-pane fade" id="payments_breakdown_panel" role="tabpanel">
+            <div id="dept_payments_body" class="p-3">
+              <!-- Loaded via AJAX -->
+            </div>
+          </div>
+          <!-- Shortage Panel -->
+          <div class="tab-pane fade" id="shortage_history_panel" role="tabpanel">
+            <div id="dept_shortage_body" class="p-3">
+              <!-- Information about shortage payments -->
+            </div>
+          </div>
+        </div>
+        <div id="dept_orders_loader" class="text-center py-5 d-none">
+          <i class="fa fa-spinner fa-spin fa-2x text-info"></i>
+          <p class="mt-2">Loading details...</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Modal for Paying Shortage -->
+<div class="modal fade" id="payShortageModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header bg-success text-white">
+        <h5 class="modal-title shortage-modal-title"><i class="fa fa-money"></i> Record Shortage Payment</h5>
+        <button type="button" class="close text-white" data-dismiss="modal"><span>&times;</span></button>
+      </div>
+      <form id="shortage_payment_form">
+        @csrf
+        <input type="hidden" name="date" id="shortage_date">
+        <input type="hidden" name="type" id="shortage_type">
+        <div class="modal-body">
+            <div class="alert alert-info shadow-sm">
+                <strong id="shortage_amount_label">Pending Shortage:</strong> TSh <span id="shortage_amount_display" class="font-weight-bold">0</span>
+            </div>
+            <div class="row">
+              <div class="col-md-6">
+                <div class="form-group">
+                    <label class="shortage-input-label font-weight-bold">Amount to Pay (TSh)</label>
+                    <input type="number" name="amount" id="shortage_pay_amount" class="form-control" required>
+                </div>
+              </div>
+              <div class="col-md-6">
+                <div class="form-group">
+                    <label class="font-weight-bold">Payment Channel</label>
+                    <select name="channel" class="form-control" required>
+                        <option value="cash">Cash</option>
+                        <option value="mobile_money">Mobile Money</option>
+                        <option value="bank_transfer">Bank Transfer</option>
+                        <option value="pos_card">POS / Card</option>
+                    </select>
+                </div>
+              </div>
+            </div>
+            <div class="form-group">
+                <label class="font-weight-bold">Notes / Comments <small class="text-muted">(Optional)</small></label>
+                <textarea name="reference" class="form-control" rows="2" placeholder="e.g. Received from John..."></textarea>
+            </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-success" id="shortage_submit_btn">Save Settlement</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
 @endsection
 
 @push('scripts')
@@ -803,6 +1034,292 @@ $(document).ready(function() {
       });
   });
 
+  // Row click to toggle folded payment breakdown
+  $('.revenue-breakdown-row').css('cursor', 'pointer').click(function(e) {
+      // Don't trigger if a button or link was clicked inside the row
+      if ($(e.target).closest('button, a, input').length) return;
+      
+      const targetId = $(this).data('target-row');
+      const detailsRow = $(`#${targetId}`);
+      const icon = $(this).find('.toggle-icon');
+      const date = $(this).data('date');
+      const type = $(this).data('type');
+
+      if (detailsRow.hasClass('d-none')) {
+          $('.details-row').addClass('d-none');
+          $('.toggle-icon').removeClass('fa-chevron-down').addClass('fa-chevron-right');
+
+          detailsRow.removeClass('d-none');
+          icon.removeClass('fa-chevron-right').addClass('fa-chevron-down');
+
+          const paymentsBody = detailsRow.find('.payments-list-body');
+          if (paymentsBody.data('loaded') !== 'true') {
+              $.get("{{ route('accountant.reconciliations.orders') }}", { date, type }, function(response) {
+                  if (response.success) {
+                      let pHtml = '';
+                      let totalPay = 0;
+                      Object.keys(response.payment_breakdown).forEach(method => {
+                          const data = response.payment_breakdown[method];
+                          totalPay += data.total;
+                          
+                          // Method Total Header
+                          pHtml += `<tr class="table-secondary"><td><strong>${method.toUpperCase()}</strong></td><td><strong>METHOD TOTAL</strong></td><td><strong>TSh ${new Intl.NumberFormat().format(data.total)}</strong></td></tr>`;
+                          
+                          // Group transactions by Platform (reference)
+                          const platforms = {};
+                          data.transactions.forEach(t => {
+                              const plat = t.reference || 'Default';
+                              if (!platforms[plat]) platforms[plat] = { total: 0, txs: [] };
+                              platforms[plat].total += t.amount;
+                              platforms[plat].txs.push(t);
+                          });
+
+                          Object.keys(platforms).forEach(plat => {
+                              // Platform Subtotal
+                              pHtml += `<tr class="bg-light"><td></td><td><i class="fa fa-caret-right"></i> ${plat}</td><td>TSh ${new Intl.NumberFormat().format(platforms[plat].total)}</td></tr>`;
+                              
+                              // Individual Transaction Details
+                              platforms[plat].txs.forEach(t => {
+                                  pHtml += `<tr><td class="pl-4 text-muted small">${t.time} - #${t.order}</td><td class="small text-muted">${t.waiter}</td><td class="small text-muted">TSh ${new Intl.NumberFormat().format(t.amount)}</td></tr>`;
+                              });
+                          });
+                      });
+                      pHtml += `<tr class="table-info"><td><strong>OVERALL TOTAL</strong></td><td></td><td><strong>TSh ${new Intl.NumberFormat().format(totalPay)}</strong></td></tr>`;
+                      paymentsBody.html(pHtml).data('loaded', 'true');
+                  } else {
+                      paymentsBody.html(`<tr><td colspan="3" class="text-danger">Error: ${response.error}</td></tr>`);
+                  }
+              });
+          }
+      } else {
+          detailsRow.addClass('d-none');
+          icon.removeClass('fa-chevron-down').addClass('fa-chevron-right');
+      }
+  });
+
+  // View Details Modal (specifically for orders)
+  $(document).on('click', '.view-dept-details-btn', function() {
+      const date = $(this).data('date');
+      const type = $(this).data('type');
+      const deptName = type === 'bar' ? 'COUNTER (BAR)' : 'CHEF (FOOD)';
+      
+      $('#orders_modal_title').text(`${deptName} - ${date}`);
+      $('#dept_orders_body').html('<tr><td colspan="6" class="text-center p-3 text-muted"><i class="fa fa-spinner fa-spin"></i> Loading orders...</td></tr>');
+      $('#dept_payments_body').empty();
+      $('#dept_shortage_body').empty();
+      $('#dept_orders_loader').removeClass('d-none');
+      $('#orders_modal_footer').html('<button type="button" class="btn btn-secondary" data-dismiss="modal">Close</button>');
+
+      $('#viewDeptOrdersModal').modal('show');
+
+      $.get("{{ route('accountant.reconciliations.orders') }}", { date, type }, function(response) {
+          $('#dept_orders_loader').addClass('d-none');
+          if (response.success) {
+              // 1. Orders
+              let ordersHtml = '';
+              if (response.orders.length > 0) {
+                  response.orders.forEach(order => {
+                      ordersHtml += `<tr><td>${order.created_at}</td><td>#${order.order_number}</td><td>${order.waiter_name}</td><td>${order.table_name}</td><td>TSh ${new Intl.NumberFormat().format(order.total_amount)}</td><td><span class="badge badge-${order.payment_status === 'paid' ? 'success' : 'warning'}">${order.payment_status}</span></td></tr>`;
+                  });
+              } else {
+                  ordersHtml = '<tr><td colspan="6" class="text-center py-3 text-muted">No orders found</td></tr>';
+              }
+              $('#dept_orders_body').html(ordersHtml);
+
+              // 2. Payments (Full)
+              let pHtml = '';
+              let totalPay = 0;
+              Object.keys(response.payment_breakdown).forEach(method => {
+                  const data = response.payment_breakdown[method];
+                  totalPay += data.total;
+                  pHtml += `<tr class="table-secondary"><td><strong>${method.toUpperCase()}</strong></td><td><strong>METHOD TOTAL</strong></td><td><strong>TSh ${new Intl.NumberFormat().format(data.total)}</strong></td></tr>`;
+                  
+                  // Group transactions by Platform (reference)
+                  const platforms = {};
+                  data.transactions.forEach(t => {
+                      const plat = t.reference || 'Default';
+                      if (!platforms[plat]) platforms[plat] = { total: 0, txs: [] };
+                      platforms[plat].total += t.amount;
+                      platforms[plat].txs.push(t);
+                  });
+
+                  Object.keys(platforms).forEach(plat => {
+                      pHtml += `<tr class="bg-light"><td></td><td><i class="fa fa-caret-right"></i> ${plat}</td><td>TSh ${new Intl.NumberFormat().format(platforms[plat].total)}</td></tr>`;
+                      platforms[plat].txs.forEach(t => {
+                          pHtml += `<tr><td class="pl-4 small text-muted">${t.time} - #${t.order}</td><td class="small text-muted">${t.waiter}</td><td class="small text-muted">TSh ${new Intl.NumberFormat().format(t.amount)}</td></tr>`;
+                      });
+                  });
+              });
+              pHtml += `<tr class="table-info"><td><strong>OVERALL TOTAL</strong></td><td></td><td><strong>TSh ${new Intl.NumberFormat().format(totalPay)}</strong></td></tr>`;
+              $('#dept_payments_body').html(pHtml);
+
+              // 3. Footer Button logic
+              // We'll trust the caller to re-trigger if needed, or add it here
+          }
+      });
+  });
+
+  // View Department Details
+  $('.view-dept-orders-btn').click(function() {
+      const date = $(this).data('date');
+      const type = $(this).data('type');
+      const deptName = type === 'bar' ? 'COUNTER (BAR)' : 'CHEF (FOOD)';
+      
+      $('#orders_modal_title').text(`${deptName} - ${date}`);
+      $('#dept_orders_body').empty();
+      $('#dept_payments_body').empty();
+      $('#dept_shortage_body').empty(); // Clear shortage body as well
+      $('#dept_orders_loader').removeClass('d-none');
+      $('#viewDeptOrdersModal').modal('show');
+
+      $.get("{{ route('accountant.reconciliations.orders') }}", { date, type }, function(response) {
+          $('#dept_orders_loader').addClass('d-none');
+          if (response.success) {
+              // 1. Populate Orders List
+              let ordersHtml = '';
+              if (response.orders.length > 0) {
+                  response.orders.forEach(order => {
+                      ordersHtml += `
+                          <tr>
+                              <td>${order.created_at}</td>
+                              <td><strong>#${order.order_number}</strong></td>
+                              <td>${order.waiter_name}</td>
+                              <td>${order.table_name}</td>
+                              <td>TSh ${new Intl.NumberFormat().format(order.total_amount)}</td>
+                              <td><span class="badge badge-${order.payment_status === 'paid' ? 'success' : 'warning'}">${order.payment_status}</span></td>
+                          </tr>
+                      `;
+                  });
+              } else {
+                  ordersHtml = '<tr><td colspan="6" class="text-center py-3 text-muted">No orders found</td></tr>';
+              }
+              $('#dept_orders_body').html(ordersHtml);
+
+              // 2. Populate Payments Breakdown
+              let paymentsHtml = '';
+              if (Object.keys(response.payment_breakdown).length > 0) {
+                  for (let method in response.payment_breakdown) {
+                      let data = response.payment_breakdown[method];
+                      let methodName = method.replace('_', ' ').toUpperCase();
+                      paymentsHtml += `
+                          <div class="card mb-3 border-left-primary shadow-sm">
+                              <div class="card-header py-2 d-flex justify-content-between align-items-center bg-gray-100">
+                                  <h6 class="m-0 font-weight-bold text-primary text-uppercase small">${methodName}</h6>
+                                  <span class="badge badge-primary">TSh ${new Intl.NumberFormat().format(data.total)}</span>
+                              </div>
+                              <div class="card-body p-0">
+                                  <table class="table table-sm table-hover mb-0" style="font-size: 0.8rem;">
+                                      <thead>
+                                          <tr class="text-muted small">
+                                              <th>Time</th>
+                                              <th>Order</th>
+                                              <th>Waiter</th>
+                                              <th>Amount</th>
+                                          </tr>
+                                      </thead>
+                                      <tbody>
+                      `;
+                      data.transactions.forEach(tx => {
+                          paymentsHtml += `
+                              <tr>
+                                  <td><small>${tx.time}</small></td>
+                                  <td><strong>#${tx.order}</strong></td>
+                                  <td>${tx.waiter}</td>
+                                  <td>TSh ${new Intl.NumberFormat().format(tx.amount)}</td>
+                              </tr>
+                          `;
+                      });
+                      paymentsHtml += `</tbody></table></div></div>`;
+                  }
+              } else {
+                  paymentsHtml = '<div class="text-center py-4 text-muted"><p>No payment recorded from digital/cash platforms yet.</p></div>';
+              }
+              $('#dept_payments_body').html(paymentsHtml);
+
+              // 3. Populate Shortage Tracking
+              // Get data from the row buttons where it was pre-calculated
+              const btnSource = $(`button.view-dept-orders-btn[data-date="${date}"][data-type="${type}"]`).first();
+              const shortageTotal = btnSource.closest('tr').find('.pay-shortage-btn').data('shortage') || 0;
+              
+              // We'll use the notes field for history (it's in the row)
+              let notesText = btnSource.closest('tr').find('td').eq(6).text(); // column index 6 is the status column or before?
+              // Actually let's just get it from the response if we can.
+              
+              let shortageHtml = `
+                  <div class="alert alert-info border-0 shadow-sm">
+                      <h6 class="font-weight-bold"><i class="fa fa-info-circle"></i> Shortage Status</h6>
+                      <p class="mb-0 small">Audit detects if the <strong>Submitted Amount</strong> matches the <strong>System Sales</strong>.</p>
+                  </div>
+              `;
+              
+              // Use class selectors to find values in the same row
+              const row = btnSource.closest('tr');
+              const shortageAmountText = row.find('.badge-danger').text() || 'None';
+              
+              shortageHtml += `
+                  <div class="card border-0 bg-light mb-3">
+                      <div class="card-body p-3 text-center">
+                          <p class="text-muted mb-1 small">Current Outstanding Shortage</p>
+                          <h4 class="font-weight-bold ${shortageTotal > 0 ? 'text-danger' : 'text-success'}">${shortageAmountText.replace('Shortage:', '') || 'TSh 0'}</h4>
+                      </div>
+                  </div>
+              `;
+
+              $('#dept_shortage_body').html(shortageHtml);
+          } else {
+              Swal.fire('Error', response.error || 'Failed to load details', 'error');
+              $('#viewDeptOrdersModal').modal('hide');
+          }
+      }).fail(function() {
+          $('#dept_orders_loader').addClass('d-none');
+          Swal.fire('Error', 'Server error while loading details', 'error');
+          $('#viewDeptOrdersModal').modal('hide');
+      });
+  });
+
+  // Remove duplicate handler if any (merged into one below)
+  $(document).off('click', '.pay-shortage-btn').on('click', '.pay-shortage-btn', function() {
+      const date = $(this).data('date');
+      const type = $(this).data('type');
+      const shortage = parseFloat($(this).data('shortage'));
+      const isSurplus = shortage < 0;
+      
+      const title = isSurplus ? 'Record Surplus Adjustment' : 'Record Shortage Payment';
+      const amtLabel = isSurplus ? 'Current Surplus:' : 'Pending Shortage:';
+      const inputLabel = isSurplus ? 'Adjustment/Return Amount (TSh):' : 'Amount to Pay (TSh):';
+
+      $('.shortage-modal-title').html(`<i class="fa fa-money"></i> ${title}`);
+      $('#shortage_amount_label').text(amtLabel);
+      $('.shortage-input-label').text(inputLabel);
+      
+      $('#shortage_date').val(date);
+      $('#shortage_type').val(type);
+      $('#shortage_amount_display').text(new Intl.NumberFormat().format(Math.abs(shortage)));
+      $('#shortage_pay_amount').val(Math.abs(shortage));
+      
+      $('#payShortageModal').modal('show');
+  });
+
+  $('#shortage_payment_form').submit(function(e) {
+      e.preventDefault();
+      const btn = $(this).find('button[type="submit"]');
+      btn.prop('disabled', true).text('Saving...');
+
+      $.post("{{ route('accountant.reconciliations.pay-shortage') }}", $(this).serialize(), function(response) {
+          if (response.success) {
+              Swal.fire('Success', 'Shortage payment recorded!', 'success').then(() => {
+                  location.reload();
+              });
+          } else {
+              Swal.fire('Error', response.error || 'Failed to save payment', 'error');
+              btn.prop('disabled', false).text('Save Payment');
+          }
+      }).fail(function() {
+          Swal.fire('Error', 'Server error while saving payment', 'error');
+          btn.prop('disabled', false).text('Save Payment');
+      });
+  });
+
   // Detailed Payment Log Real-time filtering
   function filterPayments() {
       const search = $('#payment_js_search').val().toLowerCase();
@@ -867,52 +1384,7 @@ $(document).ready(function() {
       });
   });
 
-  // Pay Shortage Logic
-  $('.pay-shortage-btn').click(function() {
-      const date = $(this).data('date');
-      const type = $(this).data('type');
-      const shortage = $(this).data('shortage');
-
-      Swal.fire({
-          title: 'Mark Shortage as Paid?',
-          html: `
-            <div class="text-left">
-                <label class="small font-weight-bold">Amount Received (TSh ${shortage.toLocaleString()})</label>
-                <input type="number" id="pay_amt" class="swal2-input m-0 w-100" value="${shortage}">
-                <p class="mt-2 text-muted small"><i class="fa fa-info-circle"></i> Method will be auto-detected based on the discrepancy.</p>
-            </div>
-          `,
-          showCancelButton: true,
-          confirmButtonText: 'Record Payment',
-          showLoaderOnConfirm: true,
-          preConfirm: () => {
-              const amount = $('#pay_amt').val();
-              
-              if (!amount || amount <= 0) {
-                  Swal.showValidationMessage('Please enter a valid amount');
-                  return false;
-              }
-
-              return $.ajax({
-                  url: "{{ route('accountant.reconciliations.pay-shortage') }}",
-                  type: "POST",
-                  data: {
-                      _token: "{{ csrf_token() }}",
-                      date: date,
-                      type: type,
-                      amount: amount
-                  }
-              }).catch(error => {
-                  Swal.showValidationMessage(`Request failed: ${error.responseJSON.message}`);
-              });
-          },
-          allowOutsideClick: () => !Swal.isLoading()
-      }).then((result) => {
-          if (result.isConfirmed && result.value.success) {
-              Swal.fire('Success!', result.value.message, 'success').then(() => location.reload());
-          }
-      });
-  });
+  // Redundant Pay Shortage Logic removed - merged into Bootstrap Modal handler above.
 
   // Transfer details logic (kept from original)
   $('.view-transfer-details-btn').click(function() {

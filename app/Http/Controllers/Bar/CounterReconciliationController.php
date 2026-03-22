@@ -6,10 +6,13 @@ use App\Http\Controllers\Controller;
 use App\Http\Controllers\Traits\HandlesStaffPermissions;
 use App\Models\BarOrder;
 use App\Models\Staff;
+use App\Models\FinancialHandover;
+use App\Models\OrderPayment;
 use App\Models\WaiterDailyReconciliation;
 use App\Models\WaiterNotification;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 
 class CounterReconciliationController extends Controller
 {
@@ -40,21 +43,23 @@ class CounterReconciliationController extends Controller
         $location = session('active_location');
 
         // Get waiters, or anyone who placed an order today, or has a reconciliation today
-        $waitersQuery = Staff::query()
-            ->where('is_active', true)
+        $waitersQuery = Staff::where('is_active', true)
             ->where(function ($query) use ($date, $location) {
-                $query->whereHas('role', function($q) {
-                    $q->whereIn('slug', ['waiter']);
+                // Role check
+                $query->whereHas('role', function ($q) {
+                    $q->where('slug', 'waiter');
                 })
-                ->orWhereHas('orders', function($q) use ($date, $location) {
-                    $q->whereDate('created_at', $date)
-                      ->when($location && $location !== 'all', function($sq) use ($location) {
-                          $sq->whereHas('table', function($tsq) use ($location) {
-                              $tsq->where('location', $location);
-                          });
-                      });
+                // OR orders today check
+                ->orWhereHas('orders', function ($q) use ($date, $location) {
+                    $q->whereDate('created_at', $date);
+                    if ($location && $location !== 'all') {
+                        $q->whereHas('table', function ($sq) use ($location) {
+                            $sq->where('location', $location);
+                        });
+                    }
                 })
-                ->orWhereHas('dailyReconciliations', function($q) use ($date) {
+                // OR daily reconciliations check
+                ->orWhereHas('dailyReconciliations', function ($q) use ($date) {
                     $q->where('reconciliation_date', $date)
                       ->where('reconciliation_type', 'bar');
                 });
@@ -143,16 +148,40 @@ class CounterReconciliationController extends Controller
                     if ($order->orderPayments->count() > 0) {
                         // Use OrderPayments if they exist
                         $cashCollected += $order->orderPayments->where('payment_method', 'cash')->sum('amount');
-                        $mobileMoneyCollected += $order->orderPayments->where('payment_method', 'mobile_money')->sum('amount');
+                        // Sum everything that is NOT cash as digital/mobile money
+                        $mobileMoneyCollected += $order->orderPayments->where('payment_method', '!=', 'cash')->sum('amount');
                     } else {
                         // Fallback to order fields
                         if ($order->payment_method === 'cash') {
                             $cashCollected += $order->paid_amount;
-                        } elseif ($order->payment_method === 'mobile_money') {
+                        } else {
+                            // Any other payment method (mobile_money, bank_transfer, etc.)
                             $mobileMoneyCollected += $order->paid_amount;
                         }
                     }
                 }
+                
+                // Detailed platform breakdown for the waiter
+                $waiterPlatformTotals = [];
+                foreach ($barOrders as $order) {
+                    foreach ($order->orderPayments as $payment) {
+                        if ($payment->payment_method === 'cash') continue;
+                        
+                        $provider = strtolower(trim($payment->mobile_money_number ?? 'mobile'));
+                        $label = 'MOBILE MONEY';
+                        if (str_contains($provider, 'm-pesa') || str_contains($provider, 'mpesa')) { $label = 'M-PESA'; }
+                        elseif (str_contains($provider, 'mixx')) { $label = 'MIXX BY YAS'; }
+                        elseif (str_contains($provider, 'halo')) { $label = 'HALOPESA'; }
+                        elseif (str_contains($provider, 'tigo')) { $label = 'TIGO PESA'; }
+                        elseif (str_contains($provider, 'airtel')) { $label = 'AIRTEL MONEY'; }
+                        elseif (str_contains($provider, 'nmb')) { $label = 'NMB BANK'; }
+                        elseif (str_contains($provider, 'crdb')) { $label = 'CRDB BANK'; }
+                        elseif (str_contains($provider, 'kcb')) { $label = 'KCB BANK'; }
+                        
+                        $waiterPlatformTotals[$label] = ($waiterPlatformTotals[$label] ?? 0) + $payment->amount;
+                    }
+                }
+
                 
                 // Re-calculate Total Recorded to match the above logic
                 $totalRecordedAmount = $cashCollected + $mobileMoneyCollected;
@@ -163,8 +192,11 @@ class CounterReconciliationController extends Controller
                 // Don't use totalPaidAmount here - that would show as submitted before reconciliation
                 $submittedAmount = $reconciliation ? $reconciliation->submitted_amount : 0;
                 
-                // Calculate difference: Submitted - Expected
-                $difference = $submittedAmount - $totalSales;
+                // Calculate difference: 
+                // If submitted, use submitted - total. Else use recorded - total.
+                $difference = ($submittedAmount > 0 || $reconciliation) 
+                              ? ($submittedAmount - $totalSales) 
+                              : ($totalRecordedAmount - $totalSales);
                 
                 // Determine status intelligently
                 $status = 'pending';
@@ -182,6 +214,10 @@ class CounterReconciliationController extends Controller
                     }
                 }
                 
+                // Final amounts for the UI: Use reconciliation record if it exists
+                $finalCash = $reconciliation ? $reconciliation->cash_collected : $cashCollected;
+                $finalDigital = $reconciliation ? $reconciliation->mobile_money_collected : $mobileMoneyCollected;
+
                 return [
                     'waiter' => $waiter,
                     'total_sales' => $totalSales, // Bar sales only
@@ -191,15 +227,18 @@ class CounterReconciliationController extends Controller
                     'bar_orders_count' => $barOrdersCount,
                     'food_orders_count' => $foodOrdersCount,
                     'has_unpaid_orders' => $hasUnpaidOrders,
-                    'cash_collected' => $cashCollected,
-                    'mobile_money_collected' => $mobileMoneyCollected,
+                    'cash_collected' => $finalCash,
+                    'mobile_money_collected' => $finalDigital,
+                    'recorded_cash' => $cashCollected,
+                    'recorded_digital' => $mobileMoneyCollected,
                     'expected_amount' => $totalSales, // Expected = bar sales only
                     'recorded_amount' => $totalRecordedAmount, // Amount recorded by waiter (from OrderPayments)
                     'submitted_amount' => $submittedAmount, // Amount submitted/reconciled by counter
                     'difference' => $difference, // Always calculate difference
                     'status' => $status,
                     'orders' => $barOrders, // Only bar orders
-                    'reconciliation' => $reconciliation
+                    'reconciliation' => $reconciliation,
+                    'platform_totals' => $waiterPlatformTotals
                 ];
             })
             ->filter(function($data) {
@@ -208,7 +247,92 @@ class CounterReconciliationController extends Controller
             ->sortByDesc('total_sales')
             ->values();
 
-        return view('bar.counter.reconciliation', compact('waiters', 'date'));
+        // Get an active accountant to handover to
+        $accountant = Staff::where('user_id', $ownerId)
+            ->whereHas('role', function($q) {
+                $q->where('slug', 'accountant');
+            })
+            ->where('is_active', true)
+            ->first();
+
+        // Check if there is already a handover today
+        $todayHandover = null;
+        if ($currentStaff) {
+            $todayHandover = FinancialHandover::where('user_id', $ownerId)
+                ->where('accountant_id', $currentStaff->id) // Current Counter
+                ->whereDate('handover_date', $date)
+                ->where('handover_type', 'staff_to_accountant')
+                ->first();
+        }
+
+        $expectedBreakdowns = [
+            'cash_amount' => 0,
+            'mpesa_amount' => 0,
+            'mixx_amount' => 0,
+            'halopesa_amount' => 0,
+            'tigo_pesa_amount' => 0,
+            'airtel_money_amount' => 0,
+            'nmb_amount' => 0,
+            'crdb_amount' => 0,
+            'kcb_amount' => 0,
+        ];
+
+        foreach ($waiters as $data) {
+            foreach ($data['orders'] as $order) {
+                // Determine payments to iterate over
+                if ($order->orderPayments && $order->orderPayments->count() > 0) {
+                    $payments = $order->orderPayments;
+                } else {
+                    // mock orderPayment interface using order itself
+                    if ($order->payment_status === 'paid' && $order->paid_amount > 0) {
+                        $payments = [ (object)[
+                            'payment_method' => $order->payment_method,
+                            'mobile_money_number' => $order->mobile_money_number,
+                            'amount' => $order->paid_amount
+                        ]];
+                    } else {
+                        $payments = [];
+                    }
+                }
+
+                foreach ($payments as $payment) {
+                    $amount = $payment->amount;
+                    if ($payment->payment_method === 'cash') {
+                        $expectedBreakdowns['cash_amount'] += $amount;
+                    } else {
+                        $provider = strtolower(trim($payment->mobile_money_number ?? ''));
+                        if (str_contains($provider, 'm-pesa') || str_contains($provider, 'mpesa')) {
+                            $expectedBreakdowns['mpesa_amount'] += $amount;
+                        } elseif (str_contains($provider, 'mixx')) {
+                            $expectedBreakdowns['mixx_amount'] += $amount;
+                        } elseif (str_contains($provider, 'halo')) {
+                            $expectedBreakdowns['halopesa_amount'] += $amount;
+                        } elseif (str_contains($provider, 'tigo')) {
+                            $expectedBreakdowns['tigo_pesa_amount'] += $amount;
+                        } elseif (str_contains($provider, 'airtel')) {
+                            $expectedBreakdowns['airtel_money_amount'] += $amount;
+                        } elseif (str_contains($provider, 'nmb')) {
+                            $expectedBreakdowns['nmb_amount'] += $amount;
+                        } elseif (str_contains($provider, 'crdb')) {
+                            $expectedBreakdowns['crdb_amount'] += $amount;
+                        } elseif (str_contains($provider, 'kcb')) {
+                            $expectedBreakdowns['kcb_amount'] += $amount;
+                        } else {
+                            // If somehow generic mobile money or bank without explicit provider
+                            if (str_contains($payment->payment_method, 'bank') || $payment->payment_method === 'card') {
+                                // Defaulting unspecified banks to NMB to prevent loss (could adjust as needed)
+                                $expectedBreakdowns['nmb_amount'] += $amount;
+                            } else {
+                                // default generic M-PESA
+                                $expectedBreakdowns['mpesa_amount'] += $amount;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        return view('bar.counter.reconciliation', compact('waiters', 'date', 'accountant', 'todayHandover', 'expectedBreakdowns'));
     }
 
     /**
@@ -296,7 +420,8 @@ class CounterReconciliationController extends Controller
             ->whereHas('items') // Only orders with drinks (bar items)
             ->get();
 
-        if ($orders->isEmpty()) {
+        // Only error out if we have NO unpaid orders AND no submitted_amount provided
+        if ($orders->isEmpty() && !isset($validated['submitted_amount'])) {
             return response()->json([
                 'success' => false,
                 'error' => 'No unpaid served orders found for this waiter on this date.'
@@ -387,9 +512,6 @@ class CounterReconciliationController extends Controller
                 $submittedAmount = $previousSubmittedAmount + $calculatedSubmittedAmount;
             }
             
-            // Ensure submitted amount doesn't exceed expected amount
-            $submittedAmount = min($submittedAmount, $expectedAmount);
-            
             // Calculate difference
             $difference = $submittedAmount - $expectedAmount;
             
@@ -406,6 +528,29 @@ class CounterReconciliationController extends Controller
             }
             $barOrders = $barOrdersQuery->get();
             
+            // Calculate recorded platform breakdown from orders
+            $waiterPlatformTotals = [];
+            foreach ($barOrders as $order) {
+                if ($order->orderPayments->count() > 0) {
+                    foreach ($order->orderPayments as $payment) {
+                        $pKey = ($payment->payment_method === 'cash') ? 'cash' : strtolower(trim(str_replace(' ', '_', $payment->mobile_money_number ?? 'mobile')));
+                        $waiterPlatformTotals[$pKey] = ($waiterPlatformTotals[$pKey] ?? 0) + $payment->amount;
+                    }
+                } else {
+                    $pKey = ($order->payment_method === 'cash') ? 'cash' : strtolower(trim(str_replace(' ', '_', $order->mobile_money_number ?? 'mobile')));
+                    $waiterPlatformTotals[$pKey] = ($waiterPlatformTotals[$pKey] ?? 0) + $order->paid_amount;
+                }
+            }
+
+            $breakdown = $request->input('breakdown', []);
+            $submittedCash = $breakdown['cash'] ?? 0;
+            $submittedDigital = 0;
+            foreach ($breakdown as $platform => $amt) {
+                if ($platform !== 'cash') {
+                    $submittedDigital += $amt;
+                }
+            }
+
             // Create or update bar-specific reconciliation record
             $reconciliation = \App\Models\WaiterDailyReconciliation::updateOrCreate(
                 [
@@ -417,18 +562,15 @@ class CounterReconciliationController extends Controller
                 [
                     'expected_amount' => $expectedAmount,
                     'submitted_amount' => $submittedAmount,
+                    'cash_collected' => $submittedCash,
+                    'mobile_money_collected' => $submittedDigital,
                     'difference' => $difference,
-                    'status' => $submittedAmount >= $expectedAmount ? 'submitted' : 'partial',
+                    'status' => abs($difference) < 0.01 ? 'reconciled' : 'partial',
                     'submitted_at' => now(),
-                    'cash_collected' => $barOrders->where('payment_method', 'cash')->sum('paid_amount') + 
-                                      $barOrders->sum(function($order) {
-                                          return $order->orderPayments->where('payment_method', 'cash')->sum('amount');
-                                      }),
-                    'mobile_money_collected' => $barOrders->where('payment_method', 'mobile_money')->sum('paid_amount') + 
-                                              $barOrders->sum(function($order) {
-                                                  return $order->orderPayments->where('payment_method', 'mobile_money')->sum('amount');
-                                              }),
-                    'total_sales' => $expectedAmount,
+                    'notes' => json_encode([
+                        'submitted_breakdown' => $breakdown,
+                        'recorded_breakdown' => $waiterPlatformTotals
+                    ]),
                 ]
             );
 
@@ -438,11 +580,11 @@ class CounterReconciliationController extends Controller
                     'waiter_id' => $waiter->id,
                     'type' => 'payment_recorded',
                     'title' => 'Bar Orders Marked as Paid',
-                    'message' => "Counter has marked {$updatedCount} bar order(s) as paid for " . \Carbon\Carbon::parse($validated['date'])->format('M d, Y') . ". Total amount: TSh " . number_format($allPaidOrders, 0),
+                    'message' => "Counter has marked {$updatedCount} bar order(s) as paid for " . \Carbon\Carbon::parse($validated['date'])->format('M d, Y') . ". Total amount: TSh " . number_format($totalAmount, 0),
                     'data' => [
                         'date' => $validated['date'],
                         'orders_count' => $updatedCount,
-                        'total_amount' => $allPaidOrders,
+                        'total_amount' => $totalAmount,
                         'order_type' => 'bar',
                         'marked_by' => 'counter',
                     ],
@@ -523,5 +665,158 @@ class CounterReconciliationController extends Controller
             'success' => true,
             'orders' => $orders
         ]);
+    }
+
+    /**
+     * Store financial handover to accountant
+     */
+    public function storeHandover(Request $request)
+    {
+        $ownerId = $this->getOwnerId();
+        $staff = $this->getCurrentStaff();
+        $date = $request->input('date', date('Y-m-d'));
+        
+        $request->validate([
+            'cash_amount' => 'required|numeric|min:0',
+            'mpesa_amount' => 'nullable|numeric|min:0',
+            'nmb_amount' => 'nullable|numeric|min:0',
+            'kcb_amount' => 'nullable|numeric|min:0',
+            'crdb_amount' => 'nullable|numeric|min:0',
+            'mixx_amount' => 'nullable|numeric|min:0',
+            'tigo_pesa_amount' => 'nullable|numeric|min:0',
+            'airtel_money_amount' => 'nullable|numeric|min:0',
+            'halopesa_amount' => 'nullable|numeric|min:0',
+        ]);
+
+        // Calculate total amount
+        $breakdown = [
+            'cash' => $request->input('cash_amount', 0),
+            'mpesa' => $request->input('mpesa_amount', 0),
+            'nmb' => $request->input('nmb_amount', 0),
+            'kcb' => $request->input('kcb_amount', 0),
+            'crdb' => $request->input('crdb_amount', 0),
+            'mixx' => $request->input('mixx_amount', 0),
+            'tigo_pesa' => $request->input('tigo_pesa_amount', 0),
+            'airtel_money' => $request->input('airtel_money_amount', 0),
+            'halopesa' => $request->input('halopesa_amount', 0),
+        ];
+        
+        $totalAmount = array_sum($breakdown);
+
+        // Check if already exists
+        $existing = FinancialHandover::where('user_id', $ownerId)
+            ->where('accountant_id', $staff->id)
+            ->whereDate('handover_date', $date)
+            ->where('handover_type', 'staff_to_accountant')
+            ->first();
+
+        if ($existing) {
+            return back()->with('error', 'Handover for this date already exists.');
+        }
+
+        // Find an active accountant for the owner to be the recipient
+        $accountant = Staff::where('user_id', $ownerId)
+            ->whereHas('role', function($q) {
+                $q->where('slug', 'accountant');
+            })
+            ->where('is_active', true)
+            ->first();
+
+        $handover = FinancialHandover::create([
+            'user_id' => $ownerId,
+            'accountant_id' => $staff->id,
+            'handover_type' => 'staff_to_accountant',
+            'recipient_id' => $accountant ? $accountant->id : null,
+            'department' => 'bar',
+            'amount' => $totalAmount,
+            'payment_breakdown' => $breakdown,
+            'handover_date' => $date,
+            'status' => 'pending',
+            'notes' => $request->notes
+        ]);
+
+        // No longer auto-reconciling here.
+        // The Counter Staff MUST explicitly reconcile each waiter in the table 
+        // BEFORE submitting the final handover. This ensures all shortages, 
+        // surpluses, and paid/unpaid statuses are accurately recorded and 
+        // not overwritten by automatic order matching.
+
+        // Send SMS notification to accountant
+        try {
+            $smsService = new \App\Services\HandoverSmsService();
+            $smsService->sendHandoverSubmissionSms($handover, $ownerId);
+        } catch (\Exception $e) {
+            \Log::error('SMS notification failed for handover: ' . $e->getMessage());
+        }
+
+        return back()->with('success', 'Handover mapped and sent to Accountant successful! Awaiting confirmation.');
+    }
+
+    /**
+     * Reset a reconciliation record (Reopen the staff row)
+     */
+    public function resetReconciliation(WaiterDailyReconciliation $reconciliation)
+    {
+        if (!$this->hasPermission('bar_orders', 'edit')) {
+            return response()->json(['error' => 'Unauthorized'], 403);
+        }
+
+        // Only allow resetting if not yet verified by accountant
+        if ($reconciliation->status === 'verified') {
+            return response()->json(['error' => 'Cannot reset a verified reconciliation.'], 400);
+        }
+
+        try {
+            DB::beginTransaction();
+            
+            // Delete the reconciliation record
+            $reconciliation->delete();
+            
+            DB::commit();
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Reconciliation reset successfully. Row is now reopened.'
+            ]);
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return response()->json([
+                'success' => false,
+                'error' => 'Failed to reset reconciliation: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Reset the entire handover (Cancel and Reopen the day)
+     */
+    public function resetHandover(Request $request)
+    {
+        $ownerId = $this->getOwnerId();
+        $date = $request->input('date');
+        
+        DB::beginTransaction();
+        try {
+            // 1. Delete the handover
+            $deleted = FinancialHandover::where('user_id', $ownerId)
+                ->whereDate('handover_date', $date)
+                ->where('status', 'pending') // Only pending handovers can be reset
+                ->delete();
+
+            if ($deleted) {
+                // 2. Revert staff records from 'verified' back to 'reconciled'
+                // so they can be individually reset/adjusted.
+                WaiterDailyReconciliation::where('user_id', $ownerId)
+                    ->where('reconciliation_date', $date)
+                    ->where('status', 'verified')
+                    ->update(['status' => 'reconciled']);
+            }
+
+            DB::commit();
+            return response()->json(['success' => true]);
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return response()->json(['success' => false, 'error' => $e->getMessage()], 500);
+        }
     }
 }

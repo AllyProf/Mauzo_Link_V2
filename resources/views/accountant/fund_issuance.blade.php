@@ -57,16 +57,7 @@
                     @endif
                   </td>
                   <td>
-                    @if($issue->status === 'issued')
-                      <button class="btn btn-sm btn-success update-status-btn" data-id="{{ $issue->id }}" data-status="completed">
-                        <i class="fa fa-check"></i> Mark Completed
-                      </button>
-                      <button class="btn btn-sm btn-outline-danger update-status-btn" data-id="{{ $issue->id }}" data-status="cancelled">
-                        <i class="fa fa-times"></i> Cancel
-                      </button>
-                    @else
-                      ---
-                    @endif
+                    ---
                   </td>
                 </tr>
               @empty

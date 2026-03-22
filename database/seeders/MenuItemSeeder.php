@@ -252,6 +252,9 @@ class MenuItemSeeder extends Seeder
                     ['name' => 'Reconciliation', 'slug' => 'bar-reconciliation', 'icon' => 'fa-balance-scale', 'route' => 'bar.counter.reconciliation', 'sort_order' => 2],
                     ['name' => 'Counter Settings', 'slug' => 'bar-counter-settings', 'icon' => 'fa-cog', 'route' => 'bar.counter-settings.index', 'sort_order' => 3],
                 ]],
+                ['name' => 'Financial Analytics', 'slug' => 'bar-financial-analytics', 'icon' => 'fa-line-chart', 'route' => null, 'sort_order' => 5.5, 'children' => [
+                    ['name' => 'Master Sheet Trends', 'slug' => 'manager-master-sheet-analytics', 'icon' => 'fa-area-chart', 'route' => 'manager.master-sheet.analytics', 'sort_order' => 1],
+                ]],
             ],
             'restaurant' => [
                 ['name' => 'Restaurant Management', 'slug' => 'restaurant-management', 'icon' => 'fa-cutlery', 'route' => null, 'sort_order' => 2.5, 'children' => [

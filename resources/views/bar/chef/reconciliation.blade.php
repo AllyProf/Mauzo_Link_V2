@@ -237,6 +237,243 @@
     </div>
   </div>
 </div>
+
+{{-- ====================== HANDOVER TO ACCOUNTANT SECTION ====================== --}}
+<div class="row mt-4">
+  <div class="col-md-12">
+    <div class="tile">
+      <h3 class="tile-title"><i class="fa fa-exchange"></i> My Reconciliation to Accountant</h3>
+      <div class="tile-body">
+
+        {{-- Session alerts --}}
+        @if(session('success'))
+          <div class="alert alert-success alert-dismissible" role="alert">
+            <button type="button" class="close" data-dismiss="alert"><span>&times;</span></button>
+            <i class="fa fa-check-circle"></i> {{ session('success') }}
+          </div>
+        @endif
+        @if(session('error'))
+          <div class="alert alert-danger alert-dismissible" role="alert">
+            <button type="button" class="close" data-dismiss="alert"><span>&times;</span></button>
+            <i class="fa fa-times-circle"></i> {{ session('error') }}
+          </div>
+        @endif
+
+        <div class="row">
+          {{-- Left: Submit handover for today --}}
+          <div class="col-md-5">
+            <div class="card border-primary mb-3">
+              <div class="card-header bg-primary text-white">
+                <i class="fa fa-paper-plane"></i>
+                Hand Over Cash to Accountant
+                @if($accountant)
+                  <small class="float-right">Recipient: <strong>{{ $accountant->name }}</strong></small>
+                @endif
+              </div>
+              <div class="card-body">
+                @if($todayHandover)
+                  <div class="alert alert-info mb-0">
+                    <i class="fa fa-info-circle"></i>
+                    You have already submitted a handover for <strong>{{ \Carbon\Carbon::parse($todayHandover->handover_date)->format('M d, Y') }}</strong>:
+                    <br>
+                    <strong>TSh {{ number_format($todayHandover->amount, 0) }}</strong>
+                    &mdash;
+                    @if($todayHandover->status === 'pending')
+                      <span class="badge badge-warning">Pending Confirmation</span>
+                    @elseif($todayHandover->status === 'confirmed')
+                      <span class="badge badge-success">Confirmed</span>
+                    @endif
+                  </div>
+                @elseif(!$accountant)
+                  <div class="alert alert-warning mb-0">
+                    <i class="fa fa-exclamation-triangle"></i>
+                    No accountant found for this business. Please contact your manager.
+                  </div>
+                @else
+                  <form action="{{ route('bar.chef.handover') }}" method="POST">
+                    @csrf
+                    <input type="hidden" name="date" value="{{ $date }}">
+                    
+                    <div class="form-group row">
+                      <div class="col-12">
+                        <label>Physical Cash (TSh) <span class="text-danger">*</span></label>
+                        <input type="number" name="cash_amount" class="form-control handover-input-chef" value="0" min="0" step="0.01" required>
+                      </div>
+                    </div>
+                    
+                    <div class="form-group row">
+                      <div class="col-6">
+                        <label>M-PESA</label>
+                        <input type="number" name="mpesa_amount" class="form-control handover-input-chef" value="0" min="0" step="0.01">
+                      </div>
+                      <div class="col-6">
+                        <label>Mixx by Yas</label>
+                        <input type="number" name="mixx_amount" class="form-control handover-input-chef" value="0" min="0" step="0.01">
+                      </div>
+                    </div>
+
+                    <div class="form-group row">
+                      <div class="col-6">
+                        <label>HaloPesa</label>
+                        <input type="number" name="halopesa_amount" class="form-control handover-input-chef" value="0" min="0" step="0.01">
+                      </div>
+                      <div class="col-6">
+                        <label>Tigo Pesa</label>
+                        <input type="number" name="tigo_pesa_amount" class="form-control handover-input-chef" value="0" min="0" step="0.01">
+                      </div>
+                    </div>
+
+                    <div class="form-group row">
+                      <div class="col-6">
+                        <label>Airtel Money</label>
+                        <input type="number" name="airtel_money_amount" class="form-control handover-input-chef" value="0" min="0" step="0.01">
+                      </div>
+                      <div class="col-6">
+                        <label>NMB Bank</label>
+                        <input type="number" name="nmb_amount" class="form-control handover-input-chef" value="0" min="0" step="0.01">
+                      </div>
+                    </div>
+
+                    <div class="form-group row">
+                      <div class="col-6">
+                        <label>CRDB Bank</label>
+                        <input type="number" name="crdb_amount" class="form-control handover-input-chef" value="0" min="0" step="0.01">
+                      </div>
+                      <div class="col-6">
+                        <label>KCB Bank</label>
+                        <input type="number" name="kcb_amount" class="form-control handover-input-chef" value="0" min="0" step="0.01">
+                      </div>
+                    </div>
+
+                    <div class="p-2 mb-3 bg-light rounded text-center">
+                      <h5 class="mb-0">Total: <span id="chef-handover-total" class="text-primary">TSh 0</span></h5>
+                    </div>
+
+                    <div class="form-group">
+                      <label for="handover-notes">Notes (optional)</label>
+                      <textarea id="handover-notes" name="notes" class="form-control" rows="2"
+                                placeholder="Any remarks about this handover..."></textarea>
+                    </div>
+                    <button type="submit" class="btn btn-primary btn-block"
+                            onclick="return confirm('Confirm handover of cash to accountant?')">
+                      <i class="fa fa-paper-plane"></i> Submit Detailed Handover
+                    </button>
+                  </form>
+                @endif
+              </div>
+            </div>
+          </div>
+
+          {{-- Right: summary stats --}}
+          <div class="col-md-7">
+            <div class="row">
+              <div class="col-md-6 mb-3">
+                <div class="widget-small primary coloured-icon">
+                  <i class="icon fa fa-money fa-3x"></i>
+                  <div class="info">
+                    <h4>Cash Collected Today</h4>
+                    <p><b>TSh {{ number_format($waiters->sum('cash_collected'), 0) }}</b></p>
+                  </div>
+                </div>
+              </div>
+              <div class="col-md-6 mb-3">
+                <div class="widget-small info coloured-icon">
+                  <i class="icon fa fa-mobile fa-3x"></i>
+                  <div class="info">
+                    <h4>Digital Money Today</h4>
+                    <p><b>TSh {{ number_format($waiters->sum('mobile_money_collected'), 0) }}</b></p>
+                  </div>
+                </div>
+              </div>
+              <div class="col-md-6 mb-3">
+                <div class="widget-small success coloured-icon">
+                  <i class="icon fa fa-check-circle fa-3x"></i>
+                  <div class="info">
+                    <h4>Total Handovers</h4>
+                    <p><b>{{ $chefHandovers->count() }}</b></p>
+                  </div>
+                </div>
+              </div>
+              <div class="col-md-6 mb-3">
+                <div class="widget-small warning coloured-icon">
+                  <i class="icon fa fa-clock-o fa-3x"></i>
+                  <div class="info">
+                    <h4>Pending Confirmation</h4>
+                    <p><b>{{ $chefHandovers->where('status', 'pending')->count() }}</b></p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {{-- Handover History Table --}}
+        @if($chefHandovers->count() > 0)
+          <hr>
+          <h5><i class="fa fa-history"></i> Handover History</h5>
+          <div class="table-responsive">
+            <table class="table table-hover table-sm">
+              <thead class="thead-light">
+                <tr>
+                  <th>#</th>
+                  <th>Date</th>
+                  <th>Amount</th>
+                  <th>Recipient (Accountant)</th>
+                  <th>Status</th>
+                  <th>Confirmed At</th>
+                  <th>Notes</th>
+                </tr>
+              </thead>
+              <tbody>
+                @foreach($chefHandovers as $i => $handover)
+                  <tr>
+                    <td>{{ $i + 1 }}</td>
+                    <td>{{ \Carbon\Carbon::parse($handover->handover_date)->format('M d, Y') }}</td>
+                    <td><strong>TSh {{ number_format($handover->amount, 0) }}</strong></td>
+                    <td>
+                      @if($handover->recipientStaff)
+                        {{ $handover->recipientStaff->name }}
+                      @elseif($accountant)
+                        {{ $accountant->name }}
+                      @else
+                        <span class="text-muted">N/A</span>
+                      @endif
+                    </td>
+                    <td>
+                      @if($handover->status === 'pending')
+                        <span class="badge badge-warning">Pending</span>
+                      @elseif($handover->status === 'confirmed')
+                        <span class="badge badge-success">Confirmed</span>
+                      @else
+                        <span class="badge badge-secondary">{{ ucfirst($handover->status) }}</span>
+                      @endif
+                    </td>
+                    <td>
+                      @if($handover->confirmed_at)
+                        {{ \Carbon\Carbon::parse($handover->confirmed_at)->format('M d, Y H:i') }}
+                      @else
+                        <span class="text-muted">—</span>
+                      @endif
+                    </td>
+                    <td>{{ $handover->notes ?? '—' }}</td>
+                  </tr>
+                @endforeach
+              </tbody>
+            </table>
+          </div>
+        @else
+          <div class="alert alert-light text-center mt-3">
+            <i class="fa fa-inbox fa-2x text-muted"></i>
+            <p class="text-muted mt-2">No handovers submitted yet.</p>
+          </div>
+        @endif
+
+      </div>
+    </div>
+  </div>
+</div>
+{{-- ============================================================ --}}
+
 @endsection
 
 @push('scripts')
@@ -696,6 +933,17 @@ $(document).ready(function() {
         });
       }
     });
+    });
+  });
+
+  // Auto-calculate chef handover total
+  $('.handover-input-chef').on('input', function() {
+    let total = 0;
+    $('.handover-input-chef').each(function() {
+      const val = parseFloat($(this).val()) || 0;
+      total += val;
+    });
+    $('#chef-handover-total').text('TSh ' + total.toLocaleString());
   });
 });
 </script>

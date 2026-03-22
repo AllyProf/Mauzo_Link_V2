@@ -185,7 +185,8 @@ class PurchaseRequestController extends Controller
                 return back()->with('error', 'Please specify the amount issued.');
             }
 
-            DB::transaction(function() use ($purchaseRequest, $validated, $staff) {
+            DB::beginTransaction();
+            try {
                 $purchaseRequest->update([
                     'status' => 'issued',
                     'issued_amount' => $validated['issued_amount'],
@@ -193,21 +194,25 @@ class PurchaseRequestController extends Controller
                     'processed_at' => now(),
                 ]);
 
-                // Automatically create a record in petty_cash_issues or similar (if exists)
-                if (class_exists(PettyCashIssue::class)) {
-                    PettyCashIssue::create([
-                        'user_id' => $purchaseRequest->user_id,
-                        'issued_by' => $staff->id ?? null,
-                        'staff_id' => $purchaseRequest->staff_id,
-                        'amount' => $validated['issued_amount'],
-                        'purpose' => "Purchase Request: " . $purchaseRequest->request_number,
-                        'status' => 'issued',
-                        'issue_date' => now()->toDateString(),
-                    ]);
-                }
-            });
+                // Create a formal record in petty_cash_issues
+                PettyCashIssue::create([
+                    'user_id' => $purchaseRequest->user_id,
+                    'issued_by' => $purchaseRequest->user_id, // Must be user ID (Owner) to satisfy foreign key
+                    'staff_id' => $purchaseRequest->staff_id,
+                    'amount' => $validated['issued_amount'],
+                    'purpose' => "Funded Purchase Request: " . $purchaseRequest->request_number,
+                    'status' => 'issued',
+                    'issue_date' => now()->toDateString(),
+                    'notes' => "Issued by Accountant " . ($staff->full_name ?? 'Unknown') . ". Request: " . $purchaseRequest->request_number,
+                ]);
 
-            return back()->with('success', 'Amount issued successfully.');
+                DB::commit();
+                return back()->with('success', 'Amount issued successfully and recorded in Petty Cash.');
+            } catch (\Exception $e) {
+                DB::rollBack();
+                \Log::error("Purchase Request Issuance Failed: " . $e->getMessage());
+                return back()->with('error', 'Failed to link with Petty Cash: ' . $e->getMessage());
+            }
         }
 
         return back();

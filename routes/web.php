@@ -229,6 +229,10 @@ Route::middleware('allow.staff')->group(function () {
         Route::post('counter/reconciliation/{reconciliation}/verify', [\App\Http\Controllers\Bar\CounterReconciliationController::class, 'verifyReconciliation'])->name('counter.verify-reconciliation');
         Route::post('counter/mark-all-paid', [\App\Http\Controllers\Bar\CounterReconciliationController::class, 'markAllOrdersPaid'])->name('counter.mark-all-paid');
         Route::get('counter/reconciliation/waiter-orders/{waiter}', [\App\Http\Controllers\Bar\CounterReconciliationController::class, 'getWaiterOrders'])->name('counter.reconciliation.waiter-orders');
+        Route::post('counter/reconciliation/{reconciliation}/reset', [\App\Http\Controllers\Bar\CounterReconciliationController::class, 'resetReconciliation'])->name('counter.reset-reconciliation');
+        Route::post('counter/handover', [\App\Http\Controllers\Bar\CounterReconciliationController::class, 'storeHandover'])->name('counter.handover');
+        Route::post('counter/reset-handover', [\App\Http\Controllers\Bar\CounterReconciliationController::class, 'resetHandover'])->name('counter.reset-handover');
+
         Route::post('counter/save-voice-clip', [\App\Http\Controllers\Bar\CounterController::class, 'saveVoiceClip'])->name('counter.save-voice-clip');
         Route::put('counter/voice-clips/{id}', [\App\Http\Controllers\Bar\CounterController::class, 'updateVoiceClip'])->name('counter.update-voice-clip');
         Route::get('counter/get-voice-clips', [\App\Http\Controllers\Bar\CounterController::class, 'getVoiceClips'])->name('counter.get-voice-clips');
@@ -278,6 +282,7 @@ Route::middleware('allow.staff')->group(function () {
         Route::get('chef/reconciliation', [\App\Http\Controllers\Bar\ChefController::class, 'reconciliation'])->name('chef.reconciliation');
         Route::get('chef/reconciliation/waiter-orders/{waiter}', [\App\Http\Controllers\Bar\ChefController::class, 'getWaiterFoodOrders'])->name('chef.reconciliation.waiter-orders');
         Route::post('chef/mark-all-food-paid', [\App\Http\Controllers\Bar\ChefController::class, 'markAllFoodOrdersPaid'])->name('chef.mark-all-food-paid');
+        Route::post('chef/handover', [\App\Http\Controllers\Bar\ChefController::class, 'storeHandover'])->name('chef.handover');
         
         // Stock Keeper Ingredients Management Routes (same controllers as Chef)
         Route::get('stock-keeper/ingredients', [\App\Http\Controllers\Bar\ChefController::class, 'ingredients'])->name('stock-keeper.ingredients');
@@ -301,13 +306,14 @@ Route::middleware('allow.staff')->group(function () {
         Route::middleware(['require.payment', 'require.configuration'])->prefix('accountant')->name('accountant.')->group(function () {
             Route::get('dashboard', [\App\Http\Controllers\Accountant\AccountantController::class, 'dashboard'])->name('dashboard');
             Route::get('reconciliations', [\App\Http\Controllers\Accountant\AccountantController::class, 'reconciliations'])->name('reconciliations');
+            Route::get('reconciliations/orders', [\App\Http\Controllers\Accountant\AccountantController::class, 'getDepartmentOrders'])->name('reconciliations.orders');
+            Route::post('reconciliations/pay-shortage', [\App\Http\Controllers\Accountant\AccountantController::class, 'payShortage'])->name('reconciliations.pay-shortage');
             Route::get('reconciliations/{id}', [\App\Http\Controllers\Accountant\AccountantController::class, 'reconciliationDetails'])->name('reconciliation-details');
             Route::get('counter-reconciliation', [\App\Http\Controllers\Accountant\AccountantController::class, 'counterReconciliation'])->name('counter-reconciliation');
             Route::post('counter/reconciliation/{reconciliation}/verify', [\App\Http\Controllers\Bar\CounterReconciliationController::class, 'verifyReconciliation'])->name('counter.verify-reconciliation');
             Route::post('financial/reconciliation/{id}/verify', [\App\Http\Controllers\Accountant\AccountantController::class, 'verifyFinancialReconciliation'])->name('financial.verify');
             Route::post('reconciliations/finalize', [\App\Http\Controllers\Accountant\AccountantController::class, 'finalizeDepartmentReconciliation'])->name('reconciliations.finalize');
             Route::post('reconciliations/reopen', [\App\Http\Controllers\Accountant\AccountantController::class, 'reopenDepartmentShift'])->name('reconciliations.reopen');
-            Route::post('reconciliations/pay-shortage', [\App\Http\Controllers\Accountant\AccountantController::class, 'payShortage'])->name('reconciliations.pay-shortage');
             
             // Petty Cash / Fund Issuance
             Route::get('fund-issuance', [\App\Http\Controllers\Accountant\AccountantController::class, 'fundIssuance'])->name('fund-issuance');
@@ -315,8 +321,22 @@ Route::middleware('allow.staff')->group(function () {
             Route::post('fund-issuance/{id}/update-status', [\App\Http\Controllers\Accountant\AccountantController::class, 'updateFundStatus'])->name('fund-issuance.update-status');
 
             Route::get('counter/reconciliation/waiter-orders/{waiter}', [\App\Http\Controllers\Bar\CounterReconciliationController::class, 'getWaiterOrders'])->name('counter.reconciliation.waiter-orders');
+            
+            // Daily Master Sheet (Accountant)
+            Route::get('daily-master-sheet/history', [\App\Http\Controllers\Accountant\DailyMasterSheetController::class, 'history'])->name('daily-master-sheet.history');
+            Route::get('daily-master-sheet', [\App\Http\Controllers\Accountant\DailyMasterSheetController::class, 'index'])->name('daily-master-sheet');
+            Route::post('daily-master-sheet/verify-money', [\App\Http\Controllers\Accountant\DailyMasterSheetController::class, 'verifyMoney'])->name('daily-master-sheet.verify-money');
+            Route::post('daily-master-sheet/close', [\App\Http\Controllers\Accountant\DailyMasterSheetController::class, 'closeDay'])->name('daily-master-sheet.close');
+            Route::post('daily-master-sheet/expense', [\App\Http\Controllers\Accountant\DailyMasterSheetController::class, 'storeExpense'])->name('daily-master-sheet.expense');
+            Route::post('daily-master-sheet/expense/{id}/delete', [\App\Http\Controllers\Accountant\DailyMasterSheetController::class, 'deleteExpense'])->name('daily-master-sheet.delete-expense');
+
             Route::post('stock-transfers/{stockTransfer}/verify', [\App\Http\Controllers\Accountant\AccountantController::class, 'verifyStockTransfer'])->name('verify-stock-transfer');
             Route::get('reports', [\App\Http\Controllers\Accountant\AccountantController::class, 'reports'])->name('reports');
+            Route::get('cash-ledger', [\App\Http\Controllers\Accountant\AccountantController::class, 'cashLedger'])->name('cash-ledger');
+            Route::post('cash-ledger/handover', [\App\Http\Controllers\Accountant\AccountantController::class, 'storeHandover'])->name('cash-ledger.handover');
+            Route::post('cash-ledger/confirm/{id}', [\App\Http\Controllers\Accountant\AccountantController::class, 'confirmHandover'])->name('cash-ledger.confirm');
+            Route::post('cash-ledger/topup', [\App\Http\Controllers\Accountant\AccountantController::class, 'storeTopup'])->name('cash-ledger.topup');
+            Route::post('cash-ledger/staff-handover/{id}/confirm', [\App\Http\Controllers\Accountant\AccountantController::class, 'confirmStaffHandover'])->name('confirm-staff-handover');
             Route::get('reports/stock-receipts', [\App\Http\Controllers\Accountant\AccountantController::class, 'stockReceiptsReport'])->name('reports.stock-receipts');
             Route::get('reports/stock-transfers', [\App\Http\Controllers\Accountant\AccountantController::class, 'stockTransfersReport'])->name('reports.stock-transfers');
             Route::get('reports/pdf', [\App\Http\Controllers\Accountant\AccountantController::class, 'exportReportsPdf'])->name('reports.pdf');
@@ -327,6 +347,10 @@ Route::middleware('allow.staff')->group(function () {
         Route::get('stock-audit', [\App\Http\Controllers\Manager\StockAuditController::class, 'index'])->name('stock-audit');
         Route::get('stock-audit/details/{transfer}', [\App\Http\Controllers\Manager\StockAuditController::class, 'getDetails'])->name('stock-audit.details');
         Route::post('stock-audit/audit/{transfer}', [\App\Http\Controllers\Manager\StockAuditController::class, 'auditBatch'])->name('stock-audit.audit');
+        Route::get('master-sheet/analytics', [\App\Http\Controllers\Manager\MasterSheetAnalyticsController::class, 'index'])->name('master-sheet.analytics');
+        Route::get('master-sheet/collections', [\App\Http\Controllers\Manager\MasterSheetAnalyticsController::class, 'collections'])->name('master-sheet.collections');
+        Route::post('master-sheet/collections/{id}/reset', [\App\Http\Controllers\Manager\MasterSheetAnalyticsController::class, 'resetHandover'])->name('master-sheet.reset-handover');
+        Route::post('master-sheet/analytics/{id}/confirm', [\App\Http\Controllers\Manager\MasterSheetAnalyticsController::class, 'confirmHandover'])->name('master-sheet.confirm-handover');
         
         // Target Management
         Route::get('targets', [\App\Http\Controllers\Manager\TargetController::class, 'index'])->name('targets.index');

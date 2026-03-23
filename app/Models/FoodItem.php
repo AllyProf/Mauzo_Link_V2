@@ -22,6 +22,8 @@ class FoodItem extends Model
         'sort_order',
     ];
 
+    protected $appends = ['display_name'];
+
     protected $casts = [
         'price' => 'decimal:2',
         'prep_time_minutes' => 'integer',
@@ -29,6 +31,18 @@ class FoodItem extends Model
         'sort_order' => 'integer',
         'variants' => 'array',
     ];
+
+    /**
+     * Get clean display name for Mobile POS.
+     * Uses ProductHelper for consistent naming logic.
+     */
+    public function getDisplayNameAttribute()
+    {
+        return \App\Helpers\ProductHelper::generateDisplayName(
+            $this->name, 
+            $this->variant_name
+        );
+    }
 
     /**
      * Get the owner (user) that owns this food item.

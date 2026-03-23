@@ -20,12 +20,22 @@ class OrderItem extends Model
         'is_served',
     ];
 
+    protected $appends = ['display_name'];
+
     protected $casts = [
         'quantity' => 'integer',
         'unit_price' => 'decimal:2',
         'total_price' => 'decimal:2',
         'is_served' => 'boolean',
     ];
+
+    /**
+     * Get clean display name from the product variant.
+     */
+    public function getDisplayNameAttribute()
+    {
+        return $this->productVariant->display_name ?? 'N/A';
+    }
 
     /**
      * Get the order that owns this item.

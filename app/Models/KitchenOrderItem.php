@@ -24,6 +24,8 @@ class KitchenOrderItem extends Model
         'ready_at',
     ];
 
+    protected $appends = ['display_name'];
+
     protected $casts = [
         'quantity' => 'integer',
         'unit_price' => 'decimal:2',
@@ -31,6 +33,18 @@ class KitchenOrderItem extends Model
         'prepared_at' => 'datetime',
         'ready_at' => 'datetime',
     ];
+
+    /**
+     * Get clean display name for Mobile POS.
+     * Uses ProductHelper for consistent naming logic.
+     */
+    public function getDisplayNameAttribute()
+    {
+        return \App\Helpers\ProductHelper::generateDisplayName(
+            $this->food_item_name, 
+            $this->variant_name
+        );
+    }
 
     /**
      * Get the order that owns this kitchen item.

@@ -28,6 +28,8 @@ class ProductVariant extends Model
         'unit',
     ];
 
+    protected $appends = ['display_name'];
+
     protected $casts = [
         'items_per_package' => 'integer',
         'buying_price_per_unit' => 'decimal:2',
@@ -36,6 +38,18 @@ class ProductVariant extends Model
         'is_active' => 'boolean',
         'can_sell_in_tots' => 'boolean',
     ];
+
+    /**
+     * Get clean display name for Mobile POS.
+     * Uses ProductHelper for consistent naming logic.
+     */
+    public function getDisplayNameAttribute()
+    {
+        return \App\Helpers\ProductHelper::generateDisplayName(
+            $this->product->name ?? 'N/A', 
+            ($this->measurement ?? '') . ' - ' . ($this->packaging ?? '')
+        );
+    }
 
     /**
      * Get the product that owns this variant.

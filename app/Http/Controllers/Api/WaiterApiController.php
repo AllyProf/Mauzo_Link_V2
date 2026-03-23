@@ -274,10 +274,13 @@ class WaiterApiController extends Controller
             $category = $variant->product->category ?? '';
             $isAlcoholic = stripos($category, 'alcoholic') !== false;
             
+            $displayName = \App\Helpers\ProductHelper::generateDisplayName($variant->product->name, $variant->measurement . ' - ' . $variant->packaging);
+            
             return [
                 'id' => $variant->id,
                 'product_name' => $variant->product->name,
                 'variant' => $variant->measurement . ' - ' . $variant->packaging,
+                'display_name' => $displayName,
                 'measurement' => $variant->measurement,
                 'packaging' => $variant->packaging,
                 'quantity' => $counterStock->quantity ?? 0,
@@ -309,38 +312,38 @@ class WaiterApiController extends Controller
             ->orderBy('name')
             ->get()
             ->map(function($item) {
-                // Ensure variants is an array and prices are numbers
+                // Ensure variants is an array
                 $variants = $item->variants ?? [];
                 
-                // If variants is empty or null, try to create from price field
+                // If variants is empty or null, try to create from legacy price fields
                 if (empty($variants)) {
-                    // If we have variant_name and price, use variant_name
                     if ($item->variant_name && $item->price) {
                         $variants = [[
                             'name' => $item->variant_name,
                             'price' => (float)$item->price
                         ]];
-                    } 
-                    // If we only have price (no variant_name), create a default variant
-                    elseif ($item->price) {
+                    } elseif ($item->price) {
                         $variants = [[
                             'name' => 'Standard',
                             'price' => (float)$item->price
                         ]];
                     }
-                } else {
-                    // Ensure all prices in variants are numbers (not strings)
-                    $variants = array_map(function($variant) {
-                        if (isset($variant['price'])) {
-                            $variant['price'] = (float)$variant['price'];
-                        }
-                        return $variant;
-                    }, $variants);
                 }
+
+                // Add display_name to each variant
+                $variants = array_map(function($variant) use ($item) {
+                    if (isset($variant['price'])) {
+                        $variant['price'] = (float)$variant['price'];
+                    }
+                    // Generate display_name for this specific variant
+                    $variant['display_name'] = \App\Helpers\ProductHelper::generateDisplayName($item->name, $variant['name'] ?? null);
+                    return $variant;
+                }, $variants);
                 
                 return [
                     'id' => $item->id,
                     'name' => $item->name,
+                    'display_name' => \App\Helpers\ProductHelper::generateDisplayName($item->name),
                     'description' => $item->description,
                     'variants' => $variants,
                     'image' => $item->image ?? null,

@@ -216,30 +216,30 @@
         <div class="col-md-5 border-right">
            <table class="table table-sm table-borderless">
              <tr style="font-size: 1.1rem;">
-               <td><i class="fa fa-plus-circle text-success"></i> Cash on Hand (Box) <small class="text-muted">(Consolidated)</small></td>
+               <td><i class="fa fa-money text-success"></i> Physical Cash in Hand <small class="text-muted">(Consolidated)</small></td>
                <td class="text-right font-weight-bold">TSh {{ number_format($ledger->expected_closing_cash) }}</td>
              </tr>
              <tr style="font-size: 1.1rem;" class="text-muted">
-               <td><i class="fa fa-minus-circle"></i> Digital Accounts <small>(Withdrawn to Box)</small></td>
-               <td class="text-right font-weight-bold">TSh 0</td>
+               <td><i class="fa fa-exchange"></i> Digital Withdrawn to Cash</td>
+               <td class="text-right font-weight-bold">TSh {{ number_format($totalHandoverDigital) }}</td>
              </tr>
              <tr class="border-top" style="font-size: 1.2rem;">
-               <td class="pt-2"><strong>Total Business Value</strong></td>
+               <td class="pt-2"><strong>Total Physical Value</strong></td>
                <td class="text-right pt-2 text-primary font-weight-bold">TSh {{ number_format($totalBusinessValue) }}</td>
              </tr>
              <tr class="text-muted border-top">
-               <td class="pt-3">Less: Profit (Excluded)</td>
+               <td class="pt-3">Less: Profit to Boss (Cash)</td>
                <td class="text-right pt-3">− TSh {{ number_format($stockProfit) }}</td>
              </tr>
              <tr style="font-size: 1.3rem;">
-               <td class="font-weight-bold">Amount to Cycle</td>
+               <td class="font-weight-bold text-success">Tomorrow's Cash Float</td>
                <td class="text-right text-success font-weight-bold">TSh {{ number_format($amountToCycle) }}</td>
              </tr>
            </table>
            
            <div class="alert alert-info mt-3 py-2 small">
-             <i class="fa fa-info-circle"></i> <strong>Summary:</strong> Today you generated <strong>TSh {{ number_format($stockProfit) }}</strong> in profit. 
-             The rest (<strong>TSh {{ number_format($amountToCycle) }}</strong>) stays in the daily cycle to keeping the business running.
+             <i class="fa fa-info-circle"></i> <strong>Cash Audit:</strong> Today you have <strong>TSh {{ number_format($totalBusinessValue) }}</strong> in physical cash. 
+             After giving <strong>TSh {{ number_format($stockProfit) }}</strong> to the boss, the remaining <strong>TSh {{ number_format($amountToCycle) }}</strong> is your float for tomorrow.
            </div>
         </div>
 
@@ -270,12 +270,12 @@
 
               <div class="row form-group mt-3">
                 <div class="col-md-12">
-                   <label class="font-weight-bold small uppercase text-muted text-success">CYCLE FOR TOMORROW (Remaining Fund)</label>
+                   <label class="font-weight-bold small uppercase text-muted text-success">TOMORROW'S CASH FLOAT (Operating Fund)</label>
                    <div class="input-group border border-success rounded">
                     <div class="input-group-prepend"><span class="input-group-text badge-success border-0 px-3"><strong>TSh</strong></span></div>
                     <input class="form-control font-weight-bold text-success border-0" type="number" name="carried_forward" id="cycle_forward" value="{{ round($ledger->expected_closing_cash - $stockProfit) }}" required readonly style="background:#fff; font-size:1.2rem;">
                   </div>
-                  <small class="text-success italic"><i class="fa fa-lightbulb-o"></i> This is the amount remaining in the drawer after the boss takes the profit.</small>
+                  <small class="text-success italic"><i class="fa fa-lightbulb-o"></i> This is the actual physical cash remaining in the drawer after profit distribution.</small>
                 </div>
               </div>
 

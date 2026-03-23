@@ -274,7 +274,7 @@ class WaiterApiController extends Controller
             $category = $variant->product->category ?? '';
             $isAlcoholic = stripos($category, 'alcoholic') !== false;
             
-            $displayName = \App\Helpers\ProductHelper::generateDisplayName($variant->product->name, $variant->measurement . ' - ' . $variant->packaging);
+            $displayName = \App\Helpers\ProductHelper::generateDisplayName($variant->product->name, $variant->measurement . ' - ' . $variant->packaging, $variant->name);
             
             return [
                 'id' => $variant->id,

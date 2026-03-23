@@ -47,7 +47,8 @@ class ProductVariant extends Model
     {
         return \App\Helpers\ProductHelper::generateDisplayName(
             $this->product->name ?? 'N/A', 
-            ($this->measurement ?? '') . ' - ' . ($this->packaging ?? '')
+            ($this->measurement ?? '') . ' - ' . ($this->packaging ?? ''),
+            $this->name
         );
     }
 

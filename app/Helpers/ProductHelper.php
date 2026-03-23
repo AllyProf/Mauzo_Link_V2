@@ -11,113 +11,90 @@ class ProductHelper
      * @param string|null $variantName The specific variant/size (e.g., "350ml - Crate")
      * @return string
      */
-    public static function generateDisplayName($productName, $variantName = '')
+    public static function generateDisplayName($productName, $variantDescription = '', $variantSpecificName = '')
     {
-        // Keywords to strip (Corporate Brands / Suffixes)
         $brands = ["bonite", "sbc", "tcc", "tbl", "sbl", "factory", "tanzania", "distillers", "limited", "ltd", "azam", "company"];
-        
-        // Metadata keywords to strip
         $packaging = ["crate", "pieces", "pcs", "unit", "btl", "bottle", "carton", "ctn", "pkg", "package"];
-        
-        // Specific identifiers to "Protect" and prioritize as the core name (Flavors/Specific Items)
-        $protectedItems = [
+        $flavors = [
             "fanta", "sprite", "krest", "stoney", "orange", "water", "grand malt", "tangawizi", 
             "aloe", "kilimanjaro", "safari", "serengeti", "mirinda", "pepsi", "coca-cola", 
             "coke", "embe", "nanasi", "passion", "apple", "mango", "citrus", "tonic", 
             "soda water", "ginger ale", "red bull", "hennessy", "jack daniel", "whisky", "brandy"
         ];
 
-        // Step 1: Analyze Variant Name to find specific flavors or sizes
-        $variantParts = explode('-', $variantName);
+        // 1. Extract Parent Product Name from brackets if it exists (e.g. "Coca-Cola")
+        $productTitle = $productName;
+        if (preg_match('/\((.*?)\)/', $productName, $matches)) {
+            $productTitle = $matches[1];
+        }
+
+        // 2. Look for specific Flavor/Identity in variant fields
+        $identity = null;
+        $allText = strtolower(($variantSpecificName ?? '') . ' ' . ($variantDescription ?? ''));
+        foreach ($flavors as $flavor) {
+            if (str_contains($allText, $flavor)) {
+                // If found in variantSpecificName, use that exact string
+                if ($variantSpecificName && str_contains(strtolower($variantSpecificName), $flavor)) {
+                    $identity = $variantSpecificName;
+                } else {
+                    // Otherwise try to find the specific word in variantDescription
+                    $identity = $variantDescription;
+                }
+                break;
+            }
+        }
+
+        // 3. Determine Core (Flavor > Parent > Product Name)
+        $coreTitle = $identity ?: $productTitle;
+
+        // 4. Cleanup Core Title (Remove Brand Prefixes like SBC, Bonite)
+        foreach ($brands as $brand) {
+            $coreTitle = preg_replace('/\b' . preg_quote($brand, '/') . '\b/i', '', $coreTitle);
+        }
+        $coreTitle = trim(preg_replace('/\s+/', ' ', $coreTitle));
+
+        // 5. Process Variant / Size
+        $variantParts = explode('-', $variantDescription);
         $cleanVariantParts = [];
         $size = null;
-        $foundIdentity = null;
 
         foreach ($variantParts as $part) {
             $part = trim($part);
             $lowerPart = strtolower($part);
             if ($part === '') continue;
-            
-            // Check for packaging metadata (Skip these)
+
+            // Strip packaging metadata
             $isPkg = false;
             foreach ($packaging as $pkg) {
                 if (str_contains($lowerPart, $pkg)) { $isPkg = true; break; }
             }
             if ($isPkg) continue;
 
-            // Determine if the product is likely a drink/liquid to apply specific size formatting
-            $isLiquid = false;
-            $checkTitle = strtolower($productName . ' ' . $variantName);
-            foreach ($protectedItems as $pi) {
-                if (str_contains($checkTitle, $pi)) { $isLiquid = true; break; }
-            }
-
-            // Extract Size (Matches "350", "350ml", "1.5l", etc. OR common size words for liquids)
-            $liquidSizeWords = ["large", "small", "medium", "normal", "big", "mini", "short", "tall"];
+            // Detect Size (Numeric or common drink sizes)
             $isNumericSize = preg_match('/^(\d+(\.\d+)?\s*(ml|l|g|kg|btl|pcs)?)$/i', $part);
-            $isWordSize = ($isLiquid && in_array($lowerPart, $liquidSizeWords));
+            $liquidSizeWords = ["large", "small", "medium", "normal", "double", "single"];
+            $isWordSize = in_array($lowerPart, $liquidSizeWords);
 
             if ($isNumericSize || $isWordSize) {
-                $size = str_replace(' ', '', $part); // Standardize: no space between number and unit
+                $size = str_replace(' ', '', $part);
                 continue;
             }
 
-            // Check if this part of the variant contains a specific product identity
-            foreach ($protectedItems as $item) {
-                if (str_contains($lowerPart, $item)) {
-                    $foundIdentity = $part; 
-                    break;
-                }
-            }
-
-            if ($part !== '') {
+            // Only add to variant description if not already in core title
+            if (stripos($coreTitle, $part) === false && stripos($part, $coreTitle) === false) {
                 $cleanVariantParts[] = $part;
             }
         }
 
-        // Step 2: Analyze Product Name for Brand mapping
-        $parentInBrackets = null;
-        if (preg_match('/\((.*?)\)/', $productName, $matches)) {
-            $parentInBrackets = $matches[1];
-        }
-
-        // Step 3: Determine the "Core Title" using Priority Rules
-        // Priority 1: Specific identity found in the variant field
-        if ($foundIdentity) {
-            $coreTitle = $foundIdentity;
-        } 
-        // Priority 2: The descriptive name inside brackets (e.g. Coca-Cola)
-        elseif ($parentInBrackets) {
-            $coreTitle = $parentInBrackets;
-        } 
-        // Priority 3: Fallback to the product name itself
-        else {
-            $coreTitle = $productName;
-        }
-
-        // Step 4: Final Cleanup (Remove Brand Prefixes like SBC, Bonite from the final result)
-        foreach ($brands as $brand) {
-            $coreTitle = preg_replace('/\b' . preg_quote($brand, '/') . '\b/i', '', $coreTitle);
-        }
-        $coreTitle = trim(preg_replace('/\s+/', ' ', $coreTitle));
-
-        // Step 5: Construction
+        // 6. Build Final Display Name
         $displayName = $coreTitle;
         
-        // Add remaining variant info (like "Full", "Half") if not duplicating the title
-        $variantText = implode(' - ', $cleanVariantParts);
-        if ($variantText && stripos($displayName, $variantText) === false) {
-             $displayName .= ' - ' . $variantText;
+        $variantSuffix = implode(' - ', $cleanVariantParts);
+        if (!empty($variantSuffix) && strcasecmp($displayName, $variantSuffix) !== 0) {
+            $displayName .= ' - ' . $variantSuffix;
         }
 
-        // If coreTitle ended up being just "Beer" or "Soda" because of stripping, 
-        // fallback to original if nothing was found
-        if (empty($displayName)) {
-            $displayName = $productName;
-        }
-
-        // Append standardized size metadata
-        if ($size) {
+        if (!empty($size)) {
             $displayName .= ' (' . $size . ')';
         }
 

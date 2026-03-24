@@ -273,21 +273,64 @@ class WaiterApiController extends Controller
             $counterStock = $variant->stockLocations->where('location', 'counter')->first();
             $category = $variant->product->category ?? '';
             $isAlcoholic = stripos($category, 'alcoholic') !== false;
-            
+
             $displayName = \App\Helpers\ProductHelper::generateDisplayName($variant->product->name, $variant->measurement . ' - ' . $variant->packaging, $variant->name);
-            
+
+            // --- Measurement with unit label (e.g. "350ml", "1.5L") ---
+            $measurementRaw = $variant->measurement ?? '';
+            $unit = $variant->unit ?? '';
+            if (preg_match('/[a-zA-Z]/', $measurementRaw)) {
+                $measurementLabel = strtolower($measurementRaw);
+            } elseif (!empty($unit)) {
+                $measurementLabel = $measurementRaw . strtolower($unit);
+            } else {
+                $numericVal = floatval($measurementRaw);
+                if ($numericVal >= 100) {
+                    $measurementLabel = $measurementRaw . 'ml';
+                } elseif ($numericVal > 0 && $numericVal < 10) {
+                    $measurementLabel = $measurementRaw . 'L';
+                } else {
+                    $measurementLabel = $measurementRaw;
+                }
+            }
+
+            // --- Package quantity breakdown ---
+            $quantityUnits   = $counterStock->quantity ?? 0;
+            $itemsPerPackage = $variant->items_per_package ?? 1;
+            $packagingType   = $variant->packaging ?? 'Units';
+
+            $bulkKeywords = ['crate', 'carton', 'ctn', 'case', 'box', 'dozen'];
+            $isBulk = false;
+            foreach ($bulkKeywords as $kw) {
+                if (stripos($packagingType, $kw) !== false) { $isBulk = true; break; }
+            }
+
+            $quantityPackages = ($isBulk && $itemsPerPackage > 1) ? floor($quantityUnits / $itemsPerPackage) : null;
+            $remainingUnits   = ($isBulk && $itemsPerPackage > 1) ? ($quantityUnits % $itemsPerPackage) : null;
+
+            if ($quantityPackages !== null) {
+                $packageLabel = "{$quantityUnits} btls ({$quantityPackages} " . ucfirst($packagingType) . ($remainingUnits > 0 ? " + {$remainingUnits} loose" : "") . ")";
+            } else {
+                $packageLabel = "{$quantityUnits} " . ($quantityUnits === 1 ? 'unit' : 'units');
+            }
+
             return [
-                'id' => $variant->id,
-                'product_name' => $variant->product->name,
-                'variant' => $variant->measurement . ' - ' . $variant->packaging,
-                'display_name' => $displayName,
-                'measurement' => $variant->measurement,
-                'packaging' => $variant->packaging,
-                'quantity' => $counterStock->quantity ?? 0,
-                'selling_price' => $counterStock->selling_price ?? $variant->selling_price_per_unit ?? 0,
-                'category' => $category,
-                'is_alcoholic' => $isAlcoholic,
-                'product_image' => $variant->product->image ?? null,
+                'id'                => $variant->id,
+                'product_name'      => $variant->product->name,
+                'variant'           => $variant->measurement . ' - ' . $variant->packaging,
+                'display_name'      => $displayName,
+                'measurement'       => $measurementRaw,
+                'measurement_label' => $measurementLabel,
+                'packaging'         => $packagingType,
+                'items_per_package' => $itemsPerPackage,
+                'quantity'          => $quantityUnits,
+                'quantity_packages' => $quantityPackages,
+                'remaining_units'   => $remainingUnits,
+                'quantity_label'    => $packageLabel,
+                'selling_price'     => $counterStock->selling_price ?? $variant->selling_price_per_unit ?? 0,
+                'category'          => $category,
+                'is_alcoholic'      => $isAlcoholic,
+                'product_image'     => $variant->product->image ?? null,
             ];
         });
 

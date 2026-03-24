@@ -122,7 +122,13 @@
                   <ul class="list-unstyled mb-0">
                     @foreach($order->items->take(3) as $item)
                     <li>
-                      <small>{{ $item->quantity }}x {{ $item->productVariant->product->name }}</small>
+                      @if($item->productVariant)
+                        <small>{{ $item->quantity }}x {{ \App\Helpers\ProductHelper::generateDisplayName($item->productVariant->product->name ?? 'N/A', ($item->productVariant->measurement ?? '') . ' - ' . ($item->productVariant->packaging ?? ''), $item->productVariant->name) }}</small>
+                      @elseif($item->food_item_name)
+                        <small>{{ $item->quantity }}x {{ $item->food_item_name }}</small>
+                      @else
+                        <small>{{ $item->quantity }}x N/A</small>
+                      @endif
                     </li>
                     @endforeach
                     @if($order->items->count() > 3)
@@ -174,17 +180,11 @@
                     </button>
 
                     @if($order->status === 'pending' && $order->payment_status !== 'paid')
-                      {{-- PENDING: Mark Served + Cancel --}}
+                      {{-- PENDING: Mark Served --}}
                       <button class="btn btn-sm btn-info update-status-btn mr-1 mb-1"
                               data-order-id="{{ $order->id }}"
                               data-status="served">
                         <i class="fa fa-check"></i> Serve
-                      </button>
-                      <button class="btn btn-sm btn-danger cancel-order-btn mr-1 mb-1"
-                              data-order-id="{{ $order->id }}"
-                              data-order-number="{{ $order->order_number }}"
-                              title="Cancel Order">
-                        <i class="fa fa-times"></i>
                       </button>
 
                     @elseif($order->status === 'served' && $order->payment_status !== 'paid')

@@ -64,11 +64,6 @@ class StaffSeeder extends Seeder
                     'description' => 'General Manager',
                 ],
                 [
-                    'slug' => 'hr-manager',
-                    'name' => 'HR Manager',
-                    'description' => 'Human Resources Manager',
-                ],
-                [
                     'slug' => 'counter',
                     'name' => 'Counter',
                     'description' => 'Counter Staff',
@@ -112,19 +107,16 @@ class StaffSeeder extends Seeder
             // Manager gets all permissions
             $createdRoles['manager']->permissions()->syncWithoutDetaching($allPermissions->pluck('id'));
             
+            /*
             // HR Manager gets HR permissions
             $hrPermissions = Permission::where('module', 'hr')->get();
             if ($hrPermissions->count() > 0) {
                 $createdRoles['hr-manager']->permissions()->syncWithoutDetaching($hrPermissions->pluck('id'));
             }
+            */
 
-            // Counter gets bar_orders, bar_payments, bar_tables, stock_transfer.view, products, and stock_receipt permissions
-            $counterPerms = Permission::whereIn('module', ['bar_orders', 'bar_payments', 'bar_tables', 'products', 'stock_receipt'])->get();
-            // Also add stock_transfer.view permission
-            $stockTransferViewPerm = Permission::where('module', 'stock_transfer')->where('action', 'view')->first();
-            if ($stockTransferViewPerm) {
-                $counterPerms->push($stockTransferViewPerm);
-            }
+            // Counter gets bar_orders, bar_payments, bar_tables, stock_transfer.view, products, stock_receipt, inventory, suppliers permissions
+            $counterPerms = Permission::whereIn('module', ['bar_orders', 'bar_payments', 'bar_tables', 'products', 'inventory', 'suppliers', 'stock_receipt', 'stock_transfer'])->get();
             $createdRoles['counter']->permissions()->syncWithoutDetaching($counterPerms->pluck('id'));
 
             // Stock Keeper gets inventory, stock_receipt, stock_transfer, and products permissions
@@ -141,12 +133,6 @@ class StaffSeeder extends Seeder
 
             // Create staff members
             $staffMembers = [
-                [
-                    'email' => 'hr@mauzo.com',
-                    'name' => 'HR Manager',
-                    'phone' => '+255710000000',
-                    'role_slug' => 'hr-manager',
-                ],
                 [
                     'email' => 'manager@mauzo.com',
                     'name' => 'Manager',
@@ -237,7 +223,6 @@ class StaffSeeder extends Seeder
         $this->command->info("========================================\n");
         $this->command->info("Super Admin: superadmin@mauzo.com / password\n");
         $this->command->info("Owner: owner@mauzo.com / password\n");
-        $this->command->info("HR Manager: hr@mauzo.com / password\n");
         $this->command->info("Manager: manager@mauzo.com / password\n");
         $this->command->info("Counter: counter@mauzo.com / password\n");
         $this->command->info("Stock Keeper: stockkeeper@mauzo.com / password\n");

@@ -6,7 +6,7 @@
 <div class="app-title">
   <div>
     <h1><i class="fa fa-download text-success"></i> Stock Reception</h1>
-    <p>Transfer product from Supplier to Warehouse stock</p>
+    <p>Transfer product from Supplier directly to Counter stock</p>
   </div>
   <ul class="app-breadcrumb breadcrumb">
     <li class="breadcrumb-item"><i class="fa fa-home fa-lg"></i></li>
@@ -147,7 +147,7 @@
              <div class="table-responsive">
                 <table class="table table-hover mb-0" id="itemsTable">
                    <thead class="bg-light">
-                       <tr>
+                        <tr>
                           <th class="border-top-0 px-3 py-2" style="font-size: 0.75rem;">PRODUCT & EXPIRE</th>
                           <th class="border-top-0 px-2 py-2 text-center" width="90" style="font-size: 0.75rem;">QTY</th>
                           <th class="border-top-0 px-2 py-2" width="130" style="font-size: 0.75rem;">BUY PRICE</th>
@@ -272,7 +272,7 @@
                   <button type="submit" class="btn btn-success btn-block btn-lg shadow rounded-pill py-3 font-weight-bold" id="submitBtn" disabled>
                      <i class="fa fa-check-circle mr-2"></i> POST RECEIPT
                   </button>
-                  <p class="text-center small text-muted mt-3 mb-0">Batch data will be added to Warehouse Stock immediately upon posting.</p>
+                  <p class="text-center small text-muted mt-3 mb-0">Batch data will be added to Counter Stock immediately upon posting.</p>
                </div><!-- /submit -->
 
            </div>
@@ -609,22 +609,8 @@ $(document).ready(function() {
                         <div class="font-weight-bold text-dark mb-1" style="font-size:14px;">${item.name} ${item.packaging} (${item.conversion_qty} Btl/Pc)</div>
                         
                         <div class="d-flex align-items-center mb-1 smallest">
-                            <span class="badge ${item.existing_quantity <= 0 ? 'badge-danger' : (item.existing_quantity < (item.items_per_package || 1) ? 'badge-warning' : 'badge-success')} border mr-2 font-weight-bold shadow-sm" style="font-size: 10px; padding: 3px 8px;">
-                                <i class="fa fa-cubes"></i> ${item.existing_quantity || 0} 
-                                ${(() => {
-                                    const u = (item.unit || '').toLowerCase();
-                                    if(u.includes('btl') || u.includes('ml') || u.includes('bottle') || !u) return 'btl';
-                                    if(u.includes('pc')) return 'pc';
-                                    return u.substring(0,3);
-                                })()}s
-                                (${(item.existing_quantity / (item.items_per_package || 1)) % 1 === 0 ? (item.existing_quantity / (item.items_per_package || 1)) : (item.existing_quantity / (item.items_per_package || 1)).toFixed(1)} 
-                                ${(() => {
-                                    const p = (item.packaging || 'pkg').toLowerCase();
-                                    if(p.includes('crate')) return 'crt';
-                                    if(p.includes('carton')) return 'ctn';
-                                    if(p.includes('piece')) return 'pc';
-                                    return p.substring(0,3);
-                                })()}s)
+                            <span class="badge ${item.existing_quantity <= 0 ? 'badge-danger' : (item.existing_quantity < (item.items_per_package || 1) ? 'badge-warning' : 'badge-success')} border mr-2 font-weight-bold shadow-sm" style="font-size: 10px; padding: 3px 8px;" title="Current Stock at Counter">
+                                <i class="fa fa-cubes"></i> ${item.formatted_existing_quantity || (item.existing_quantity + ' ' + item.unit)}
                             </span>
                             ${item.buying_price_per_unit != item.last_known_buy ? `
                                 <span class="text-warning font-weight-bold" title="Price changed from previous reception">
@@ -668,7 +654,7 @@ $(document).ready(function() {
                            </div>
                         </div>
                     </td>
-                    <td class="text-center px-2">
+                    <td class="text-center px-1">
                         <button type="button" class="btn btn-link py-0 text-danger remove-item" data-index="${index}"><i class="fa fa-times-circle"></i></button>
                     </td>
                 </tr>
@@ -719,6 +705,7 @@ $(document).ready(function() {
                                 selling_price_per_tot: item.selling_price_per_tot || 0,
                                 quantity_received: 0,
                                 existing_quantity: item.existing_quantity || 0,
+                                formatted_existing_quantity: item.formatted_existing_quantity || '',
                                 expiry_date: '',
                                 discount_type: 'fixed',
                                 discount_amount: 0
@@ -805,6 +792,7 @@ $(document).ready(function() {
                     selling_price_per_tot: variant.selling_price_per_tot || 0,
                     quantity_received: 0,
                     existing_quantity: variant.existing_quantity || 0,
+                    formatted_existing_quantity: variant.formatted_existing_quantity || '',
                     expiry_date: '',
                     discount_type: 'fixed',
                     discount_amount: 0

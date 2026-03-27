@@ -18,11 +18,54 @@
 <div class="row">
   <div class="col-md-12">
     <div class="tile">
-      <div class="tile-body text-center py-5">
-        <i class="fa fa-users fa-5x text-muted mb-4"></i>
-        <h3>Customer Management</h3>
-        <p class="text-muted">This feature is coming soon. You'll be able to manage customer information, view purchase history, and track customer loyalty.</p>
-        <p class="text-muted">Stay tuned for updates!</p>
+      <div class="tile-title-w-btn">
+        <h3 class="title">Customer Records</h3>
+        <div class="btn-group">
+          <form class="form-inline" method="GET" action="{{ route('customers.index') }}">
+            <input class="form-control mr-sm-2" type="search" name="search" placeholder="Search customer..." aria-label="Search" value="{{ $search ?? '' }}">
+            <button class="btn btn-primary" type="submit"><i class="fa fa-search"></i></button>
+          </form>
+        </div>
+      </div>
+      <div class="tile-body">
+        <div class="table-responsive">
+          <table class="table table-hover table-bordered" id="customerTable">
+            <thead>
+              <tr class="bg-primary text-white">
+                <th>Customer Name</th>
+                <th>Phone Number</th>
+                <th class="text-center">Visits</th>
+                <th class="text-right">Total Spent</th>
+                <th>Last Visit</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              @forelse($customers as $customer)
+                <tr>
+                  <td><strong>{{ $customer->name ?? 'Regular Customer' }}</strong></td>
+                  <td><a href="tel:{{ $customer->customer_phone }}">{{ $customer->customer_phone }}</a></td>
+                  <td class="text-center"><span class="badge badge-info">{{ $customer->total_orders }}</span></td>
+                  <td class="text-right">TSh {{ number_format($customer->total_spent) }}</td>
+                  <td>{{ \Carbon\Carbon::parse($customer->last_visit)->format('M d, Y h:i A') }}</td>
+                  <td>
+                    <button class="btn btn-sm btn-info" title="View History"><i class="fa fa-history"></i></button>
+                  </td>
+                </tr>
+              @empty
+                <tr>
+                  <td colspan="6" class="text-center py-4">
+                    <i class="fa fa-user-times fa-3x text-muted mb-3"></i>
+                    <p class="text-muted">No customers found matching your criteria.</p>
+                  </td>
+                </tr>
+              @endforelse
+            </tbody>
+          </table>
+        </div>
+        <div class="mt-4">
+            {{ $customers->appends(['search' => $search])->links() }}
+        </div>
       </div>
     </div>
   </div>

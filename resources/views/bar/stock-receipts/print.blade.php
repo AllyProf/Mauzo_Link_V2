@@ -54,21 +54,28 @@
                 <h6 class="text-muted text-uppercase smallest font-weight-bold mb-3" style="letter-spacing: 1px;">Reception Details</h6>
                 <p class="mb-1 small">Received: <span class="font-weight-bold text-dark">{{ \Carbon\Carbon::parse($receivedDate)->format('d M, Y') }}</span></p>
                 <p class="mb-1 small">By: <span class="font-weight-bold text-dark">{{ $receivedBy->name ?? 'System Admin' }}</span></p>
-                <p class="mb-0 small">Dept: <span class="text-muted">Warehouse/Inventory</span></p>
+                <p class="mb-0 small">Dept: <span class="text-muted">{{ session('is_staff') ? 'Bar / Counter Stock' : 'Counter Stock' }}</span></p>
             </div>
         </div>
+        @if($showRevenue)
         <div class="col-4 text-right">
             <h6 class="text-muted text-uppercase smallest font-weight-bold mb-3" style="letter-spacing: 1px;">Financial Summary</h6>
             <p class="mb-1 small text-muted">Gross Purchase: <span>TSh {{ number_format($receipts->sum('total_buying_cost')) }}</span></p>
             <p class="mb-1 small text-danger">Total Discounts: <span class="font-weight-bold">(-) TSh {{ number_format($receipts->sum('discount_value')) }}</span></p>
             <p class="mb-1 small">Net Buying Cost: <span class="font-weight-bold text-dark">TSh {{ number_format($receipts->sum('final_buying_cost')) }}</span></p>
-            @if($showRevenue)
             <p class="mb-0 h6 mt-2 font-weight-bold text-success border-top pt-2">EST. TOTAL PROFIT: TSh {{ number_format($receipts->sum('total_selling_value') - $receipts->sum('final_buying_cost')) }}</p>
-            @endif
             <div class="mt-2 smallest text-muted">
                 {{ $receipts->count() }} items &bull; {{ number_format($receipts->sum('quantity_received'), 1) }} total units received
             </div>
         </div>
+        @else
+        <div class="col-4 text-right">
+            <h6 class="text-muted text-uppercase smallest font-weight-bold mb-3" style="letter-spacing: 1px;">Receipt Summary</h6>
+            <p class="mb-1 small font-weight-bold text-dark">{{ $receipts->count() }} Products Received</p>
+            <p class="mb-0 small text-muted">{{ number_format($receipts->sum('quantity_received'), 1) }} total packages</p>
+            <p class="mb-0 small text-muted">{{ number_format($receipts->sum('total_units')) }} total units/bottles</p>
+        </div>
+        @endif
     </div>
 
     <!-- Items Table -->
@@ -107,8 +114,12 @@
                 <tr>
                     <td class="py-2 px-3 text-center text-muted">{{ $index + 1 }}</td>
                     <td class="py-2 px-3">
-                        <div class="font-weight-bold text-dark" style="font-size: 1.1rem;">{{ data_get($pv, 'name', 'Unknown Item') }}</div>
-                        @if($showRevenue)
+                        <div class="font-weight-bold text-dark" style="font-size: 1.1rem;">
+                            {{ data_get($pv, 'name', 'Unknown Item') }}
+                            @if(data_get($pv, 'measurement'))
+                                <span class="text-muted font-weight-normal" style="font-size: 0.85rem;"> &middot; {{ data_get($pv, 'measurement') }}{{ data_get($pv, 'unit', '') }}</span>
+                            @endif
+                        </div>
                         <div class="mt-1 smallest">
                             <span class="text-muted mr-2">
                                 @if(data_get($pv, 'items_per_package', 0) <= 1)
@@ -118,7 +129,9 @@
                                 @endif
                             </span>
                             <span class="text-info mr-2">Sell: <strong>TSh {{ number_format($sellPrice) }}</strong></span>
+                            @if($showRevenue)
                             <span class="text-success font-weight-bold">Margin: +{{ number_format(data_get($item, 'profit_per_unit', 0)) }}</span>
+                            @endif
                         </div>
 
                         <div class="mt-2 p-2 border rounded shadow-sm bg-white">
@@ -129,10 +142,12 @@
                                         <span class="text-muted">Price:</span>
                                         <span class="font-weight-bold">TSh {{ number_format($sellPrice) }}</span>
                                     </div>
+                                    @if($showRevenue)
                                     <div class="d-flex justify-content-between smallest text-success">
                                         <span class="font-weight-bold">Tot Profit:</span>
                                         <span class="font-weight-bold">+TSh {{ number_format($totalLineBtlProfit) }}</span>
                                     </div>
+                                    @endif
                                 </div>
                                 <div class="col-6 pl-2">
                                     <div class="smallest font-weight-bold text-uppercase text-info mb-1 border-bottom pb-1">Glass/Tot Channel</div>
@@ -141,10 +156,12 @@
                                             <span class="text-muted">Price:</span>
                                             <span class="font-weight-bold">TSh {{ number_format($displayTotPrice) }}</span>
                                         </div>
+                                        @if($showRevenue)
                                         <div class="d-flex justify-content-between smallest text-success">
                                             <span class="font-weight-bold">Tot Profit:</span>
                                             <span class="font-weight-bold">+TSh {{ number_format($totalLineTotProfit) }}</span>
                                         </div>
+                                        @endif
                                         <div class="smallest text-muted mt-1 italic" style="font-size: 8px;">
                                             Yields: {{ number_format($totalLineTots) }} Glasses total ({{ $totsPerUnit }}/btl)
                                         </div>
@@ -154,20 +171,9 @@
                                 </div>
                             </div>
                         </div>
-                        @else
-                        <div class="mt-1 smallest">
-                            <span class="text-muted mr-2">
-                                @if(data_get($pv, 'items_per_package', 0) <= 1)
-                                    {{ data_get($pv, 'packaging') }} (Single)
-                                @else
-                                    {{ data_get($pv, 'packaging') }} ({{ data_get($pv, 'items_per_package') }} units)
-                                @endif
-                            </span>
-                        </div>
-                        @endif
                     </td>
                     <td class="py-2 px-3 text-center">{{ number_format(data_get($item, 'quantity_received', 0), 1) }}</td>
-                    <td class="py-2 px-3 text-center font-weight-bold">{{ number_format($totalUnits) }}</td>
+                    <td class="py-2 px-3 text-center font-weight-bold">{{ number_format($totalUnits) }} <small class="text-muted font-weight-normal">btl(s)</small></td>
                     <td class="py-2 px-3 text-right">
                         @if($discount > 0)
                             <small class="text-muted strike-through" style="text-decoration: line-through;">{{ number_format($buyPrice) }}</small><br>

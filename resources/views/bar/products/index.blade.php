@@ -2,7 +2,7 @@
 
 @section('title', 'Products')
 
-@section('content')
+@push('styles')
 <style>
   :root {
     --primary-gradient: linear-gradient(135deg, #940000 0%, #610000 100%);
@@ -205,8 +205,10 @@
     gap: 0.5rem;
   }
 </style>
+@endpush
 
-<div class="app-title">
+@section('content')
+
   <div>
     <h1><i class="fa fa-cube text-primary"></i> Products</h1>
     <p>Inventory Intelligence & Product Management</p>
@@ -253,7 +255,7 @@
                 <select id="categoryFilter" name="category" class="form-control border shadow-sm">
                   <option value="">All Categories</option>
                   @foreach($categories as $cat)
-                    <option value="{{ $cat }}" {{ ($category ?? '') == $cat ? 'selected' : '' }}>{{ $cat }}</option>
+                    <option value="{{ $cat }}" {{ strtoupper($category ?? '') == strtoupper($cat) ? 'selected' : '' }}>{{ $cat }}</option>
                   @endforeach
                 </select>
               </div>
@@ -274,7 +276,7 @@
           </li>
           @foreach($categories as $cat)
             <li class="nav-item">
-              <a class="nav-link {{ ($category ?? '') == $cat ? 'active' : '' }} category-tab" href="#" data-category="{{ $cat }}">
+              <a class="nav-link {{ strtoupper($category ?? '') == strtoupper($cat) ? 'active' : '' }} category-tab" href="#" data-category="{{ $cat }}">
                 @php
                   $icon = 'fa-cube';
                   if(str_contains(strtolower($cat), 'beer')) $icon = 'fa-beer';
@@ -306,6 +308,7 @@
   </div>
 </div>
 
+@push('styles')
 <style>
   .nav-tabs .nav-link {
     border: none;
@@ -333,6 +336,7 @@
   }
   .category-tabs-wrapper::-webkit-scrollbar { display: none; } /* Safari/Chrome */
 </style>
+@endpush
 
 @endsection
 
@@ -564,7 +568,7 @@
               html += '<th class="border-0">Variant Name</th>';
               html += '<th class="border-0">Size</th>';
               html += '<th class="border-0 text-center">Packaging</th>';
-              html += '<th class="border-0 text-right">Shot Price</th>';
+              html += '<th class="border-0 text-right">' + (product.variants[0].portion_unit_name || 'Shot') + ' Price</th>';
               html += '<th class="border-0 text-center">Status</th>';
               html += '</tr></thead>';
               html += '<tbody>';
@@ -578,7 +582,7 @@
                 html += '<td class="align-middle text-right">';
                 if (variant.can_sell_in_tots) {
                   html += '<span class="text-success font-weight-bold">TSh ' + number_format(variant.selling_price_per_tot) + '</span>';
-                  html += '<br><small class="text-muted">(' + variant.total_tots + ' shots/bottle)</small>';
+                  html += '<br><small class="text-muted">(' + variant.total_tots + ' ' + variant.portion_unit_name.toLowerCase() + 's/bottle)</small>';
                 } else {
                   html += '<span class="text-muted">-</span>';
                 }

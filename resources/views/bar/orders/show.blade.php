@@ -172,7 +172,12 @@
               @foreach($order->items as $index => $item)
                 <tr>
                   <td>{{ $index + 1 }}</td>
-                  <td>{{ $item->productVariant->product->name ?? 'N/A' }}</td>
+                  <td>
+                    {{ $item->productVariant->product->name ?? 'N/A' }}
+                    <span class="badge badge-secondary ml-1">
+                      {{ $item->sell_type == 'tot' ? ($item->productVariant->portion_unit_name ?? 'Glass') : 'Bottle' }}
+                    </span>
+                  </td>
                   <td>{{ $item->productVariant->measurement ?? '' }} - {{ $item->productVariant->packaging ?? '' }}</td>
                   <td>{{ $item->quantity }}</td>
                   <td>TSh {{ number_format($item->unit_price, 2) }}</td>

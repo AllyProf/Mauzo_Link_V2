@@ -14,6 +14,13 @@
     <li class="breadcrumb-item">Stock Audit</li>
   </ul>
 </div>
+<div class="row mb-4">
+    <div class="col-md-12 text-right">
+        <a href="{{ route('bar.counter.daily-stock-sheet') }}" class="btn btn-info btn-lg shadow">
+            <i class="fa fa-print"></i> View / Print Counter Daily Stock Sheet
+        </a>
+    </div>
+</div>
 
 <!-- Manager Summary Cards -->
 <div class="row mb-4">

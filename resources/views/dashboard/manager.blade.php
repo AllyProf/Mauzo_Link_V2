@@ -51,14 +51,7 @@
       </div>
     </div>
   </div>
-  <div class="col-md-3">
-    <div class="widget-small warning coloured-icon"><i class="icon fa fa-exchange fa-3x"></i>
-      <div class="info">
-        <h4>Pending Transfers</h4>
-        <p><b>{{ number_format($pendingTransfers) }}</b></p>
-      </div>
-    </div>
-  </div>
+
   <div class="col-md-3">
     <div class="widget-small danger coloured-icon"><i class="icon fa fa-shopping-bag fa-3x"></i>
       <div class="info">
@@ -81,10 +74,10 @@
      ROW 1.5 – Monthly Targets Progress     ║
 ══════════════════════════════════════════--}}
 <div class="row">
-  <div class="col-md-6 mb-4">
+  <div class="col-md-12 mb-4">
     <div class="tile pb-2">
       <div class="d-flex justify-content-between">
-        <h6 class="text-muted small font-weight-bold"><i class="fa fa-glass mr-1"></i> BAR MONTHLY GOAL</h6>
+        <h6 class="text-muted small font-weight-bold"><i class="fa fa-glass mr-1"></i> MONTHLY GOAL</h6>
         <span class="badge badge-primary">{{ $barTargetProgress }}%</span>
       </div>
       <div class="product-bar-track mt-2">
@@ -93,21 +86,6 @@
       <div class="d-flex justify-content-between mt-1 tiny text-muted">
         <span>TSh {{ number_format($monthRevenue) }}</span>
         <span>Target: TSh {{ number_format($barMonthlyTarget) }}</span>
-      </div>
-    </div>
-  </div>
-  <div class="col-md-6 mb-4">
-    <div class="tile pb-2">
-      <div class="d-flex justify-content-between">
-        <h6 class="text-muted small font-weight-bold"><i class="fa fa-cutlery mr-1"></i> FOOD MONTHLY GOAL</h6>
-        <span class="badge badge-warning">{{ $foodTargetProgress }}%</span>
-      </div>
-      <div class="product-bar-track mt-2">
-        <div class="product-bar-fill bg-warning" style="width: {{ $foodTargetProgress }}%; background-color: #f6c23e !important;"></div>
-      </div>
-      <div class="d-flex justify-content-between mt-1 tiny text-muted">
-        <span>TSh {{ number_format($foodMonthRevenue) }}</span>
-        <span>Target: TSh {{ number_format($foodMonthlyTarget) }}</span>
       </div>
     </div>
   </div>
@@ -166,7 +144,7 @@
           <div class="row">
             @foreach($topProducts as $tp)
               @php
-                $name = $tp->display_name ?? 'Unknown Product';
+                $name = $tp->display_name;
                 $pct = round(($tp->total_sold / $maxSold) * 100);
               @endphp
               <div class="col-md-6 mb-3">
@@ -192,37 +170,32 @@
       <h3 class="tile-title"><i class="fa fa-bolt"></i> Quick Links</h3>
       <div class="tile-body">
         <div class="d-flex flex-column h-100 justify-content-center">
-          <a href="{{ route('bar.stock-transfers.index') }}" class="btn btn-outline-primary mb-3 text-left">
-            <i class="fa fa-exchange mr-2"></i> Stock Transfers
-            @if(isset($pendingTransfers) && $pendingTransfers > 0)
-              <span class="badge badge-primary ml-1 float-right">{{ $pendingTransfers }}</span>
-            @endif
+
+          <a href="{{ route('bar.manager.reconciliations') }}" class="btn btn-outline-danger mb-3 text-left">
+            <i class="icon fa fa-balance-scale mr-2"></i> Reconciliation Center
           </a>
+
           <a href="{{ route('bar.stock-receipts.index') }}" class="btn btn-outline-success mb-3 text-left">
-            <i class="fa fa-inbox mr-2"></i> Stock Receipts
+            <i class="fa fa-inbox mr-2"></i> Receiving Stock
           </a>
-          <a href="{{ route('bar.beverage-inventory.warehouse-stock') }}" class="btn btn-outline-info mb-3 text-left">
-            <i class="fa fa-archive mr-2"></i> Warehouse Stock
+
+          <a href="{{ route('bar.products.index') }}" class="btn btn-outline-secondary mb-3 text-left">
+            <i class="fa fa-cubes mr-2"></i> Products List
           </a>
-          <a href="{{ route('bar.beverage-inventory.index') }}" class="btn btn-outline-secondary mb-3 text-left">
-            <i class="fa fa-cubes mr-2"></i> Beverage Inventory
+
+          <a href="{{ route('manager.reports.trends') }}" class="btn btn-outline-info mb-3 text-left">
+            <i class="fa fa-line-chart mr-2"></i> Business Trends
           </a>
-          <a href="{{ route('bar.beverage-inventory.low-stock-alerts') }}" class="btn btn-outline-warning mb-3 text-left">
-            <i class="fa fa-exclamation-triangle mr-2"></i> Stock Alerts
+
+          <a href="{{ route('manager.targets.index') }}" class="btn btn-outline-warning mb-3 text-left">
+            <i class="fa fa-bullseye mr-2"></i> Monthly Targets
           </a>
-          <a href="{{ route('accountant.reconciliations') }}" class="btn btn-outline-danger mb-3 text-left">
-            <i class="fa fa-money mr-2"></i> Reconciliation Center
+
+          <div class="border-top mb-3 pt-3 text-muted small font-weight-bold ml-2">STOCK CONTROL</div>
+          <a href="{{ route('bar.counter.counter-stock') }}" class="btn btn-outline-dark mb-3 text-left">
+            <i class="fa fa-cubes mr-2"></i> Counter Stock
           </a>
-          <a href="{{ route('manager.master-sheet.analytics') }}" class="btn btn-outline-success mb-3 text-left">
-            <i class="fa fa-line-chart mr-2"></i> Financial Analytics (Audit)
-          </a>
-          <div class="border-top mb-3 pt-3 text-muted small font-weight-bold ml-2">REPORTS</div>
-          <a href="{{ route('reports.stock-receipts') }}" class="btn btn-outline-dark mb-3 text-left">
-            <i class="fa fa-file-text-o mr-2"></i> Stock Receipt Reports
-          </a>
-          <a href="{{ route('reports.stock-transfers') }}" class="btn btn-outline-dark text-left">
-            <i class="fa fa-line-chart mr-2"></i> Stock Transfer Reports
-          </a>
+
         </div>
       </div>
     </div>

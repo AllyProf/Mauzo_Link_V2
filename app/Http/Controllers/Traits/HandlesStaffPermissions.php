@@ -84,8 +84,8 @@ trait HandlesStaffPermissions
                 'role_slug_lower' => $roleSlug
             ]);
             
-            // Check if role is Manager (exact match only - not "HR Manager" or similar)
-            if ($roleName === 'manager' || $roleSlug === 'manager') {
+            // Check if role is Manager or Super Admin (exact match only - not "HR Manager" or similar)
+            if ($roleName === 'manager' || $roleSlug === 'manager' || $roleName === 'super admin' || $roleSlug === 'super-admin') {
                 \Log::info('✅ Manager role detected - granting all permissions', [
                     'staff_id' => $staff->id,
                     'role_name' => $role->name,

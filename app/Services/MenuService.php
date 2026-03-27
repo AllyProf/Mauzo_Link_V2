@@ -14,7 +14,7 @@ class MenuService
      */
     protected const COMMON_SLUGS = [
         'dashboard', 'sales', 'products', 'customers', 'staff', 
-        'hr', 'reports', 'marketing', 'settings', 'accountant-parent', 'stock-audit', 'counter-reconciliation', 'chef-reconciliation', 'targets', 'common-purchase-requests'
+        'reports', 'marketing', 'settings', 'accountant-parent', 'stock-audit', 'counter-reconciliation', 'chef-reconciliation', 'targets'
     ];
 
     /**
@@ -64,10 +64,6 @@ class MenuService
             
             // Initialize array for all business types
             foreach ($businessTypes as $businessType) {
-                // Skip business types based on role exceptions
-                if ($isChef && $businessType->slug === 'bar') continue;
-                if ($isCounter && $businessType->slug === 'restaurant') continue;
-
                 $businessSpecificMenusByType[$businessType->id] = [
                     'business_type' => $businessType,
                     'menus' => collect()
@@ -181,6 +177,18 @@ class MenuService
                     return true;
                 }
                 
+                $isManager = in_array($roleName, ['manager', 'general manager', 'administrator', 'super admin', 'super-admin']) || in_array($roleSlug, ['manager', 'admin', 'super-admin']);
+
+                // Block specific menus for Manager as requested
+                if ($isManager && in_array($menu->slug, ['sales', 'products', 'stock-audit', 'common-purchase-requests'])) {
+                    return false;
+                }
+
+                // Block Sales and Purchase Requests for Counter staff as requested
+                if ($isCounter && in_array($menu->slug, ['sales', 'common-purchase-requests'])) {
+                    return false;
+                }
+
                 // Show Counter Reconciliation only for Counter
                 if ($menu->slug === 'counter-reconciliation') {
                     return $isCounter;
@@ -191,8 +199,7 @@ class MenuService
                     return $isChef;
                 }
                 
-                // Managers always see Stock Audit
-                $isManager = in_array($roleName, ['manager', 'general manager', 'administrator']) || in_array($roleSlug, ['manager', 'admin']);
+                // Managers (if not blocked above) see Stock Audit
                 if ($isManager && $menu->slug === 'stock-audit') {
                     return true;
                 }
@@ -272,78 +279,97 @@ class MenuService
      */
     private function canAccessMenuForStaff($staffRole, MenuItem $menu)
     {
-        // Dashboard is always accessible
-        if ($menu->slug === 'dashboard' || $menu->route === 'dashboard') {
-            return true;
-        }
-        
-        // If menu has no route, it's just a parent - check if it has accessible children
-        if (!$menu->route) {
-            return false; // Parent visibility is handled by parent logic checking children
-        }
-
         $roleName = strtolower($staffRole->name ?? '');
         $roleSlug = strtolower($staffRole->slug ?? '');
         
         $isCounter = in_array($roleName, ['counter', 'bar counter', 'waiter', 'counter supervisor']) || 
                      in_array($roleSlug, ['counter', 'waiter']);
-        $isStockKeeper = in_array($roleName, ['stock keeper', 'stockkeeper', 'store keeper']) || 
-                         in_array($roleSlug, ['stock-keeper', 'stockkeeper', 'store-keeper']);
+        $isStockKeeper = in_array($roleName, ['stock keeper', 'stockkeeper', 'store keeper', 'stock']) || 
+                         in_array($roleSlug, ['stock-keeper', 'stockkeeper', 'store-keeper', 'stock']);
         $isChef = in_array($roleName, ['chef', 'head chef', 'cook']) || 
                   in_array($roleSlug, ['chef']);
         $isAccountant = in_array($roleName, ['accountant', 'finance officer']) || 
                         in_array($roleSlug, ['accountant', 'finance']);
+        $isManager = in_array($roleName, ['manager', 'general manager', 'administrator']) || in_array($roleSlug, ['manager', 'admin']);
 
         // Role-based route overrides for core functionality
         $overrides = [
             'counter' => [
-                'bar.counter.dashboard', 'bar.counter.waiter-orders', 'bar.counter.reconciliation', 'accountant.reconciliations',
-                'bar.counter.counter-stock', 'bar.counter.warehouse-stock', 'bar.counter.analytics',
+                'bar.counter.dashboard', 'bar.counter.waiter-orders', 'bar.counter.reconciliation', 'bar.manager.reconciliations',
+                'bar.counter.counter-stock', 'bar.counter.analytics',
                 'bar.counter.customer-orders', 'bar.counter.verify-reconciliation', 'bar.counter.mark-paid',
                 'bar.counter.mark-all-paid', 'bar.counter.update-order-status',
-                'bar.stock-transfers.available', 'bar.stock-transfers.index', 'bar.stock-transfers.create',
-                'bar.stock-transfers.history', 'bar.counter.stock-transfer-requests', 'bar.counter.request-stock-transfer',
-                'bar.orders.index', 'bar.orders.drinks', 'bar.orders.food', 'bar.orders.juice', 'bar.orders.create',
+                'bar.orders.index', 'bar.orders.drinks', 'bar.orders.create',
                 'bar.tables.index', 'bar.products.index', 'bar.products.create', 'bar.payments.index',
                 'customers.index', 'customers.groups', 
                 'bar.waiter.dashboard', 'bar.waiter.create-order', 'bar.waiter.order-history',
                 'sales.pos', 'sales.orders', 'sales.transactions',
                 'products.index', 'products.categories', 'products.inventory',
-                'bar.beverage-inventory.index', 'bar.beverage-inventory.stock-levels', 'bar.beverage-inventory.warehouse-stock',
-                'reports.index'
+                'bar.beverage-inventory.index', 'bar.beverage-inventory.add',
+                'reports.index',
+                'bar.stock-transfers.create', 
+                'bar-stock-mgmt', 'cafe-beverage-inventory', 'bar-ops-settings', 'products'
             ],
             'stock-keeper' => [
                 'bar.beverage-inventory.warehouse-stock', 'bar.stock-receipts.index', 'bar.stock-receipts.create',
                 'bar.stock-receipts.store', 'bar.stock-receipts.show',
                 'bar.stock-transfers.index', 'bar.stock-transfers.create', 'bar.stock-transfers.store',
                 'bar.products.index', 'bar.products.create', 'bar.suppliers.index',
-                'products.inventory', 'products.index', 'purchase-requests.index'
+                'products.inventory', 'products.index'
             ],
             'chef' => [
                 'bar.chef.dashboard', 'bar.chef.kds', 'bar.chef.update-item-status', 'bar.chef.latest-orders',
                 'bar.chef.food-items', 'bar.chef.ingredients', 'bar.chef.ingredient-receipts',
                 'bar.chef.ingredient-batches', 'bar.chef.ingredient-stock-movements', 'bar.chef.reports',
-                'bar.chef.reconciliation', 'purchase-requests.index'
+                'bar.chef.reconciliation'
             ],
             'accountant' => [
-                'accountant.reconciliations', 'accountant.cash-ledger', 'purchase-requests.index', 'accountant.daily-master-sheet', 'accountant.daily-master-sheet.history'
+                'accountant.reconciliations', 'accountant.cash-ledger', 'accountant.daily-master-sheet', 'accountant.daily-master-sheet.history'
             ],
             'manager' => [
-                'accountant.reconciliations',
-                'manager.stock-audit',
+                'bar.manager.reconciliations',
                 'manager.targets.index',
-                'manager.master-sheet.analytics',
-                'manager.master-sheet.collections',
-                'manager.master-sheet.confirm-handover',
-                'accountant.daily-master-sheet.history',
-                'accountant.daily-master-sheet',
-                'purchase-requests.index'
+                'manager.reports.trends'
             ]
         ];
 
-        $isManager = in_array($roleName, ['manager', 'general manager', 'administrator']) || in_array($roleSlug, ['manager', 'admin']);
+        // Dashboard is always accessible
+        if ($menu->slug === 'dashboard' || $menu->route === 'dashboard') {
+            return true;
+        }
 
-        if ($isCounter && in_array($menu->route, $overrides['counter'])) return true;
+        // Global block for food/kitchen/juice items in this version
+        $foodRelatedRoutes = [
+            'bar.orders.food', 'bar.orders.juice', 'bar.orders.kds',
+            'bar.chef.dashboard', 'bar.chef.kds', 'bar.chef.food-items',
+            'bar.chef.ingredients', 'bar.chef.ingredient-receipts',
+            'bar.chef.ingredient-batches', 'bar.chef.ingredient-stock-movements',
+            'bar.chef.reports', 'bar.chef.reconciliation', 'bar.chef.update-item-status'
+        ];
+        if (in_array($menu->route, $foodRelatedRoutes)) {
+            return false;
+        }
+        
+        // Explicitly block sensitive routes for Counter role as requested
+        if ($isCounter) {
+            $blockedRoutes = [
+                'bar.stock-receipts.index', 'bar.stock-receipts.create', 
+                'bar.suppliers.index'
+            ];
+            if (in_array($menu->route, $blockedRoutes) || 
+                in_array($menu->slug, ['bar-stock-receipts', 'bar-suppliers'])) {
+                return false;
+            }
+        }
+
+        // If menu has no route, it's just a parent - check if it's explicitly allowed via slug overrides
+        if (!$menu->route) {
+            if ($isCounter && in_array($menu->slug, $overrides['counter'])) return true;
+            if ($isManager && in_array($menu->slug, $overrides['manager'])) return true;
+            return false; // Parent visibility for others handled by logic checking children
+        }
+
+        if ($isCounter && (in_array($menu->route, $overrides['counter']) || in_array($menu->slug, $overrides['counter']))) return true;
         if ($isStockKeeper && (in_array($roleSlug, ['stock-keeper', 'stock_keeper', 'store-keeper'])) && in_array($menu->route, $overrides['stock-keeper'])) return true;
         if ($isChef && in_array($menu->route, $overrides['chef'])) return true;
         if ($isAccountant && in_array($menu->route, $overrides['accountant'])) return true;
@@ -592,6 +618,10 @@ class MenuService
                 return $menu;
             })
             ->filter(function($menu) use ($user) {
+                // Ensure Super Admin does not see the legacy menus, matching the Manager view
+                if (in_array($menu->slug, ['sales', 'products', 'stock-audit', 'common-purchase-requests'])) {
+                    return false;
+                }
                 return $this->canAccessMenu($user, $menu);
             })
             ->values();
@@ -809,6 +839,7 @@ class MenuService
             'bar.stock-keeper.ingredient-stock-movements' => ['module' => 'inventory', 'action' => 'view'],
             // Accountant
             'accountant.dashboard' => ['module' => 'finance', 'action' => 'view'],
+            'bar.manager.reconciliations' => ['module' => 'finance', 'action' => 'view'],
             'accountant.reconciliations' => ['module' => 'finance', 'action' => 'view'],
             'accountant.reconciliation-details' => ['module' => 'finance', 'action' => 'view'],
             'accountant.reports' => ['module' => 'reports', 'action' => 'view'],

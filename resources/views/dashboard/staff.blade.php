@@ -223,8 +223,8 @@
           </table>
         </div>
         <div class="mt-3">
-          <a href="{{ route('bar.beverage-inventory.low-stock-alerts') }}" class="btn btn-warning">
-            <i class="fa fa-exclamation-triangle"></i> View All Low Stock Alerts
+          <a href="{{ route('bar.counter.counter-stock') }}" class="btn btn-info">
+            <i class="fa fa-cubes"></i> View Counter Stock
           </a>
         </div>
       </div>

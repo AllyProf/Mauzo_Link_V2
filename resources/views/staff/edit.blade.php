@@ -151,9 +151,9 @@
         <div class="row">
           <div class="col-md-6">
             <div class="form-group">
-              <label>Salary Paid (TSh) <span class="text-danger">*</span></label>
+              <label>Salary Paid (TSh) (Optional)</label>
               <input type="number" step="0.01" class="form-control @error('salary_paid') is-invalid @enderror" 
-                     name="salary_paid" value="{{ old('salary_paid', $staff->salary_paid) }}" required min="0">
+                     name="salary_paid" value="{{ old('salary_paid', $staff->salary_paid) }}" min="0">
               @error('salary_paid')
                 <div class="invalid-feedback">{{ $message }}</div>
               @enderror

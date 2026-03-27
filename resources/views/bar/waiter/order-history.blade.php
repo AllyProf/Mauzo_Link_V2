@@ -84,10 +84,14 @@
                       </span>
                       @if($order->payment_method)
                         <br><small class="text-muted">
-                          <i class="fa fa-{{ $order->payment_method === 'cash' ? 'money' : 'mobile' }}"></i> 
-                          {{ ucfirst(str_replace('_', ' ', $order->payment_method)) }}
+                          <i class="fa fa-{{ $order->payment_method === 'cash' ? 'money' : ($order->payment_method === 'bank' ? 'university' : ($order->payment_method === 'card' ? 'credit-card' : 'mobile')) }}"></i> 
+                          @if($order->mobile_money_number)
+                            {{ strtoupper($order->mobile_money_number) }}
+                          @else
+                            {{ ucfirst(str_replace('_', ' ', $order->payment_method)) }}
+                          @endif
                         </small>
-                        @if($order->payment_method === 'mobile_money' && $order->transaction_reference)
+                        @if($order->transaction_reference)
                           <br><small class="text-muted">Ref: {{ $order->transaction_reference }}</small>
                         @endif
                       @endif
@@ -194,25 +198,63 @@
             <select class="form-control" id="payment-method-select" name="payment_method" required>
               <option value="">Select Payment Method</option>
               <option value="cash">Cash</option>
-              <option value="mobile_money">Mobile Money (M-Pesa)</option>
+              <option value="mobile_money">Mobile Money</option>
+              <option value="bank">Bank Transfer</option>
+              <option value="card">Bank Card (POS)</option>
             </select>
           </div>
           
-          <!-- Mobile Money Fields (shown when mobile_money is selected) -->
-          <div id="mobile-money-payment-fields" style="display: none;">
+          <!-- Mobile Money Fields -->
+          <div id="mobile-money-payment-fields" style="display: none;" class="p-2 bg-light border rounded mb-3">
             <div class="form-group">
-              <label>Customer Phone Number (M-Pesa) <span class="text-danger">*</span></label>
-              <input type="text" class="form-control" id="mobile-money-number-input" name="mobile_money_number" placeholder="+255XXXXXXXXX" value="+255">
-              <small class="form-text text-muted">Customer's phone number for M-Pesa payment</small>
+              <label>Provider <span class="text-danger">*</span></label>
+              <select class="form-control" id="mobile-money-provider" name="mobile_money_provider">
+                <option value="M-Pesa">M-Pesa</option>
+                <option value="Halopesa">Halopesa</option>
+                <option value="Mixx By Yas">Mixx By Yas</option>
+                <option value="Tigo Pesa">Tigo Pesa</option>
+                <option value="Airtel Money">Airtel Money</option>
+              </select>
             </div>
             <div class="form-group">
               <label>Transaction Reference <span class="text-danger">*</span></label>
-              <input type="text" class="form-control" id="transaction-reference-input" name="transaction_reference" placeholder="e.g., QGH7X8Y9Z" maxlength="50">
-              <small class="form-text text-muted">M-Pesa transaction code from customer's confirmation SMS</small>
+              <input type="text" class="form-control" id="transaction-reference-input" name="transaction_reference" placeholder="Enter Ref ID">
             </div>
-            <div class="alert alert-warning">
-              <i class="fa fa-exclamation-triangle"></i> 
-              <strong>Important:</strong> Verify the transaction reference with the customer before marking as received.
+          </div>
+
+          <!-- Bank Fields -->
+          <div id="bank-payment-fields" style="display: none;" class="p-2 bg-light border rounded mb-3">
+            <div class="form-group">
+              <label>Bank Name <span class="text-danger">*</span></label>
+              <select class="form-control" id="bank-provider" name="bank_provider">
+                <option value="CRDB Bank">CRDB Bank</option>
+                <option value="NMB Bank">NMB Bank</option>
+                <option value="NBC Bank">NBC Bank</option>
+                <option value="KCB Bank">KCB Bank</option>
+                <option value="Absa Bank">Absa Bank</option>
+                <option value="Equity Bank">Equity Bank</option>
+                <option value="Other">Other Bank</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>Ref / Slip # <span class="text-danger">*</span></label>
+              <input type="text" class="form-control" id="bank-ref-input" placeholder="Enter Ref #">
+            </div>
+          </div>
+
+          <!-- Card Fields -->
+          <div id="card-payment-fields" style="display: none;" class="p-2 bg-light border rounded mb-3">
+            <div class="form-group">
+              <label>Card Type <span class="text-danger">*</span></label>
+              <select class="form-control" id="card-provider" name="card_provider">
+                <option value="Visa">Visa</option>
+                <option value="Mastercard">Mastercard</option>
+                <option value="Other">Other</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>Approval Code <span class="text-danger">*</span></label>
+              <input type="text" class="form-control" id="card-ref-input" placeholder="Enter Code">
             </div>
           </div>
           
@@ -293,21 +335,19 @@
     $('#order-details-modal').modal('show');
   });
 
-  // Show/hide mobile money fields based on payment method selection
+  // Show/hide payment fields based on selection
   $('#payment-method-select').on('change', function() {
     const paymentMethod = $(this).val();
+    $('#mobile-money-payment-fields, #bank-payment-fields, #card-payment-fields, #cash-payment-info').hide();
+    
     if (paymentMethod === 'mobile_money') {
       $('#mobile-money-payment-fields').slideDown();
-      $('#cash-payment-info').hide();
-      $('#mobile-money-number-input, #transaction-reference-input').prop('required', true);
+    } else if (paymentMethod === 'bank') {
+      $('#bank-payment-fields').slideDown();
+    } else if (paymentMethod === 'card') {
+      $('#card-payment-fields').slideDown();
     } else if (paymentMethod === 'cash') {
-      $('#mobile-money-payment-fields').slideUp();
       $('#cash-payment-info').slideDown();
-      $('#mobile-money-number-input, #transaction-reference-input').prop('required', false).val('');
-    } else {
-      $('#mobile-money-payment-fields').slideUp();
-      $('#cash-payment-info').hide();
-      $('#mobile-money-number-input, #transaction-reference-input').prop('required', false).val('');
     }
   });
 
@@ -323,9 +363,7 @@
     
     // Reset form
     $('#record-payment-form')[0].reset();
-    $('#payment-method-select').val('');
-    $('#mobile-money-payment-fields').hide();
-    $('#cash-payment-info').hide();
+    $('#payment-method-select').val('').trigger('change');
     
     $('#record-payment-modal').modal('show');
   });
@@ -335,45 +373,34 @@
     e.preventDefault();
     
     const orderId = $('#payment-order-id').val();
-    const paymentMethod = $('#payment-method-select').val();
+    const method = $('#payment-method-select').val();
     
-    if (!paymentMethod) {
-      Swal.fire({
-        icon: 'warning',
-        title: 'Payment Method Required',
-        text: 'Please select a payment method'
-      });
+    if (!method) {
+      Swal.fire('Required', 'Please select a payment method', 'warning');
       return;
     }
     
-    // Validate mobile money fields if selected
-    if (paymentMethod === 'mobile_money') {
-      const mobileNumber = $('#mobile-money-number-input').val().trim();
-      const transactionRef = $('#transaction-reference-input').val().trim();
-      
-      if (!mobileNumber || mobileNumber === '+255') {
-        Swal.fire({
-          icon: 'warning',
-          title: 'Phone Number Required',
-          text: 'Please enter customer\'s phone number'
-        });
-        return;
-      }
-      
-      if (!transactionRef) {
-        Swal.fire({
-          icon: 'warning',
-          title: 'Transaction Reference Required',
-          text: 'Please enter the M-Pesa transaction reference'
-        });
-        return;
-      }
+    let provider = null;
+    let ref = null;
+
+    if (method === 'mobile_money') {
+        provider = $('#mobile-money-provider').val();
+        ref = $('#transaction-reference-input').val();
+        if(!ref) { Swal.fire('Required', 'Please enter transaction reference', 'warning'); return; }
+    } else if (method === 'bank') {
+        provider = $('#bank-provider').val();
+        ref = $('#bank-ref-input').val();
+        if(!ref) { Swal.fire('Required', 'Please enter bank ref / slip #', 'warning'); return; }
+    } else if (method === 'card') {
+        provider = $('#card-provider').val();
+        ref = $('#card-ref-input').val();
+        if(!ref) { Swal.fire('Required', 'Please enter card approval code', 'warning'); return; }
     }
     
     const formData = {
-      payment_method: paymentMethod,
-      mobile_money_number: paymentMethod === 'mobile_money' ? $('#mobile-money-number-input').val().trim() : null,
-      transaction_reference: paymentMethod === 'mobile_money' ? $('#transaction-reference-input').val().trim() : null
+      payment_method: method,
+      mobile_money_number: provider,
+      transaction_reference: ref
     };
     
     // Show loading

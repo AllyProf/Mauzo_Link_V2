@@ -2,10 +2,13 @@
 <html lang="en">
   <head>
     <meta name="description" content="MauzoLink - Point of Sale System for Business">
+    <script src="{{ asset('js/admin/jquery-3.2.1.min.js') }}?v=2.1"></script>
+    <script>window.$ = window.jQuery;</script>
     <title>@yield('title', 'Dashboard') - MauzoLink</title>
     <meta charset="utf-8">
     <meta http-equiv="X-UA-Compatible" content="IE=edge">
     <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="csrf-token" content="{{ csrf_token() }}">
     <meta name="csrf-token" content="{{ csrf_token() }}">
     <!-- Main CSS-->
     <link rel="stylesheet" type="text/css" href="{{ asset('css/admin.css') }}">
@@ -98,7 +101,9 @@
       .app-sidebar__user {
         background: linear-gradient(135deg, #940000 0%, #7a0000 100%);
       }
+      @stack('styles')
     </style>
+    <!-- Scripts that need Early Load -->
   </head>
   <body class="app sidebar-mini">
     @php
@@ -143,43 +148,7 @@
             }
         @endphp
 
-        @if($isOwner || $isManager)
-        @php
-            $staffLocations = \App\Models\Staff::where('user_id', $ownerId)->whereNotNull('location_branch')->pluck('location_branch')->unique();
-            $tableLocations = \App\Models\BarTable::where('user_id', $ownerId)->whereNotNull('location')->pluck('location')->unique();
-            $userLocations = $staffLocations->merge($tableLocations)->unique()->filter()->sort();
-            $activeLocation = session('active_location', 'all');
-        @endphp
-        
-        @if($userLocations->count() > 0)
-        <!-- Branch Context Switcher -->
-        <li class="dropdown">
-          <a class="app-nav__item" href="#" data-toggle="dropdown" aria-label="Switch Branch" style="background-color: rgba(255,255,255,0.1); border-radius: 4px; padding: 5px 15px; margin: 8px 10px; font-size: 13px;">
-            <i class="fa fa-map-marker mr-2"></i> 
-            <span class="d-none d-md-inline">{{ $activeLocation == 'all' ? 'All Branches' : $activeLocation }}</span>
-            <i class="fa fa-caret-down ml-2"></i>
-          </a>
-          <ul class="dropdown-menu settings-menu dropdown-menu-right">
-            <li>
-              <a class="dropdown-item {{ $activeLocation == 'all' ? 'active' : '' }}" href="javascript:void(0)" onclick="switchLocation('all')">
-                <i class="fa fa-globe fa-lg"></i> All Branches
-              </a>
-            </li>
-            @foreach($userLocations as $location)
-            <li>
-              <a class="dropdown-item {{ $activeLocation == $location ? 'active' : '' }}" href="javascript:void(0)" onclick="switchLocation('{{ $location }}')">
-                <i class="fa fa-map-marker fa-lg"></i> {{ $location }}
-              </a>
-            </li>
-            @endforeach
-          </ul>
-        </li>
-        <form id="location-switch-form" action="{{ route('location.switch') }}" method="POST" style="display: none;">
-          @csrf
-          <input type="hidden" name="active_location" id="location-switch-input">
-        </form>
-        @endif
-        @endif
+        {{-- Branch Context Switcher Removed --}}
         <!--Notification Menu-->
         <li class="dropdown">
           <a class="app-nav__item" href="#" data-toggle="dropdown" aria-label="Show notifications">
@@ -626,7 +595,6 @@
       @yield('content')
     </main>
     <!-- Essential javascripts for application to work-->
-    <script src="{{ asset('js/admin/jquery-3.2.1.min.js') }}"></script>
     <script src="{{ asset('js/admin/popper.min.js') }}"></script>
     <script src="{{ asset('js/admin/bootstrap.min.js') }}"></script>
     <script src="{{ asset('js/admin/main.js') }}"></script>

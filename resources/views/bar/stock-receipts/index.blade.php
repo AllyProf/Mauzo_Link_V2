@@ -159,7 +159,7 @@
       
       Swal.fire({
         title: 'Delete Stock Receipt?',
-        html: `You are about to delete batch <strong>${receiptNumber}</strong>.<br><br><span class="text-danger">This will automatically reverse the stock from your Warehouse.</span>`,
+        html: `You are about to delete batch <strong>${receiptNumber}</strong>.<br><br><span class="text-danger">This will automatically reverse the stock from your Counter stock.</span>`,
         icon: 'warning',
         showCancelButton: true,
         confirmButtonColor: '#d33',

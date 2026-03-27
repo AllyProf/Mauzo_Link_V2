@@ -14,12 +14,14 @@ class ProductHelper
     public static function generateDisplayName($productName, $variantDescription = '', $variantSpecificName = '')
     {
         $brands = ["bonite", "sbc", "tcc", "tbl", "sbl", "factory", "tanzania", "distillers", "limited", "ltd", "azam", "company"];
-        $packaging = ["crate", "pieces", "pcs", "unit", "btl", "bottle", "carton", "ctn", "pkg", "package"];
+        $packaging = ["crate", "pieces", "pcs", "piece", "unit", "btl", "bottle", "carton", "ctn", "pkg", "package"];
         $flavors = [
             "fanta", "sprite", "krest", "stoney", "orange", "water", "grand malt", "tangawizi", 
             "aloe", "kilimanjaro", "safari", "serengeti", "mirinda", "pepsi", "coca-cola", 
             "coke", "embe", "nanasi", "passion", "apple", "mango", "citrus", "tonic", 
-            "soda water", "ginger ale", "red bull", "hennessy", "jack daniel", "whisky", "brandy"
+            "soda water", "ginger ale", "red bull", "hennessy", "jack daniel", "whisky", "brandy", 
+            "vodka", "gin", "rum", "tequila", "liqueur", "wine", "dry", "sweet", "red", "white", "rose", 
+            "dodoma", "4th street", "robertson", "selection", "claret", "hoff", "drostdy"
         ];
 
         // 1. Extract Parent Product Name from brackets if it exists (e.g. "Coca-Cola")

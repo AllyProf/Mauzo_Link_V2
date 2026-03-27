@@ -102,7 +102,7 @@ class StockReceiptController extends Controller
                 'variants' => $product->variants->map(function($variant) use ($ownerId) {
                     $warehouseStock = StockLocation::where('user_id', $ownerId)
                         ->where('product_variant_id', $variant->id)
-                        ->where('location', 'warehouse')
+                        ->where('location', 'counter')
                         ->first();
                     
                     $lastReceipt = StockReceipt::where('user_id', $ownerId)
@@ -142,7 +142,7 @@ class StockReceiptController extends Controller
             $staff = \App\Models\Staff::with('role')->find(session('staff_id'));
             if ($staff && $staff->role) {
                 $roleName = strtolower(trim($staff->role->name ?? ''));
-                // ONLY hide for stock keepers. Accountants and others should see it.
+                // ONLY hide for stock keepers and counter. Accountants and others should see it.
                 if (in_array($roleName, ['stock keeper', 'stockkeeper'])) {
                     $showRevenue = false;
                 }
@@ -268,12 +268,12 @@ class StockReceiptController extends Controller
                     'received_by' => Auth::id() ?? $ownerId,
                 ]);
 
-                // Update Warehouse Stock (With Weighted Average Costing)
+                // Update Counter Stock (With Weighted Average Costing)
                 $warehouseStock = \App\Models\StockLocation::firstOrCreate(
                     [
                         'user_id' => $ownerId,
                         'product_variant_id' => $item['product_variant_id'],
-                        'location' => 'warehouse',
+                        'location' => 'counter',
                     ],
                     [
                         'quantity' => 0,
@@ -312,7 +312,7 @@ class StockReceiptController extends Controller
                     'user_id' => $ownerId,
                     'product_variant_id' => $item['product_variant_id'],
                     'from_location' => 'supplier',
-                    'to_location' => 'warehouse',
+                    'to_location' => 'counter',
                     'quantity' => $totalUnits,
                     'type' => 'in',
                     'reference_type' => 'stock_receipt',
@@ -384,7 +384,7 @@ class StockReceiptController extends Controller
                 $staff = \App\Models\Staff::with('role')->find(session('staff_id'));
                 if ($staff && $staff->role) {
                     $roleName = strtolower(trim($staff->role->name ?? ''));
-                    if (in_array($roleName, ['stock keeper', 'stockkeeper'])) {
+                    if (in_array($roleName, ['stock keeper', 'stockkeeper', 'counter', 'counter staff'])) {
                         $showRevenue = false;
                     }
                 }
@@ -426,10 +426,10 @@ class StockReceiptController extends Controller
             }
 
             foreach ($receipts as $receipt) {
-                // Adjust Warehouse Stock (Reverse)
+                // Adjust Counter Stock (Reverse)
                 $warehouseStock = StockLocation::where('user_id', $ownerId)
                     ->where('product_variant_id', $receipt->product_variant_id)
-                    ->where('location', 'warehouse')
+                    ->where('location', 'counter')
                     ->first();
 
                 if ($warehouseStock) {
@@ -608,10 +608,10 @@ class StockReceiptController extends Controller
                 'notes' => $validated['notes'] ?? null,
             ]);
 
-            // Adjust warehouse stock
+            // Adjust counter stock
             $warehouseStock = StockLocation::where('user_id', $ownerId)
                 ->where('product_variant_id', $productVariant->id)
-                ->where('location', 'warehouse')
+                ->where('location', 'counter')
                 ->first();
 
             if ($warehouseStock) {
@@ -699,10 +699,10 @@ class StockReceiptController extends Controller
 
         DB::beginTransaction();
         try {
-            // Adjust warehouse stock (remove the stock that was added)
+            // Adjust counter stock (remove the stock that was added)
             $warehouseStock = StockLocation::where('user_id', $ownerId)
                 ->where('product_variant_id', $stockReceipt->product_variant_id)
-                ->where('location', 'warehouse')
+                ->where('location', 'counter')
                 ->first();
 
             if ($warehouseStock) {
@@ -768,7 +768,7 @@ class StockReceiptController extends Controller
             $staff = \App\Models\Staff::with('role')->find(session('staff_id'));
             if ($staff && $staff->role) {
                 $roleName = strtolower(trim($staff->role->name ?? ''));
-                if (in_array($roleName, ['stock keeper', 'stockkeeper'])) {
+                if (in_array($roleName, ['stock keeper', 'stockkeeper', 'counter', 'counter staff'])) {
                     $showRevenue = false;
                 }
             }

@@ -28,6 +28,7 @@ class BarOrder extends Model
         'created_by',
         'waiter_id',
         'order_source',
+        'shift_id',
         'served_by',
         'paid_by_waiter_id',
         'served_at',
@@ -72,6 +73,14 @@ class BarOrder extends Model
      * Get the owner (user) that owns this order.
      */
     public function owner()
+    {
+        return $this->belongsTo(User::class, 'user_id');
+    }
+
+    /**
+     * Alias for owner (compatibility)
+     */
+    public function user()
     {
         return $this->belongsTo(User::class, 'user_id');
     }
@@ -146,6 +155,14 @@ class BarOrder extends Model
     public function waiter()
     {
         return $this->belongsTo(Staff::class, 'waiter_id');
+    }
+
+    /**
+     * Get the shift associated with this order.
+     */
+    public function shift()
+    {
+        return $this->belongsTo(StaffShift::class, 'shift_id');
     }
 
     /**

@@ -438,6 +438,8 @@ class OrderController extends Controller
                         'quantity' => $item->quantity,
                         'unit_price' => $item->unit_price,
                         'total_price' => $item->total_price,
+                        'sell_type' => $item->sell_type,
+                        'portion_unit_name' => $item->productVariant->portion_unit_name ?? 'Glass',
                     ];
                 }),
             ]

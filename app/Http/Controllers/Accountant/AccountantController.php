@@ -280,10 +280,11 @@ class AccountantController extends Controller
                     $transfer->expected_revenue = $transfer->total_units * $sellingPrice;
                     $transfer->expected_profit = ($sellingPrice - $buyingPrice) * $transfer->total_units;
                     
-                    // Calculate real-time profit and revenue (branch-aware)
-                    $transfer->real_time_profit = $this->calculateRealTimeProfitForTransfer($transfer, $ownerId, $sellingPrice, $buyingPrice, $location);
-                    $revenueData = $this->calculateRealTimeRevenueForTransfer($transfer, $ownerId, $location);
-                    $transfer->real_time_revenue = $revenueData['total'];
+                    // Calculate real-time profit and revenue (FIFO-aware)
+                    $metrics = $this->calculateRealTimeMetricsForTransfer($transfer, $ownerId, $buyingPrice, $location);
+                    $transfer->real_time_profit = $metrics['profit'];
+                    $transfer->real_time_revenue = $metrics['total'];
+                    $transfer->real_time_units_sold = $metrics['units_sold'];
                 }
                 return $transfer;
             });
@@ -434,6 +435,9 @@ class AccountantController extends Controller
             ->whereBetween('handover_date', [Carbon::parse($startDate)->startOfDay(), Carbon::parse($endDate)->endOfDay()])
             ->get();
         $handoverMap = $handovers->mapWithKeys(function($h) {
+            if ($h->staff_shift_id) {
+                return ['shift_' . $h->staff_shift_id => $h];
+            }
             $dateStr = $h->handover_date instanceof Carbon ? $h->handover_date->format('Y-m-d') : date('Y-m-d', strtotime($h->handover_date));
             return [$dateStr . '_' . $h->department => $h];
         });
@@ -452,33 +456,47 @@ class AccountantController extends Controller
                 $q->whereIn('reconciliation_type', $dbType);
             })
             ->whereBetween('reconciliation_date', [Carbon::parse($startDate)->startOfDay(), Carbon::parse($endDate)->endOfDay()])
-            ->selectRaw('reconciliation_date, reconciliation_type, SUM(expected_amount) as total_expected, SUM(submitted_amount) as total_submitted, SUM(cash_collected) as total_cash, SUM(mobile_money_collected) as total_mobile, SUM(bank_collected) as total_bank, SUM(card_collected) as total_card, COUNT(waiter_id) as waiter_count, MIN(status) as status_indicator, MAX(notes) as notes')
-            ->groupBy('reconciliation_date', 'reconciliation_type')
+            ->selectRaw('reconciliation_date, reconciliation_type, staff_shift_id, SUM(expected_amount) as total_expected, SUM(submitted_amount) as total_submitted, SUM(cash_collected) as total_cash, SUM(mobile_money_collected) as total_mobile, SUM(bank_collected) as total_bank, SUM(card_collected) as total_card, COUNT(waiter_id) as waiter_count, MIN(status) as status_indicator, MAX(notes) as notes')
+            ->groupBy('reconciliation_date', 'reconciliation_type', 'staff_shift_id')
             ->get()
             ->filter(function($r) use ($handoverMap) {
                 // Only show to accountant if handover exists
-                $dateVal = $r->reconciliation_date;
-                $dateStr = ($dateVal instanceof \Carbon\Carbon) ? $dateVal->format('Y-m-d') : date('Y-m-d', strtotime($dateVal));
-                $key = $dateStr . '_' . $r->reconciliation_type;
+                if ($r->staff_shift_id) {
+                    $key = 'shift_' . $r->staff_shift_id;
+                } else {
+                    $dateStr = ($r->reconciliation_date instanceof \Carbon\Carbon) ? $r->reconciliation_date->format('Y-m-d') : date('Y-m-d', strtotime($r->reconciliation_date));
+                    $key = $dateStr . '_' . $r->reconciliation_type;
+                }
                 return isset($handoverMap[$key]);
             })
             ->map(function($r) use ($handoverMap) {
-                $dateVal = $r->reconciliation_date;
-                $dateStr = ($dateVal instanceof \Carbon\Carbon) ? $dateVal->format('Y-m-d') : date('Y-m-d', strtotime($dateVal));
-                $key = $dateStr . '_' . $r->reconciliation_type;
+                if ($r->staff_shift_id) {
+                    $key = 'shift_' . $r->staff_shift_id;
+                } else {
+                    $dateStr = ($r->reconciliation_date instanceof \Carbon\Carbon) ? $r->reconciliation_date->format('Y-m-d') : date('Y-m-d', strtotime($r->reconciliation_date));
+                    $key = $dateStr . '_' . $r->reconciliation_type;
+                }
                 
                 $h = $handoverMap[$key] ?? null;
                 $r->payment_breakdown = $h ? $h->payment_breakdown : [];
                 $r->handover_id = $h ? $h->id : null;
                 $r->handover_status = $h ? $h->status : 'pending';
+                $r->handover_staff_name = ($h && $h->staff) ? $h->staff->full_name : null;
 
                 // AGGREGATE RECORDED PLATFORM BREAKDOWNS FROM ALL WAITERS
-                $dbDate = ($dateVal instanceof \Illuminate\Support\Carbon) ? $dateVal->toDateString() : date('Y-m-d', strtotime($dateVal));
+                $dbDate = ($r->reconciliation_date instanceof \Illuminate\Support\Carbon) ? $r->reconciliation_date->toDateString() : date('Y-m-d', strtotime($r->reconciliation_date));
                 $dbTypeArr = ($r->reconciliation_type === 'food') ? ['food', 'kitchen'] : [$r->reconciliation_type];
                 
-                $underlyingRecs = \App\Models\WaiterDailyReconciliation::where('reconciliation_date', $dbDate)
-                    ->whereIn('reconciliation_type', $dbTypeArr)
-                    ->get();
+                $underlyingRecsQuery = \App\Models\WaiterDailyReconciliation::where('reconciliation_date', $dbDate)
+                    ->whereIn('reconciliation_type', $dbTypeArr);
+                    
+                if ($r->staff_shift_id) {
+                    $underlyingRecsQuery->where('staff_shift_id', $r->staff_shift_id);
+                } else {
+                    $underlyingRecsQuery->whereNull('staff_shift_id');
+                }
+                
+                $underlyingRecs = $underlyingRecsQuery->get();
                 
                 $recordedPlatformBreakdown = [];
                 $submittedPlatformBreakdown = [];
@@ -491,10 +509,25 @@ class AccountantController extends Controller
                                 $wRec = $notesData['recorded_breakdown'] ?? [];
                                 foreach ($wRec as $channel => $amt) {
                                     $cLower = strtolower(trim(str_replace(' ', '_', $channel)));
+                                    
+                                    // Normalize Pos-specific names to Counter Handover standard keys
+                                    if (strpos($cLower, 'nmb') !== false) $cLower = 'nmb';
+                                    elseif (strpos($cLower, 'crdb') !== false) $cLower = 'crdb';
+                                    elseif (strpos($cLower, 'mixx') !== false) $cLower = 'mixx';
+                                    elseif (strpos($cLower, 'mpesa') !== false) $cLower = 'mpesa';
+                                    elseif (strpos($cLower, 'airtel') !== false) $cLower = 'airtel';
+                                    elseif (strpos($cLower, 'tigo') !== false) $cLower = 'tigo';
+                                    elseif (strpos($cLower, 'halo') !== false) $cLower = 'halopesa';
+                                    elseif (strpos($cLower, 'cash') !== false) $cLower = 'cash';
+                                    elseif (strpos($cLower, 'bank_transfer') !== false && !isset($recordedPlatformBreakdown['bank_transfer'])) {
+                                        // Waiter might choose generic Bank Transfer. If NMB/CRDB is expected, we can't reliably guess, so keep as bank_transfer.
+                                        $cLower = 'bank_transfer';
+                                    }
+
                                     $recordedPlatformBreakdown[$cLower] = ($recordedPlatformBreakdown[$cLower] ?? 0) + (float)$amt;
                                 }
                                 
-                                // 2. Map SUBMITTED (Actual)
+                                // 2. Map SUBMITTED (Actual) - Default values from staff manual entry
                                 $wSub = $notesData['submitted_breakdown'] ?? [];
                                 foreach ($wSub as $channel => $amt) {
                                     $cLower = strtolower(trim(str_replace(' ', '_', $channel)));
@@ -504,13 +537,26 @@ class AccountantController extends Controller
                         } catch (\Exception $e) {}
                     }
                 }
+
+                // CRITICAL: TRUTH comes from Handover ($h) if it exists
+                if ($h && is_array($h->payment_breakdown)) {
+                    // Start fresh with Handover data for submitted platforms
+                    $submittedPlatformBreakdown = [];
+                    foreach ($h->payment_breakdown as $channel => $amt) {
+                        $cLower = strtolower(trim(str_replace(' ', '_', $channel)));
+                        $submittedPlatformBreakdown[$cLower] = (float)$amt;
+                    }
+                    
+                    $r->submitted_platform_breakdown = $submittedPlatformBreakdown;
+                } else {
+                    $r->submitted_platform_breakdown = $submittedPlatformBreakdown;
+                }
                 $r->recorded_platform_breakdown = $recordedPlatformBreakdown;
-                $r->submitted_platform_breakdown = $submittedPlatformBreakdown;
 
                 // Track shortage payments for summary and JS
                 $paid = 0;
                 $noteSource = ($h && $h->notes) ? $h->notes : ($r->notes ?? '');
-                $r->notes = $noteSource; // CRITICAL: Updates the object so Blade regex works
+                $r->notes = $noteSource;
                 if(preg_match('/\[ShortagePaidTotal:(\d+)\]/', $noteSource, $m)) $paid = (int)$m[1];
                 $r->shortage_paid = (float)$paid;
                 
@@ -518,16 +564,8 @@ class AccountantController extends Controller
                 if(preg_match('/\[ShortagePaidBreakdown:([^\]]+)\]/', $noteSource, $bm)) $breakdown = $bm[1];
                 $r->shortage_breakdown = $breakdown;
 
-                // CRITICAL: We NO LONGER override the record's 'total_submitted' because
-                // we need to see the original shortage relative to Expected sales.
-                // We just attach the handover data for the folders.
-                // CRITICAL: Aligned truth must come from the Handover physical bag.
-                // This resolves the mismatch where manual staff records (16k) 
-                // differ from the bag (12k). The Accountant audits the BAG vs SALES.
                 if ($h) {
                     $r->handover_amount = $h->amount;
-                    // We keep total_cash/mobile/etc as the RECORDED values (from Sales Audit)
-                    // and store the Handover values in 'submitted_' keys.
                     $r->submitted_cash = 0;
                     $r->submitted_mobile = 0;
                     $r->submitted_bank = 0;
@@ -546,7 +584,6 @@ class AccountantController extends Controller
                             $r->submitted_card += $amt;
                         }
                     }
-                    // For the total 'Submitted (Actual)' column in the table, we use the bag total.
                     $r->total_submitted_bag = $h->amount;
                 } else {
                     $r->handover_amount = $r->total_submitted;
@@ -696,7 +733,45 @@ class AccountantController extends Controller
             ->with(['waiter', 'verifiedBy'])
             ->orderBy('reconciliation_date', 'desc')
             ->get();
-        $waiterReconciliations = $waiterReconciliations->values();
+        // Map to add computed display properties expected by the blade
+        $waiterReconciliations = $waiterReconciliations->map(function($wr) {
+            $wr->staff_name   = $wr->waiter ? $wr->waiter->full_name : 'Unknown Staff';
+            $wr->staff_image  = ($wr->waiter && $wr->waiter->image) ? $wr->waiter->image : null;
+            $wr->total_expected  = (float)($wr->expected_amount ?? 0);
+            $wr->total_submitted = (float)($wr->submitted_amount ?? 0);
+            $wr->status_indicator = $wr->status ?? 'pending';
+            return $wr;
+        })->values();
+
+        // Build shortage settlement history from FinancialHandover notes
+        $shortageHistory = collect();
+        foreach ($handovers as $h) {
+            if (!$h->notes) continue;
+            if (preg_match_all('/\[ShortagePaid:([^\]]+)\]/', $h->notes, $matches)) {
+                foreach ($matches[1] as $entry) {
+                    $parts = [];
+                    foreach (explode(',', $entry) as $kv) {
+                        if (strpos($kv, '=') !== false) {
+                            [$k, $v] = explode('=', $kv, 2);
+                            $parts[trim($k)] = trim($v);
+                        }
+                    }
+                    if (empty($parts['amount'])) continue;
+                    $dateVal = $h->handover_date instanceof \Carbon\Carbon ? $h->handover_date : \Carbon\Carbon::parse($h->handover_date);
+                    $shortageHistory->push((object)[
+                        'created_at'          => $dateVal,
+                        'reconciliation_date'  => $dateVal,
+                        'reconciliation_type'  => $h->department ?? 'bar',
+                        'staff_name'           => $parts['staff'] ?? null,
+                        'amount'               => (int)($parts['amount'] ?? 0),
+                        'channel'              => $parts['channel'] ?? 'cash',
+                        'reference'            => $parts['ref'] ?? null,
+                        'accountant_name'      => 'Manager',
+                    ]);
+                }
+            }
+        }
+        $shortageHistory = $shortageHistory->sortByDesc('created_at')->values();
 
         // ── Payments Log (Detailed breakdown for the accountant)
         $paymentSearch = $request->get('payment_search');
@@ -822,7 +897,8 @@ class AccountantController extends Controller
             'chartData',
             'summaryProfit',
             'isManagerView',
-            'handoverMap'
+            'handoverMap',
+            'shortageHistory'
         ));
     }
 
@@ -838,25 +914,35 @@ class AccountantController extends Controller
         $validated = $request->validate([
             'date' => 'required|date',
             'type' => 'required|in:bar,food',
+            'shift_id' => 'nullable|integer',
             'cash_received' => 'required|numeric|min:0',
             'mobile_received' => 'required|numeric|min:0',
             'bank_received' => 'required|numeric|min:0',
             'card_received' => 'required|numeric|min:0',
+            'circulation_money' => 'nullable|numeric|min:0',
             'notes' => 'nullable|string'
         ]);
 
         $ownerId = $this->getOwnerId();
         $date = $validated['date'];
         $type = $validated['type'];
+        $shiftId = $validated['shift_id'] ?? null;
 
-        // 1. Get all pending orders for this department and date
-        $orders = BarOrder::where('user_id', $ownerId)
+        // 1. Get all pending orders for this department and date (and specific shift if provided)
+        $ordersQuery = BarOrder::where('user_id', $ownerId)
             ->whereDate('created_at', $date)
             ->where('status', 'served')
             ->whereDoesntHave('reconciliation', function($q) {
                 $q->where('status', 'verified');
-            })
-            ->with(['items', 'kitchenOrderItems', 'orderPayments'])
+            });
+            
+        if ($shiftId) {
+            $ordersQuery->whereHas('reconciliation', function($q) use ($shiftId) {
+                $q->where('staff_shift_id', $shiftId);
+            });
+        }
+            
+        $orders = $ordersQuery->with(['items', 'kitchenOrderItems', 'orderPayments'])
             ->get();
 
         if ($orders->isEmpty()) {
@@ -935,9 +1021,60 @@ class AccountantController extends Controller
             $processedWaiters++;
         }
 
+        // Create a master FinancialHandover record if it doesn't exist
+        $totalAmtRecv = $validated['cash_received'] + $validated['mobile_received'] + $validated['bank_received'] + $validated['card_received'];
+        
+        // Calculate total profit for this specific shift submission
+        $profitAmount = 0;
+        if ($type === 'bar') {
+            $profitAmount = \App\Models\OrderItem::whereHas('order', function($q) use ($ownerId, $date, $shiftId) {
+                $q->where('user_id', $ownerId)
+                  ->where('status', 'served');
+                if ($shiftId) $q->where('shift_id', $shiftId);
+                else $q->whereDate('created_at', $date);
+            })->join('product_variants', 'order_items.product_variant_id', '=', 'product_variants.id')
+              ->selectRaw('SUM((order_items.unit_price - product_variants.buying_price_per_unit) * order_items.quantity) as profit')
+              ->value('profit') ?? 0;
+        } else {
+            // Food Profit Calculation (using food_items table for cost)
+            $profitAmount = \App\Models\KitchenOrderItem::whereHas('order', function($q) use ($ownerId, $date, $shiftId) {
+                $q->where('user_id', $ownerId)
+                  ->where('status', 'served');
+                if ($shiftId) $q->where('shift_id', $shiftId);
+                else $q->whereDate('created_at', $date);
+            })->join('food_items', 'kitchen_order_items.food_item_id', '=', 'food_items.id')
+              ->selectRaw('SUM((kitchen_order_items.unit_price - food_items.cost_price) * kitchen_order_items.quantity) as profit')
+              ->value('profit') ?? 0;
+        }
+
+        $handover = \App\Models\FinancialHandover::updateOrCreate(
+            [
+                'user_id' => $ownerId,
+                'handover_date' => $date,
+                'department' => $type,
+                'staff_shift_id' => $shiftId,
+            ],
+            [
+                'staff_id' => auth()->id(), // Accountant acting on behalf
+                'accountant_id' => auth()->id(),
+                'amount' => $totalAmtRecv,
+                'circulation_money' => $validated['circulation_money'] ?? 0,
+                'profit_amount' => $profitAmount,
+                'handover_type' => 'staff_to_accountant',
+                'status' => 'submitted',
+                'notes' => ($validated['notes'] ?? '') . " (Master record created via Finalize Dept)",
+                'payment_breakdown' => [
+                    'cash' => $validated['cash_received'],
+                    'mobile_money' => $validated['mobile_received'],
+                    'bank_transfer' => $validated['bank_received'],
+                    'pos_card' => $validated['card_received'],
+                ]
+            ]
+        );
+
         return response()->json([
             'success' => true,
-            'message' => "Successfully reconciled {$processedWaiters} staff records for this department."
+            'message' => "Successfully reconciled {$processedWaiters} staff records and created master handover for this department."
         ]);
     }
 
@@ -966,8 +1103,65 @@ class AccountantController extends Controller
 
         return response()->json([
             'success' => true,
-            'message' => 'Reconciliation updated successfully.'
         ]);
+    }
+
+    /**
+     * Reset/Reopen a Department Handover
+     */
+    public function resetHandover(Request $request)
+    {
+        if (!$this->hasPermission('finance', 'edit')) {
+            return response()->json(['success' => false, 'error' => 'Unauthorized'], 403);
+        }
+
+        $request->validate([
+            'date' => 'required|date',
+            'type' => 'required|string'
+        ]);
+
+        $ownerId = $this->getOwnerId();
+        
+        DB::beginTransaction();
+        try {
+            // Find the handover
+            $handover = \App\Models\FinancialHandover::where('user_id', $ownerId)
+                ->whereDate('handover_date', $request->date)
+                ->where('department', $request->type)
+                ->first();
+
+            if (!$handover) {
+                return response()->json(['success' => false, 'error' => 'Handover records not found.'], 404);
+            }
+
+            // If it's already verified, some accountants might want to block reset.
+            // But user said "manager can reset if the counter submit incorrectly".
+
+            // 1. Reopen the shift if linked
+            if ($handover->staff_shift_id) {
+                $shift = \App\Models\StaffShift::find($handover->staff_shift_id);
+                if ($shift) {
+                    $shift->update([
+                        'status' => 'open',
+                        'closed_at' => null,
+                        'notes' => ($shift->notes ?? '') . " | Reopened by Manager for correction."
+                    ]);
+                }
+            }
+
+            // 2. Delete the handover record
+            $handover->delete();
+
+            DB::commit();
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Handover has been successfully reset. The counter can now re-submit.'
+            ]);
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return response()->json(['success' => false, 'error' => 'Server error: ' . $e->getMessage()], 500);
+        }
     }
 
     /**
@@ -1091,52 +1285,136 @@ class AccountantController extends Controller
     /**
      * Calculate real-time profit for a completed stock transfer.
      */
-    private function calculateRealTimeProfitForTransfer($transfer, $ownerId, $sellingPrice, $buyingPrice, $location = null)
+    private function calculateRealTimeMetricsForTransfer($transfer, $ownerId, $buyingPrice, $location = null)
     {
         if ($transfer->status !== 'completed' || !$transfer->productVariant) {
-            return 0;
+            return [
+                'total' => 0, 
+                'profit' => 0, 
+                'units_sold' => 0, 
+                'submitted' => 0, 
+                'recorded' => 0,
+                'unit_sales' => 0,
+                'portion_sales' => 0
+            ];
         }
 
-        // Get the date when transfer was completed
-        $completedDate = $transfer->updated_at;
-        
-        // Find all order items from this product variant created after transfer completion
+        // 1. Calculate how many total units were received before THIS receipt
+        $previousReceiptsUnits = \App\Models\StockReceipt::where('user_id', $ownerId)
+            ->where('product_variant_id', $transfer->product_variant_id)
+            ->where('created_at', '<', $transfer->created_at)
+            ->sum('total_units');
+            
+        // 2. Fetch all order items for this variant
         $orderItems = \App\Models\OrderItem::where('product_variant_id', $transfer->product_variant_id)
-            ->whereHas('order', function($query) use ($ownerId, $completedDate, $location) {
-                $query->where('user_id', $ownerId)
-                      ->where('created_at', '>=', $completedDate);
-                
+            ->whereHas('order', function($q) use ($ownerId, $location) {
+                $q->where('user_id', $ownerId)
+                  ->whereIn('payment_status', ['paid', 'partial']); 
                 if ($location) {
-                    $query->whereHas('table', function($q) use ($location) {
-                        $q->where('location', $location);
+                    $q->whereHas('table', function($sq) use ($location) {
+                        $sq->where('location', $location);
                     });
                 }
             })
-            ->with(['order.orderPayments'])
+            ->with(['order.orderPayments', 'productVariant'])
+            ->orderBy('id', 'asc')
             ->get();
-
-        $totalProfit = 0;
-        foreach ($orderItems as $item) {
-            $order = $item->order;
             
-            // Check if order has recorded payments (OrderPayments)
-            if ($order && $order->orderPayments && $order->orderPayments->count() > 0) {
-                // Get total recorded payments for this order
-                $recordedPayments = $order->orderPayments->sum('amount');
-                $orderTotal = $order->items->sum('total_price');
+        $myStart = $previousReceiptsUnits;
+        $myEnd = $previousReceiptsUnits + $transfer->total_units;
+        
+        $runningSales = 0;
+        $allocatedRevenue = 0;
+        $allocatedProfit = 0;
+        $allocatedUnits = 0;
+        $unitSalesCount = 0;
+        $portionSalesCount = 0;
+        $unitRevenue = 0;
+        $portionRevenue = 0;
+        $unitProfit = 0;
+        $portionProfit = 0;
+        
+        foreach ($orderItems as $item) {
+            $itemQuantity = (float)$item->quantity;
+            $totsPerBtl = ($item->productVariant && $item->productVariant->total_tots > 0) ? $item->productVariant->total_tots : 1;
+            
+            if ($item->sell_type === 'tot') {
+                $itemQuantity = $itemQuantity / $totsPerBtl;
+            }
+
+            $itemStart = $runningSales;
+            $itemEnd = $runningSales + $itemQuantity;
+            
+            // Check for overlap with our batch's window
+            $overlapStart = max($myStart, $itemStart);
+            $overlapEnd = min($myEnd, $itemEnd);
+            
+            if ($overlapStart < $overlapEnd) {
+                $overlapQuantity = $overlapEnd - $overlapStart;
+                $allocatedUnits += $overlapQuantity;
                 
-                if ($orderTotal > 0) {
-                    // Calculate the proportion of recorded payments
-                    $paymentRatio = min(1, $recordedPayments / $orderTotal); // Cap at 1 (100%)
-                    
-                    // Calculate profit: (selling price - buying price) * quantity * payment ratio
-                    $itemProfit = ($item->unit_price - $buyingPrice) * $item->quantity * $paymentRatio;
-                    $totalProfit += $itemProfit;
+                // Track breakdown
+                if ($item->sell_type === 'tot') {
+                    $portionSalesCount += round($overlapQuantity * $totsPerBtl);
+                } else {
+                    $unitSalesCount += $overlapQuantity;
                 }
+
+                // Calculate proportion
+                $ratio = $overlapQuantity / $itemQuantity;
+                
+                $order = $item->order;
+                $paymentRatio = 1.0;
+                
+                if ($order && $order->orderPayments && $order->orderPayments->count() > 0) {
+                    $recordedPayments = $order->orderPayments->sum('amount');
+                    $orderItemsTotal = $order->items->sum('total_price') + ($order->kitchenOrderItems ? $order->kitchenOrderItems->sum('total_price') : 0);
+                    if ($orderItemsTotal > 0) {
+                        $paymentRatio = min(1.0, $recordedPayments / $orderItemsTotal);
+                    }
+                } elseif ($order && $order->payment_status !== 'paid') {
+                    $paymentRatio = 0.0;
+                }
+                
+                $normalizedUnitPrice = $item->unit_price;
+                if ($item->sell_type === 'tot') {
+                    $normalizedUnitPrice = $item->unit_price * $totsPerBtl;
+                }
+
+                $itemRevenue = $item->total_price * $ratio * $paymentRatio;
+                $itemProfit = ($normalizedUnitPrice - $buyingPrice) * $overlapQuantity * $paymentRatio;
+
+                if ($item->sell_type === 'tot') {
+                    $portionRevenue += $itemRevenue;
+                    $portionProfit += $itemProfit;
+                } else {
+                    $unitRevenue += $itemRevenue;
+                    $unitProfit += $itemProfit;
+                }
+
+                $allocatedRevenue += $itemRevenue;
+                $allocatedProfit += $itemProfit;
+            }
+            
+            $runningSales += $itemQuantity;
+            if ($runningSales >= $myEnd) {
+                break; 
             }
         }
-
-        return $totalProfit;
+        
+        return [
+            'total' => $allocatedRevenue,
+            'profit' => $allocatedProfit,
+            'units_sold' => $allocatedUnits,
+            'submitted' => $allocatedRevenue,
+            'recorded' => $allocatedRevenue,
+            'unit_sales' => $unitSalesCount,
+            'portion_sales' => $portionSalesCount,
+            'unit_revenue' => $unitRevenue,
+            'portion_revenue' => $portionRevenue,
+            'unit_profit' => $unitProfit,
+            'portion_profit' => $portionProfit
+        ];
     }
 
     /**
@@ -1405,7 +1683,7 @@ class AccountantController extends Controller
             ->selectRaw('sum(total_units) as total_items')
             ->first();
 
-        return view('accountant.stock-receipts-report', compact('receipts', 'groupSummary', 'startDate', 'endDate'));
+        return view('bar.manager.stock-receipts-report', compact('receipts', 'groupSummary', 'startDate', 'endDate'));
     }
 
     /**
@@ -1422,38 +1700,51 @@ class AccountantController extends Controller
         $endDate = $request->get('end_date', now()->format('Y-m-d'));
         $location = session('active_location');
 
-        $transfers = \App\Models\StockTransfer::where('user_id', $ownerId)
+        // We now track StockReceipts (which go to Counter directly) instead of obsolete StockTransfers
+        $transfers = \App\Models\StockReceipt::where('user_id', $ownerId)
             ->whereBetween('created_at', [Carbon::parse($startDate)->startOfDay(), Carbon::parse($endDate)->endOfDay()])
             ->when($location, function($q) use ($location) {
                 $q->whereExists(function($sq) use ($location) {
                     $sq->select(DB::raw(1))
                        ->from('staff')
-                       ->whereRaw('staff.user_id = stock_transfers.user_id')
-                       ->whereRaw('staff.email = (select email from users where id = stock_transfers.requested_by limit 1)')
+                       ->whereRaw('staff.user_id = stock_receipts.user_id')
+                       ->whereRaw('staff.email = (select email from users where id = stock_receipts.received_by limit 1)')
                        ->where('staff.location_branch', $location);
                 });
             })
-            ->with(['productVariant.product', 'requestedBy', 'verifiedBy'])
+            ->with(['productVariant.product', 'receivedBy'])
             ->orderBy('created_at', 'desc')
             ->get()
-            ->map(function($transfer) use ($ownerId, $location) {
-                $financials = $transfer->calculateFinancials();
-                $transfer->expected_revenue = $financials['revenue'];
-                $transfer->expected_profit = $financials['profit'];
+            ->map(function($receipt) use ($ownerId, $location) {
+                // Map receipt fields to match what the 'stock-transfers-report' view expects
+                $receipt->transfer_number = $receipt->receipt_number;
+                $receipt->status = 'completed'; // Receipts are instantly in stock
+                $receipt->expected_revenue = $receipt->total_selling_value;
+                $receipt->expected_profit = $receipt->total_profit;
                 
-                // Real-time data (branch-aware)
-                $revenueData = $this->calculateRealTimeRevenueForTransfer($transfer, $ownerId, $location);
-                $transfer->real_time_revenue = $revenueData['total'];
-                $transfer->real_time_submitted = $revenueData['submitted'];
-                $transfer->real_time_profit = $this->calculateRealTimeProfitForTransfer(
-                    $transfer, 
+                // Real-time metrics based on FIFO allocation
+                $metrics = $this->calculateRealTimeMetricsForTransfer(
+                    $receipt, 
                     $ownerId, 
-                    $financials['selling_price'], 
-                    $financials['buying_price'],
+                    $receipt->buying_price_per_unit, 
                     $location
                 );
                 
-                return $transfer;
+                $receipt->real_time_revenue = $metrics['total'];
+                $receipt->real_time_submitted = $metrics['submitted'];
+                $receipt->real_time_profit = $metrics['profit'];
+                $receipt->real_time_units_sold = $metrics['units_sold'];
+                $receipt->real_time_unit_sales = $metrics['unit_sales'];
+                $receipt->real_time_portion_sales = $metrics['portion_sales'];
+                $receipt->real_time_unit_revenue = $metrics['unit_revenue'];
+                $receipt->real_time_portion_revenue = $metrics['portion_revenue'];
+                $receipt->real_time_unit_profit = $metrics['unit_profit'];
+                $receipt->real_time_portion_profit = $metrics['portion_profit'];
+                $variant = $receipt->productVariant;
+                $receipt->expected_revenue_bottle = $receipt->total_units * ($variant->selling_price_per_unit ?? 0);
+                $receipt->expected_revenue_glass = ($receipt->productVariant->can_sell_in_tots ?? false) ? ($receipt->total_units * ($variant->total_tots ?? 0) * ($variant->selling_price_per_tot ?? 0)) : $receipt->expected_revenue_bottle;
+
+                return $receipt;
             });
 
         $totals = [
@@ -1463,7 +1754,7 @@ class AccountantController extends Controller
             'real_time_profit' => $transfers->sum('real_time_profit')
         ];
 
-        return view('accountant.stock-transfers-report', compact('transfers', 'totals', 'startDate', 'endDate'));
+        return view('bar.manager.stock-transfers-report', compact('transfers', 'totals', 'startDate', 'endDate'));
     }
 
     /**

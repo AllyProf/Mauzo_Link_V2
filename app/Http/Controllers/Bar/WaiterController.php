@@ -578,17 +578,20 @@ class WaiterController extends Controller
         }
 
         $validated = $request->validate([
-            'payment_method' => 'required|in:cash,mobile_money',
-            'mobile_money_number' => 'required_if:payment_method,mobile_money|nullable|string|max:20',
-            'transaction_reference' => 'required_if:payment_method,mobile_money|nullable|string|max:50',
+            'payment_method' => 'required|in:cash,mobile_money,bank,card',
+            'mobile_money_number' => 'nullable|string|max:50',
+            'transaction_reference' => 'nullable|string|max:100',
         ]);
 
         DB::beginTransaction();
         try {
+            // Map 'bank' shorthand to 'bank_transfer' for DB
+            $paymentMethod = $validated['payment_method'] === 'bank' ? 'bank_transfer' : $validated['payment_method'];
+
             // Update order with payment information
             // NOTE: Keep payment_status as 'pending' - it will be set to 'paid' when counter/chief submits reconciliation
             $order->update([
-                'payment_method' => $validated['payment_method'],
+                'payment_method' => $paymentMethod,
                 'mobile_money_number' => $validated['mobile_money_number'] ?? null,
                 'transaction_reference' => $validated['transaction_reference'] ?? null,
                 'payment_status' => 'pending', // Keep as pending until counter/chief submits
@@ -599,11 +602,11 @@ class WaiterController extends Controller
             // Create payment record (this is the "recorded" payment)
             $payment = \App\Models\OrderPayment::create([
                 'order_id' => $order->id,
-                'payment_method' => $validated['payment_method'],
+                'payment_method' => $paymentMethod,
                 'amount' => $order->total_amount,
                 'mobile_money_number' => $validated['mobile_money_number'] ?? null,
                 'transaction_reference' => $validated['transaction_reference'] ?? null,
-                'payment_status' => $validated['payment_method'] === 'mobile_money' ? 'pending' : 'verified', // Mobile money needs verification
+                'payment_status' => $paymentMethod === 'mobile_money' ? 'pending' : 'verified', // Mobile money needs verification
             ]);
 
             // Send payment notification SMS to waiter and customer

@@ -12,6 +12,7 @@ class WaiterDailyReconciliation extends Model
     protected $fillable = [
         'user_id',
         'waiter_id',
+        'staff_shift_id',
         'reconciliation_date',
         'reconciliation_type',
         'total_sales',

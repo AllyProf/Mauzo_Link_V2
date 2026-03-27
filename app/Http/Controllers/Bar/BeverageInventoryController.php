@@ -357,7 +357,7 @@ class BeverageInventoryController extends Controller
             $staff = \App\Models\Staff::with('role')->find(session('staff_id'));
             if ($staff && $staff->role) {
                 $roleName = strtolower(trim($staff->role->name ?? ''));
-                if (in_array($roleName, ['stock keeper', 'stockkeeper'])) {
+                if (in_array($roleName, ['stock keeper', 'stockkeeper', 'counter', 'counter staff'])) {
                     $showRevenue = false;
                 }
             }

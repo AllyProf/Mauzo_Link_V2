@@ -192,8 +192,8 @@
               <a href="{{ route('bar.stock-transfers.create') }}" class="btn btn-success mb-2">
                 <i class="fa fa-exchange"></i> Create Stock Transfer
               </a>
-              <a href="{{ route('bar.beverage-inventory.low-stock-alerts') }}" class="btn btn-warning mb-2">
-                <i class="fa fa-exclamation-triangle"></i> View All Low Stock Alerts
+              <a href="{{ route('bar.counter.counter-stock') }}" class="btn btn-info mb-2">
+                <i class="fa fa-cubes"></i> Counter Stock
               </a>
               <a href="{{ route('bar.products.create') }}" class="btn btn-info mb-2">
                 <i class="fa fa-cube"></i> Add New Product
@@ -427,8 +427,8 @@
       <div class="d-flex justify-content-between align-items-center mb-3">
         <h3 class="tile-title">All Beverages</h3>
         <div>
-          <a href="{{ route('bar.beverage-inventory.low-stock-alerts') }}" class="btn btn-warning mr-2">
-            <i class="fa fa-exclamation-triangle"></i> Low Stock Alerts
+          <a href="{{ route('bar.counter.counter-stock') }}" class="btn btn-info mr-2">
+            <i class="fa fa-cubes"></i> Counter Stock
           </a>
           <a href="{{ route('bar.beverage-inventory.stock-levels') }}" class="btn btn-info mr-2">
             <i class="fa fa-bar-chart"></i> Stock Levels

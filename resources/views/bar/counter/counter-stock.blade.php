@@ -36,6 +36,7 @@
       </div>
     </div>
   </div>
+  @if(!session('is_staff'))
   <div class="col-md-4">
     <div class="widget-small success coloured-icon">
       <i class="icon fa fa-money fa-3x"></i>
@@ -45,6 +46,7 @@
       </div>
     </div>
   </div>
+  @endif
 </div>
 
 <div class="row">
@@ -62,9 +64,8 @@
                     <i class="fa fa-list"></i>
                 </button>
             </div>
-          <a href="{{ route('bar.stock-transfers.available') }}" class="btn btn-primary mr-2 shadow-sm font-weight-bold">
-            <i class="fa fa-plus-circle"></i> Request Transfer
-          </a>
+            <a href="{{ route('bar.counter.daily-stock-sheet') }}" class="btn btn-info btn-sm shadow-sm mr-2"><i class="fa fa-print"></i> Print Daily Stock Sheet</a>
+            <a href="{{ route('bar.counter.waiter-orders') }}" class="btn btn-primary btn-sm shadow-sm mr-2"><i class="fa fa-shopping-cart"></i> Create Order</a>
           <a href="{{ route('bar.counter.dashboard') }}" class="btn btn-secondary shadow-sm">
             <i class="fa fa-arrow-left"></i> Back
           </a>
@@ -85,7 +86,7 @@
               </div>
           </div>
           <div class="col-md-9">
-              <label class="control-label font-weight-bold">Quick Filters (Categories & Brands)</label>
+              <label class="control-label font-weight-bold scale-in-center">Quick Filters (Categories)</label>
               <div class="category-tabs-wrapper">
                   <div class="d-flex align-items-center overflow-auto no-scrollbar py-1" id="categoryContainer">
                       <button class="btn btn-sm btn-outline-primary active filter-pill mr-1 mb-1" data-filter="all" data-filter-type="category">
@@ -94,12 +95,6 @@
                       @foreach($categories as $label)
                           <button class="btn btn-sm btn-outline-primary filter-pill mr-1 mb-1" data-filter="{{ Str::slug($label) }}" data-filter-type="category">
                               {{ strtoupper($label) }}
-                          </button>
-                      @endforeach
-                      <div class="mx-2 border-right h-100" style="height: 24px !important;"></div>
-                      @foreach($brands as $label)
-                          <button class="btn btn-sm btn-outline-info filter-pill mr-1 mb-1" data-filter="{{ Str::slug($label) }}" data-filter-type="brand">
-                              {{ $label }}
                           </button>
                       @endforeach
                   </div>
@@ -133,52 +128,69 @@
             <div class="col-md-4 mb-4 product-card-wrapper" 
                  data-category="{{ $catSlug }}"
                  data-brand="{{ $brandSlug }}"
-                 data-name="{{ $searchName }}">
+                 data-name="{{ $searchName }}"
+                 data-variant-id="{{ $variant['id'] }}"
+                 data-threshold="{{ $variant['low_stock_threshold'] }}">
               
-              <div class="tile p-3 h-100 mb-0 shadow-sm border-0 inventory-item-card transition-all" style="border-radius: 15px;">
+              <div class="tile p-3 h-100 mb-0 shadow-sm border-0 inventory-item-card transition-all" 
+                   style="border-radius: 15px; {{ $statusColor == 'danger' ? 'background-color: #ffebee !important;' : ($statusColor == 'warning' ? 'background-color: #fffde7 !important;' : '') }}">
+                  @if($statusColor == 'warning')
+                      <div class="badge badge-warning position-absolute" style="top: 10px; right: 10px; z-index: 5;">LOW STOCK</div>
+                  @elseif($statusColor == 'danger')
+                      <div class="badge badge-danger position-absolute" style="top: 10px; right: 10px; z-index: 5;">OUT OF STOCK</div>
+                  @endif
+
                   <div class="d-flex justify-content-between align-items-start mb-2">
                       <div class="flex-grow-1 pr-2">
                           <h6 class="font-weight-bold text-primary mb-1 line-clamp-1" title="{{ $displayTitle }}">{{ $displayTitle }}</h6>
                           <p class="text-muted smallest mb-0">{{ $variant['brand'] }} • {{ $variant['category'] }}</p>
                       </div>
-                      <span class="badge badge-secondary px-2 py-1 smallest">{{ $variant['variant'] }}</span>
                   </div>
-
-                  <div class="bg-light p-2 rounded mb-3">
-                      <div class="d-flex justify-content-between small mb-1">
-                          <span class="text-muted">Stock Level:</span>
-                          <strong class="text-{{ $statusColor }} font-weight-bold">{{ number_format($qty) }} btl</strong>
+                  <div class="mb-3">
+                      <div class="text-muted smallest font-weight-bold mb-1">
+                          ({{ $variant['variant'] }}{{ $variant['unit'] }} - {{ $variant['packaging_type'] }})
                       </div>
-                      @if($ipp > 1)
-                      <div class="d-flex justify-content-between smallest border-top pt-1 mt-1">
-                          <span class="text-muted">Packages:</span>
-                          <strong class="text-dark">
-                            @if($crates > 0)
-                              {{ $crates }} {{ $pkgLabel }}{{ $crates != 1 ? 's' : '' }}
-                              @if($extraBottles > 0) + {{ $extraBottles }} btl @endif
-                            @else
-                              {{ $extraBottles }} btl
-                            @endif
-                          </strong>
-                      </div>
-                      @endif
+                      <div class="d-flex justify-content-between align-items-center bg-white border rounded p-2 shadow-xs">
+                          <div>
+                              <div class="smallest text-muted text-uppercase font-weight-bold">Available</div>
+                              <div class="h6 mb-0 font-weight-bold text-{{ $statusColor }}">{{ $variant['formatted_quantity'] }}</div>
+                          </div>
+                          @if($variant['can_sell_in_tots'])
+                           <div class="text-right border-left pl-2">
+                               <div class="smallest text-muted text-uppercase font-weight-bold">Total Portions</div>
+                               <div class="h6 mb-0 font-weight-bold text-info">
+                                   {{ number_format($variant['quantity_in_tots']) }} 
+                                   {{ $variant['quantity_in_tots'] == 1 ? $variant['portion_unit_name'] : ($variant['portion_unit_name'] == 'Glass' ? 'Glasses' : $variant['portion_unit_name'].'s') }}
+                               </div>
+                           </div>
+                           @endif
+                       </div>
+                       
+                       @if($ipp > 1 && $crates > 0)
+                       <div class="smallest text-center mt-1 text-muted">
+                           <i class="fa fa-archive"></i> Equivalent to <strong>{{ $crates }} {{ $pkgLabel }}{{ $crates != 1 ? 's' : '' }}@if($extraBottles > 0), {{ $extraBottles }} btl{{ $extraBottles != 1 ? 's' : '' }} @endif</strong>
+                       </div>
+                       @endif
                   </div>
 
                   <div class="row no-gutters mb-3 text-center bg-white rounded border py-2 shadow-xs">
                       <div class="col-6 border-right">
                           <div class="smallest text-muted">Bottle Price</div>
-                          <div class="font-weight-bold text-dark">Tsh {{ number_format($variant['selling_price']) }}</div>
+                          <div class="font-weight-bold text-dark">TSh {{ number_format($variant['selling_price']) }}</div>
                       </div>
                       <div class="col-6">
-                          <div class="smallest text-muted">Glass/Tot</div>
                           @if($variant['can_sell_in_tots'])
-                              <div class="font-weight-bold text-info">Tsh {{ number_format($variant['selling_price_per_tot']) }}</div>
+                            @php $totsPer = ($variant['quantity_in_tots'] > 0 && $qty > 0) ? round($variant['quantity_in_tots'] / $qty) : 0; @endphp
+                            <div class="smallest text-muted">{{ $variant['portion_unit_name'] }} Price ({{ $totsPer }}/btl)</div>
+                            <div class="font-weight-bold text-info">TSh {{ number_format($variant['selling_price_per_tot']) }}</div>
                           @else
-                              <div class="smallest italic text-muted">N/A</div>
+                            <div class="smallest text-muted">{{ $variant['portion_unit_name'] }} Price</div>
+                            <div class="smallest italic text-muted">N/A</div>
                           @endif
                       </div>
                   </div>
 
+                  @if(!session('is_staff'))
                   <div class="d-flex justify-content-between align-items-center mb-0 mt-auto">
                     <div class="smallest">
                         <span class="text-muted">Holding Value:</span><br>
@@ -187,12 +199,38 @@
                     @if($variant['product_image'])
                         <img src="{{ asset('storage/' . $variant['product_image']) }}" class="rounded shadow-xs" style="width: 32px; height: 32px; object-fit: contain; background: #fff;" onerror="this.style.display='none'">
                     @endif
+                    <div class="btn-group">
                     <button class="btn btn-sm btn-outline-primary btn-set-threshold" 
                             title="Set Low Stock Alert"
-                            onclick="openThresholdModal({{ $variant['id'] }}, '{{ addslashes($displayTitle) }}')">
+                            onclick="openThresholdModal({{ $variant['id'] }}, '{{ addslashes($displayTitle) }}', '{{ addslashes($pkgLabel) }}', {{ $variant['can_sell_in_tots'] ? 'true' : 'false' }}, '{{ $variant['portion_unit_name'] }}')">
                         <i class="fa fa-bell-o"></i>
                     </button>
+                    <button class="btn btn-sm btn-outline-danger" 
+                            title="Remove from Counter Stock"
+                            onclick="confirmDeleteStock({{ $variant['id'] }}, '{{ addslashes($displayTitle) }}')">
+                        <i class="fa fa-trash"></i>
+                    </button>
+                    </div>
                   </div>
+                  @else
+                  <div class="d-flex justify-content-end align-items-center mb-0 mt-auto">
+                    @if($variant['product_image'])
+                        <img src="{{ asset('storage/' . $variant['product_image']) }}" class="rounded shadow-xs mr-auto" style="width: 32px; height: 32px; object-fit: contain; background: #fff;" onerror="this.style.display='none'">
+                    @endif
+                    <div class="btn-group">
+                    <button class="btn btn-sm btn-outline-primary btn-set-threshold" 
+                            title="Set Low Stock Alert"
+                            onclick="openThresholdModal({{ $variant['id'] }}, '{{ addslashes($displayTitle) }}', '{{ addslashes($pkgLabel) }}', {{ $variant['can_sell_in_tots'] ? 'true' : 'false' }}, '{{ $variant['portion_unit_name'] }}')">
+                        <i class="fa fa-bell-o"></i>
+                    </button>
+                    <button class="btn btn-sm btn-outline-danger" 
+                            title="Remove from Counter Stock"
+                            onclick="confirmDeleteStock({{ $variant['id'] }}, '{{ addslashes($displayTitle) }}')">
+                        <i class="fa fa-trash"></i>
+                    </button>
+                    </div>
+                  </div>
+                  @endif
                   <!-- Threshold indicator -->
                   <div class="threshold-info mt-1 text-right" id="threshold-info-{{ $variant['id'] }}" style="font-size:9px; color:#e65100; font-weight:bold;"></div>
               </div>
@@ -210,7 +248,9 @@
                           <th>Measure</th>
                           <th>Counter Stock</th>
                           <th>Selling Price</th>
+                          @if(!session('is_staff'))
                           <th>Holding Value</th>
+                          @endif
                           <th>Actions</th>
                       </tr>
                   </thead>
@@ -225,13 +265,14 @@
                       <tr class="product-card-wrapper" 
                           data-category="{{ $catSlug }}" 
                           data-brand="{{ $brandSlug }}"
-                          data-name="{{ $searchName }}">
+                          data-name="{{ $searchName }}"
+                          data-variant-id="{{ $variant['id'] }}">
                           <td><strong class="text-primary">{{ $displayTitle }}</strong><br><small class="text-muted">{{ $variant['brand'] }}</small></td>
                           <td>
                             <strong>{{ $variant['brand'] }}</strong><br>
                             <span class="badge badge-light border smallest text-muted">{{ $variant['category'] }}</span>
                           </td>
-                          <td><span class="badge badge-secondary">{{ $variant['variant'] }}</span></td>
+                          <td><span class="badge badge-secondary">{{ $variant['variant'] }}{{ $variant['unit'] }}</span></td>
                           <td>
                               <strong class="text-{{ $variant['quantity'] < 10 ? 'warning' : 'dark' }}">{{ number_format($variant['quantity']) }} btl</strong>
                               @if($variant['items_per_package'] > 1)
@@ -241,13 +282,18 @@
                           <td>
                             <div class="smallest font-weight-bold">Btl: TSh {{ number_format($variant['selling_price']) }}</div>
                             @if($variant['can_sell_in_tots'])
-                              <div class="smallest text-info">Tot: TSh {{ number_format($variant['selling_price_per_tot']) }}</div>
+                              <div class="smallest text-info">{{ $variant['portion_unit_name'] }}: TSh {{ number_format($variant['selling_price_per_tot']) }}</div>
                             @endif
                           </td>
+                          @if(!session('is_staff'))
                           <td><strong class="text-success">TSh {{ number_format($variant['quantity'] * $variant['selling_price']) }}</strong></td>
+                          @endif
                           <td class="text-center">
-                              <button class="btn btn-sm btn-outline-info" onclick="openThresholdModal({{ $variant['id'] }}, '{{ addslashes($displayTitle) }}')">
+                              <button class="btn btn-sm btn-outline-info" onclick="openThresholdModal({{ $variant['id'] }}, '{{ addslashes($displayTitle) }}', '{{ addslashes($variant['packaging'] ?? 'Crate') }}', {{ $variant['can_sell_in_tots'] ? 'true' : 'false' }}, '{{ $variant['portion_unit_name'] }}')">
                                   <i class="fa fa-bell-o"></i> Alert
+                              </button>
+                              <button class="btn btn-sm btn-outline-danger ml-1" onclick="confirmDeleteStock({{ $variant['id'] }}, '{{ addslashes($displayTitle) }}')">
+                                  <i class="fa fa-trash"></i> Remove
                               </button>
                           </td>
                       </tr>
@@ -256,6 +302,7 @@
               </table>
           </div>
 
+          @if(!session('is_staff'))
           <!-- Total Bar -->
           <div class="mt-4 p-4 rounded d-flex justify-content-between align-items-center shadow"
                style="background: linear-gradient(135deg, #1a237e, #283593); color:white; border-radius: 15px;">
@@ -265,16 +312,12 @@
             </div>
             <h3 class="mb-0 text-success font-weight-bold">TSh {{ number_format($totalValue, 2) }}</h3>
           </div>
+          @endif
 
         @else
           <div class="alert alert-info py-4 text-center shadow-xs" style="border-radius: 15px;">
             <i class="fa fa-info-circle fa-2x mb-3"></i>
             <h4>No products currently in counter stock.</h4>
-            <div class="mt-3">
-              <a href="{{ route('bar.stock-transfers.available') }}" class="btn btn-primary shadow-sm font-weight-bold">
-                <i class="fa fa-exchange"></i> Request stock from warehouse
-              </a>
-            </div>
           </div>
         @endif
       </div>
@@ -285,27 +328,53 @@
 <!-- Low Stock Threshold Modal -->
 <div class="modal fade" id="thresholdModal" tabindex="-1" role="dialog">
   <div class="modal-dialog modal-sm" role="document">
-    <div class="modal-content shadow-lg border-0" style="border-radius: 15px;">
-      <div class="modal-header border-0 pb-0 shadow-xs">
-        <h5 class="modal-title font-weight-bold"><i class="fa fa-bell-o text-warning mr-2"></i> Stock Alert</h5>
-        <button type="button" class="close" data-dismiss="modal">&times;</button>
+    <div class="modal-content">
+      <div class="modal-header bg-primary text-white">
+        <h5 class="modal-title"><i class="fa fa-bell-o mr-2"></i> Stock Alert</h5>
+        <button type="button" class="close text-white" data-dismiss="modal" aria-label="Close">
+          <span aria-hidden="true">&times;</span>
+        </button>
       </div>
-      <div class="modal-body pt-3">
-        <p id="threshold-product-name" class="font-weight-bold text-primary mb-3 small"></p>
-        <div class="form-group mb-0">
-            <label class="smallest font-weight-bold text-muted text-uppercase mb-1">Alert when stock <</label>
-            <div class="input-group input-group-sm">
-              <input type="number" id="threshold-value" class="form-control font-weight-bold" min="1" value="10">
+      <div class="modal-body">
+        <p id="threshold-product-name" class="font-weight-bold mb-3"></p>
+        <div class="form-group">
+            <label class="control-label">Alert when stock is below:</label>
+            <div class="input-group">
+              <input type="number" id="threshold-value" class="form-control" min="1" value="10">
               <div class="input-group-append">
-                <span class="input-group-text">bottles</span>
+                <select id="threshold-unit" class="custom-select" style="border-top-left-radius: 0; border-bottom-left-radius: 0;">
+                  <option value="btls">bottles</option>
+                  <option id="threshold-pkg-option" value="crates">crates</option>
+                  <option id="threshold-glass-option" value="glasses" style="display:none;">glasses/tots</option>
+                </select>
               </div>
             </div>
         </div>
-        <small class="text-muted smallest italic mt-2 d-block">Saved locally in this browser.</small>
+        <div class="text-muted small"><i class="fa fa-info-circle"></i> Saved locally in browser.</div>
       </div>
-      <div class="modal-footer border-0 pt-0">
-        <button type="button" class="btn btn-light btn-sm font-weight-bold" data-dismiss="modal">CANCEL</button>
-        <button type="button" class="btn btn-primary btn-sm font-weight-bold px-3 shadow-xs" id="saveThresholdBtn">SAVE CHANGES</button>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-dismiss="modal"><i class="fa fa-times"></i> Close</button>
+        <button type="button" class="btn btn-primary" id="saveThresholdBtn"><i class="fa fa-save"></i> Save</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Delete Counter Stock Confirmation Modal -->
+<div class="modal fade" id="deleteStockModal" tabindex="-1" role="dialog">
+  <div class="modal-dialog modal-sm" role="document">
+    <div class="modal-content">
+      <div class="modal-header bg-danger text-white">
+        <h5 class="modal-title"><i class="fa fa-trash mr-2"></i> Remove from Stock</h5>
+        <button type="button" class="close text-white" data-dismiss="modal"><span>&times;</span></button>
+      </div>
+      <div class="modal-body text-center">
+        <p class="mb-1">Remove <strong id="deleteStockName"></strong> from counter stock?</p>
+        <p class="text-muted small">This will clear the stock record. Sales history is unaffected.</p>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-danger" id="confirmDeleteStockBtn"><i class="fa fa-trash"></i> Yes, Remove</button>
       </div>
     </div>
   </div>
@@ -366,16 +435,74 @@
 @section('scripts')
 <script>
 var _currentThresholdId = null;
+var _deleteVariantId = null;
 
-function openThresholdModal(id, name) {
+function openThresholdModal(id, name, pkgLabel, canSellTots, totUnit) {
   _currentThresholdId = id;
-  var saved = localStorage.getItem('counter_lowstock_' + id) || 10;
+  if (!pkgLabel) pkgLabel = 'Crate';
+  
+  var threshold = parseInt($('[data-variant-id="' + id + '"]').attr('data-threshold')) || 10;
+
   $('#threshold-product-name').text(name);
-  $('#threshold-value').val(saved);
+  $('#threshold-value').val(threshold);
+  
+  // Update the dropdown option dynamically to match the product's packaging type
+  $('#threshold-pkg-option').text(pkgLabel.toLowerCase() + 's').val('btls'); 
+  
+  // Show/Hide Glass/Tot option based on product capabilities
+  if (canSellTots) {
+      $('#threshold-glass-option').show().text((totUnit || 'glass') + 's').val('btls');
+  } else {
+      $('#threshold-glass-option').hide();
+  }
+
+  $('#threshold-unit').val('btls');
+  
   $('#thresholdModal').modal('show');
 }
 
+function confirmDeleteStock(id, name) {
+  _deleteVariantId = id;
+  $('#deleteStockName').text(name);
+  $('#deleteStockModal').modal('show');
+}
+
 $(document).ready(function () {
+
+    // DELETE CONFIRM BUTTON
+    $('#confirmDeleteStockBtn').on('click', function () {
+        if (!_deleteVariantId) return;
+        
+        var btn = $(this);
+        btn.prop('disabled', true).html('<i class="fa fa-spinner fa-spin"></i> Removing...');
+        
+        $.ajax({
+            url: '/bar/counter/counter-stock/' + _deleteVariantId,
+            type: 'POST',
+            data: {
+                _method: 'DELETE',
+                _token: $('meta[name="csrf-token"]').attr('content')
+            },
+            success: function(response) {
+                if (response.success) {
+                    // Remove the card from the DOM
+                    $('[data-variant-id="' + _deleteVariantId + '"]').closest('.col-md-4, tr').fadeOut(400, function() {
+                        $(this).remove();
+                    });
+                    $('#deleteStockModal').modal('hide');
+                    // Show brief success toast
+                    $('body').append('<div id="del-toast" class="alert alert-success shadow" style="position:fixed;bottom:20px;right:20px;z-index:9999;min-width:220px;"><i class="fa fa-check-circle"></i> Removed from Counter Stock</div>');
+                    setTimeout(function() { $('#del-toast').fadeOut(400, function() { $(this).remove(); }); }, 3000);
+                }
+            },
+            error: function() {
+                alert('Failed to remove. Please try again.');
+            },
+            complete: function() {
+                btn.prop('disabled', false).html('<i class="fa fa-trash"></i> Yes, Remove');
+            }
+        });
+    });
     // 1. VIEW TOGGLE
     $('.view-btn').on('click', function() {
         const view = $(this).data('view');
@@ -438,24 +565,43 @@ $(document).ready(function () {
         var val = parseInt($('#threshold-value').val(), 10);
         if (isNaN(val) || val < 1) return;
         
-        localStorage.setItem('counter_lowstock_' + _currentThresholdId, val);
-        updateThresholdVisual(_currentThresholdId, val);
-        $('#thresholdModal').modal('hide');
+        var btn = $(this);
+        btn.prop('disabled', true).html('<i class="fa fa-spinner fa-spin"></i> Saving...');
+
+        $.ajax({
+            url: '/bar/counter/counter-stock/threshold/' + _currentThresholdId,
+            type: 'POST',
+            data: {
+                threshold: val,
+                _token: $('meta[name="csrf-token"]').attr('content')
+            },
+            success: function(response) {
+                if (response.success) {
+                    $('[data-variant-id="' + _currentThresholdId + '"]').attr('data-threshold', val);
+                    updateThresholdVisual(_currentThresholdId, val, 'btls');
+                    $('#thresholdModal').modal('hide');
+                    location.reload();
+                }
+            },
+            error: function() {
+                alert('Failed to save. Please try again.');
+            },
+            complete: function() {
+                btn.prop('disabled', false).html('<i class="fa fa-save"></i> Save');
+            }
+        });
     });
 
-    function updateThresholdVisual(id, val) {
-        $(`#threshold-info-${id}`).html(`<i class="fa fa-bell"></i> Alert < ${val}`).show();
+    function updateThresholdVisual(id, val, unit) {
+        $(`#threshold-info-${id}`).html(`<i class="fa fa-bell"></i> Alert < ${val} ${unit}`).show();
     }
 
-    // 4. LOAD SAVED THRESHOLDS
+    // 4. LOAD LABELS
     $('.product-card-wrapper').each(function() {
-        const infoDiv = $(this).find('[id^="threshold-info-"]');
-        if (infoDiv.length) {
-            const id = infoDiv.attr('id').replace('threshold-info-', '');
-            const saved = localStorage.getItem('counter_lowstock_' + id);
-            if (saved) {
-                updateThresholdVisual(id, saved);
-            }
+        const id = $(this).data('variant-id');
+        const threshold = $(this).data('threshold');
+        if (id && threshold) {
+            updateThresholdVisual(id, threshold, 'btls');
         }
     });
 });

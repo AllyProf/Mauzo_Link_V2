@@ -4,45 +4,11 @@
 
 @push('styles')
 <style>
-    .target-card {
-        border-radius: 15px;
-        transition: all 0.3s ease;
-        border: none;
-        box-shadow: 0 4px 15px rgba(0,0,0,0.05);
-    }
-    .target-card:hover { transform: translateY(-5px); box-shadow: 0 8px 25px rgba(0,0,0,0.1); }
-    
-    .progress-wrapper {
-        position: relative;
-        height: 12px;
-        background: #eee;
-        border-radius: 10px;
-        overflow: hidden;
-        margin: 15px 0;
-    }
-    .progress-fill {
-        height: 100%;
-        border-radius: 10px;
-        transition: width 1s ease-in-out;
-    }
-    .bg-bar { background: linear-gradient(90deg, #36b9cc 0%, #1a89a7 100%); }
-    .bg-food { background: linear-gradient(90deg, #f6c23e 0%, #dfa100 100%); }
-    .bg-staff { background: linear-gradient(90deg, #4e73df 0%, #224abe 100%); }
-    
-    .percentage-badge {
-        font-size: 1.2rem;
-        font-weight: 800;
-        color: #333;
-    }
-    .status-indicator {
-        width: 10px;
-        height: 10px;
-        border-radius: 50%;
-        display: inline-block;
-        margin-right: 5px;
-    }
-    .status-on-track { background-color: #1cc88a; box-shadow: 0 0 8px #1cc88a; }
-    .status-behind { background-color: #e74a3b; box-shadow: 0 0 8px #e74a3b; }
+    .xx-small { font-size: 0.65rem; }
+    .text-mauzo { color: #d39e00; }
+    .bg-mauzo { background-color: #d39e00; }
+    .btn-mauzo { background-color: #d39e00; color: #fff; border: none; }
+    .btn-mauzo:hover { background-color: #b38600; color: #fff; }
 </style>
 @endpush
 
@@ -77,113 +43,159 @@
                         @endforeach
                     </select>
                 </form>
-                <div>
-                    <button class="btn btn-primary" data-toggle="modal" data-target="#setMonthlyTargetModal">
-                        <i class="fa fa-edit"></i> Set Monthly Targets
+                <div class="d-flex align-items-center">
+                    @php $hasMonthlyTarget = $monthlyTargets->has('monthly_bar'); @endphp
+                    
+                    @if($hasMonthlyTarget)
+                        <form action="{{ route('manager.targets.monthly.reset') }}" method="POST" class="mr-2 mb-0" onsubmit="return confirm('Are you sure you want to reset this month\'s target? This will clear the goal but keep your sales history.')">
+                            @csrf
+                            <button type="submit" class="btn btn-outline-danger shadow-sm px-4" style="border-radius: 20px;">
+                                <i class="fa fa-refresh mr-1"></i> Reset Month
+                            </button>
+                        </form>
+                    @endif
+                    
+                    <button class="btn btn-mauzo px-4 shadow-sm mr-2" style="border-radius: 20px;" data-toggle="modal" data-target="#setMonthlyTargetModal">
+                        <i class="fa fa-plus-circle mr-1"></i> {{ $hasMonthlyTarget ? 'Adjust' : 'Set' }} Target
                     </button>
-                    <button class="btn btn-info" data-toggle="modal" data-target="#setStaffTargetModal">
-                        <i class="fa fa-user-plus"></i> Set Staff Daily Target
+
+                    <button class="btn btn-primary px-4 shadow-sm mr-2" style="border-radius: 20px;" data-toggle="modal" data-target="#setStaffTargetModal">
+                        <i class="fa fa-user-plus mr-1"></i> Set Staff Target
                     </button>
+
+                    <form id="resetStaffTargetsForm" action="{{ route('manager.targets.staff.reset') }}" method="POST" class="mb-0">
+                        @csrf
+                        <input type="hidden" name="date" value="{{ $date }}">
+                        <button type="button" class="btn btn-outline-secondary px-3 shadow-sm" style="border-radius: 20px;" onclick="confirmResetStaffTargets()">
+                            <i class="fa fa-trash-o mr-1"></i> Reset
+                        </button>
+                    </form>
                 </div>
             </div>
         </div>
     </div>
 </div>
 
+@push('scripts')
+<script>
+function confirmResetStaffTargets() {
+    Swal.fire({
+        title: "Are you sure?",
+        text: "This will reset all staff targets for {{ $date }} to zero!",
+        icon: "warning",
+        showCancelButton: true,
+        confirmButtonColor: "#940000",
+        cancelButtonColor: "#6c757d",
+        confirmButtonText: "Yes, Reset it!",
+        cancelButtonText: "No, cancel",
+    }).then((result) => {
+        if (result.isConfirmed) {
+            document.getElementById('resetStaffTargetsForm').submit();
+        }
+    });
+}
+</script>
+@endpush
 <div class="row">
-    <!-- Monthly Bar Target -->
-    <div class="col-md-6 mb-4">
-        @php
-            $barTarget = $monthlyTargets['monthly_bar']->target_amount ?? 0;
-            $barActual = $progress['bar_actual'] ?? 0;
-            $barPercent = $barTarget > 0 ? min(100, round(($barActual / $barTarget) * 100)) : 0;
-            $isPositive = $barPercent >= (date('j') / date('t')) * 100; // Simplified pacing check
-        @endphp
-        <div class="card target-card h-100 border-0 shadow-sm">
-            <div class="card-body p-4">
-                <div class="d-flex justify-content-between align-items-center mb-3">
-                    <div class="p-3 bg-soft-info rounded-circle" style="background-color: rgba(54, 185, 204, 0.1);">
-                        <i class="fa fa-glass fa-2x text-info"></i>
-                    </div>
-                    <div class="text-right">
-                        <span class="badge {{ $isPositive ? 'badge-success' : 'badge-warning' }} mb-2">
-                             <i class="fa {{ $isPositive ? 'fa-line-chart' : 'fa-clock-o' }}"></i> 
-                             {{ $isPositive ? 'On Track' : 'Pacing Behind' }}
-                        </span>
-                        <div class="h2 mb-0 font-weight-bold text-info">{{ $barPercent }}%</div>
+    <div class="col-md-7">
+        <div class="tile h-100">
+            @php
+                // Use the passed $barTarget (which contains fallback sum of daily targets)
+                $barActual = $progress['bar_actual'] ?? 0;
+                $barPercent = $barTarget > 0 ? min(100, round(($barActual / $barTarget) * 100)) : 0;
+                $hasTarget = $barTarget > 0;
+                $dayOfMonth = (int)date('j');
+                $daysInMonth = (int)date('t');
+                $daysLeft = max(1, $daysInMonth - $dayOfMonth + 1);
+                $expectedPacing = ($dayOfMonth / $daysInMonth) * 100;
+                $isPositive = $barPercent >= $expectedPacing;
+                $isExplicit = $monthlyTargets->has('monthly_bar');
+            @endphp
+            
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <h3 class="tile-title mb-0"><i class="fa fa-glass text-mauzo"></i> Monthly Drinks Target</h3>
+                @if($hasTarget)
+                    <span class="badge {{ $isPositive ? 'badge-success' : 'badge-warning' }} px-3 py-1">
+                        {{ $isExplicit ? ($isPositive ? 'ON TRACK' : 'PACING BEHIND') : 'SYSTEM GOAL' }}
+                    </span>
+                @else
+                    <span class="badge badge-secondary px-3 py-1">NOT SET</span>
+                @endif
+            </div>
+
+            <div class="row mb-4">
+                <div class="col-6 border-right">
+                    <div class="text-muted small font-weight-bold text-uppercase">Month Revenue</div>
+                    <div class="h3 mb-0 font-weight-bold">TSh {{ number_format($barActual) }}</div>
+                </div>
+                <div class="col-6">
+                    <div class="text-muted small font-weight-bold text-uppercase">Monthly Goal</div>
+                    <div class="h3 mb-0 font-weight-bold text-mauzo">{{ $hasTarget ? 'TSh ' . number_format($barTarget) : '?' }}</div>
+                </div>
+            </div>
+
+            <div class="mt-3">
+                <div class="d-flex justify-content-between mb-1">
+                    <span class="font-weight-bold">Goal Progress</span>
+                    <span class="percentage-badge">{{ $barPercent }}%</span>
+                </div>
+                <div class="progress" style="height: 15px; border-radius: 10px; background-color: #eee;">
+                    <div class="progress-bar progress-bar-striped progress-bar-animated {{ $isPositive ? 'bg-success' : 'bg-info' }}" 
+                         role="progressbar" style="width: {{ $hasTarget ? $barPercent : 0 }}%; border-radius: 10px;"></div>
+                </div>
+            </div>
+
+            <div class="row mt-4 pt-3 border-top">
+                <div class="col-4 border-right">
+                    <div class="text-muted xx-small font-weight-bold text-uppercase">Remaining</div>
+                    <div class="font-weight-bold {{ $hasTarget && $barTarget-$barActual > 0 ? 'text-danger' : '' }}">
+                        {{ $hasTarget ? 'TSh ' . number_format(max(0, $barTarget - $barActual)) : '-' }}
                     </div>
                 </div>
-                
-                <h6 class="text-muted text-uppercase mb-1 small font-weight-bold">Bar Sales Progress</h6>
-                <div class="h4 mb-3 font-weight-bold">TSh {{ number_format($barActual) }} <span class="text-muted small">/ TSh {{ number_format($barTarget) }}</span></div>
-                
-                <div class="progress-wrapper mb-3" style="height: 15px; background: rgba(0,0,0,0.05); border-radius: 30px;">
-                    <div class="progress-fill bg-bar progress-bar-striped progress-bar-animated" 
-                         style="width: {{ $barPercent }}%; height: 100%; border-radius: 30px; background: linear-gradient(45deg, #36b9cc, #1a89a7);"></div>
+                <div class="col-4 border-right">
+                    <div class="text-muted xx-small font-weight-bold text-uppercase">Daily Req.</div>
+                    <div class="font-weight-bold">
+                        {{ $hasTarget ? 'TSh ' . number_format(max(0, $barTarget - $barActual) / $daysLeft) : '-' }}
+                    </div>
                 </div>
-                
-                <div class="row text-center mt-3">
-                    <div class="col-6 border-right">
-                        <div class="text-muted small">Remaining</div>
-                        <div class="font-weight-bold text-danger">TSh {{ number_format(max(0, $barTarget - $barActual)) }}</div>
-                    </div>
-                    <div class="col-6">
-                        <div class="text-muted small">Daily Needed</div>
-                        @php 
-                            $daysLeft = max(1, date('t') - date('j'));
-                            $needed = max(0, $barTarget - $barActual) / $daysLeft;
-                        @endphp
-                        <div class="font-weight-bold text-dark">TSh {{ number_format($needed) }}</div>
-                    </div>
+                <div class="col-4">
+                    <div class="text-muted xx-small font-weight-bold text-uppercase">Time Left</div>
+                    <div class="font-weight-bold text-primary">{{ $daysLeft }} Days</div>
                 </div>
             </div>
         </div>
     </div>
 
-    <!-- Monthly Food Target -->
-    <div class="col-md-6 mb-4">
-        @php
-            $foodTarget = $monthlyTargets['monthly_food']->target_amount ?? 0;
-            $foodActual = $progress['food_actual'] ?? 0;
-            $foodPercent = $foodTarget > 0 ? min(100, round(($foodActual / $foodTarget) * 100)) : 0;
-            $isFoodPositive = $foodPercent >= (date('j') / date('t')) * 100;
-        @endphp
-        <div class="card target-card h-100 border-0 shadow-sm">
-            <div class="card-body p-4">
-                <div class="d-flex justify-content-between align-items-center mb-3">
-                    <div class="p-3 bg-soft-warning rounded-circle" style="background-color: rgba(246, 194, 62, 0.1);">
-                        <i class="fa fa-cutlery fa-2x text-warning"></i>
-                    </div>
-                    <div class="text-right">
-                        <span class="badge {{ $isFoodPositive ? 'badge-success' : 'badge-warning' }} mb-2">
-                             <i class="fa {{ $isFoodPositive ? 'fa-line-chart' : 'fa-clock-o' }}"></i> 
-                             {{ $isFoodPositive ? 'On Track' : 'Pacing Behind' }}
-                        </span>
-                        <div class="h2 mb-0 font-weight-bold text-warning">{{ $foodPercent }}%</div>
-                    </div>
-                </div>
-                
-                <h6 class="text-muted text-uppercase mb-1 small font-weight-bold">Food Sales Progress</h6>
-                <div class="h4 mb-3 font-weight-bold">TSh {{ number_format($foodActual) }} <span class="text-muted small">/ TSh {{ number_format($foodTarget) }}</span></div>
-                
-                <div class="progress-wrapper mb-3" style="height: 15px; background: rgba(0,0,0,0.05); border-radius: 30px;">
-                    <div class="progress-fill bg-food progress-bar-striped progress-bar-animated" 
-                         style="width: {{ $foodPercent }}%; height: 100%; border-radius: 30px; background: linear-gradient(45deg, #f6c23e, #dfa100);"></div>
-                </div>
-                
-                <div class="row text-center mt-3">
-                    <div class="col-6 border-right">
-                        <div class="text-muted small">Remaining</div>
-                        <div class="font-weight-bold text-danger">TSh {{ number_format(max(0, $foodTarget - $foodActual)) }}</div>
-                    </div>
-                    <div class="col-6">
-                        <div class="text-muted small">Daily Needed</div>
-                        @php 
-                            $neededFood = max(0, $foodTarget - $foodActual) / $daysLeft;
+    <!-- Monthly Drivers Card -->
+    <div class="col-md-5">
+        <div class="tile h-100">
+            <h3 class="tile-title mb-3"><i class="fa fa-line-chart text-success"></i> Top Beverage Drivers</h3>
+            <div class="table-responsive">
+                <table class="table table-sm table-hover mb-0">
+                    <thead class="bg-light">
+                        <tr>
+                            <th>Drink Name</th>
+                            <th class="text-center">Qty</th>
+                            <th class="text-right">Revenue</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @forelse($topDrivers as $driver)
+                        @php
+                            $displayName = $driver->variant_name ?: ($driver->brand . ' ' . $driver->measurement);
                         @endphp
-                        <div class="font-weight-bold text-dark">TSh {{ number_format($neededFood) }}</div>
-                    </div>
-                </div>
+                        <tr>
+                            <td><span class="font-weight-bold">{{ $displayName }}</span></td>
+                            <td class="text-center"><span class="badge badge-info">{{ number_format($driver->total_qty) }}</span></td>
+                            <td class="text-right font-weight-bold text-mauzo">TSh {{ number_format($driver->total_revenue) }}</td>
+                        </tr>
+                        @empty
+                        <tr>
+                            <td colspan="3" class="text-center py-4 text-muted">Identify your best sellers soon!</td>
+                        </tr>
+                        @endforelse
+                    </tbody>
+                </table>
             </div>
         </div>
     </div>
@@ -192,57 +204,89 @@
 <div class="row mt-4">
     <div class="col-md-12">
         <div class="tile">
-            <div class="d-flex justify-content-between mb-3">
-                <h3 class="tile-title"><i class="fa fa-users"></i> Staff Daily Performance ({{ \Carbon\Carbon::parse($date)->format('M d, Y') }})</h3>
-                <input type="date" class="form-control col-md-2" value="{{ $date }}" onchange="window.location.href='?date='+this.value">
+            <div class="d-flex justify-content-between align-items-center mb-4 pb-2 border-bottom">
+                <h3 class="tile-title mb-0"><i class="fa fa-users text-primary"></i> Team Daily Performance ({{ \Carbon\Carbon::parse($date)->format('M d, Y') }})</h3>
+                <div class="d-flex align-items-center">
+                    <span class="mr-2 text-muted small">Change Date:</span>
+                    <input type="date" class="form-control form-control-sm" value="{{ $date }}" onchange="window.location.href='?date='+this.value">
+                </div>
             </div>
             <div class="table-responsive">
                 <table class="table table-hover table-bordered">
                     <thead class="bg-light">
                         <tr>
-                            <th>Staff Name</th>
-                            <th>Target Amount</th>
-                            <th>Actual Orders Total</th>
-                            <th>Performance</th>
-                            <th>Status</th>
+                            <th>Staff Member</th>
+                            <th>Daily Target</th>
+                            <th class="text-center">Today's Sales</th>
+                            <th class="text-center">MTD Sales (Month)</th>
+                            <th width="20%">Progress</th>
+                            <th class="text-center">Status</th>
                         </tr>
                     </thead>
                     <tbody>
-                        @forelse($staffTargets as $st)
+                        @forelse($waiters as $staff)
                             @php
-                                $actual = $progress['staff_actual'][$st->staff_id] ?? 0;
-                                $pct = $st->target_amount > 0 ? min(100, round(($actual / $st->target_amount) * 100)) : 0;
+                                $targetRec = $staffTargets->firstWhere('staff_id', $staff->id);
+                                $targetAmt = $targetRec->target_amount ?? 0;
+                                $todayActual = $progress['staff_actual'][$staff->id] ?? 0;
+                                $monthActual = $progress['staff_month_actual'][$staff->id] ?? 0;
+                                $pct = $targetAmt > 0 ? min(100, round(($todayActual / $targetAmt) * 100)) : 0;
                             @endphp
                             <tr>
                                 <td>
-                                    <strong>{{ $st->staff->full_name }}</strong><br>
-                                    <small class="text-muted">{{ $st->staff->role->name ?? 'Staff' }}</small>
-                                </td>
-                                <td>TSh {{ number_format($st->target_amount) }}</td>
-                                <td>TSh {{ number_format($actual) }}</td>
-                                <td width="30%">
                                     <div class="d-flex align-items-center">
-                                        <div class="progress flex-grow-1 mr-2" style="height: 8px;">
-                                            <div class="progress-bar bg-staff" style="width: {{ $pct }}%"></div>
+                                        <div class="mr-2 bg-mauzo text-white rounded-circle d-flex align-items-center justify-content-center font-weight-bold" style="width: 35px; height: 35px;">
+                                            {{ substr($staff->full_name, 0, 1) }}
                                         </div>
-                                        <small class="font-weight-bold">{{ $pct }}%</small>
+                                        <div>
+                                            <div class="font-weight-bold text-dark">{{ $staff->full_name }}</div>
+                                            <span class="badge badge-secondary xx-small">{{ strtoupper($staff->role->slug ?? 'STAFF') }}</span>
+                                        </div>
                                     </div>
                                 </td>
-                                <td>
-                                    @if($pct >= 100)
-                                        <span class="badge badge-success"><i class="fa fa-trophy"></i> Target Hit!</span>
-                                    @elseif($pct >= 75)
-                                        <span class="badge badge-info">On Track</span>
+                                <td class="font-weight-bold">
+                                    @if($targetAmt > 0)
+                                        TSh {{ number_format($targetAmt) }}
                                     @else
-                                        <span class="badge badge-warning text-white">Needs Push</span>
+                                        <span class="text-muted small italic">Not Set</span>
+                                    @endif
+                                </td>
+                                <td class="text-center">
+                                    <div class="font-weight-bold {{ $todayActual > 0 ? 'text-success' : 'text-muted' }}">
+                                        TSh {{ number_format($todayActual) }}
+                                    </div>
+                                </td>
+                                <td class="text-center font-weight-bold text-mauzo">
+                                    TSh {{ number_format($monthActual) }}
+                                </td>
+                                <td>
+                                    @if($targetAmt > 0)
+                                        <div class="progress mb-1" style="height: 10px; border-radius: 10px;">
+                                            <div class="progress-bar bg-info" style="width: {{ $pct }}%; border-radius: 10px;"></div>
+                                        </div>
+                                        <span class="small font-weight-bold">{{ $pct }}%</span>
+                                    @else
+                                        <div class="text-muted small italic px-2">Waiting for daily goal...</div>
+                                    @endif
+                                </td>
+                                <td class="text-center">
+                                    @if($targetAmt > 0)
+                                        @if($pct >= 100)
+                                            <span class="badge badge-success px-3 py-1">HIT!</span>
+                                        @elseif($pct >= 75)
+                                            <span class="badge badge-info px-3 py-1">ON TRACK</span>
+                                        @else
+                                            <span class="badge badge-warning px-3 py-1">PUSHING</span>
+                                        @endif
+                                    @else
+                                        <span class="badge badge-secondary px-3 py-1">PENDING</span>
                                     @endif
                                 </td>
                             </tr>
                         @empty
                             <tr>
-                                <td colspan="5" class="text-center py-4">
-                                    <div class="text-muted">No daily targets set for this date.</div>
-                                    <button class="btn btn-sm btn-outline-info mt-2" data-toggle="modal" data-target="#setStaffTargetModal">Set First Target</button>
+                                <td colspan="6" class="text-center py-5">
+                                    <div class="text-muted mb-3"><i class="fa fa-users fa-3x opacity-2"></i><br>No active staff found in system.</div>
                                 </td>
                             </tr>
                         @endforelse
@@ -260,24 +304,27 @@
             @csrf
             <input type="hidden" name="month" value="{{ $month }}">
             <input type="hidden" name="year" value="{{ $year }}">
-            <div class="modal-content">
-                <div class="modal-header bg-primary text-white">
-                    <h5 class="modal-title">Set Monthly Target ({{ date('F Y', mktime(0,0,0, $month, 1, $year)) }})</h5>
+            <div class="modal-content border-0 shadow" style="border-radius: 15px;">
+                <div class="modal-header bg-primary text-white" style="border-radius: 15px 15px 0 0;">
+                    <h5 class="modal-title font-weight-bold px-2">Set Monthly Drinks Target</h5>
                     <button type="button" class="close text-white" data-dismiss="modal">&times;</button>
                 </div>
-                <div class="modal-body">
-                    <div class="form-group">
-                        <label>Monthly Bar Target (TSh)</label>
-                        <input type="number" name="bar_target" class="form-control" value="{{ $monthlyTargets['monthly_bar']->target_amount ?? '' }}" placeholder="Enter amount">
-                    </div>
-                    <div class="form-group">
-                        <label>Monthly Food Target (TSh)</label>
-                        <input type="number" name="food_target" class="form-control" value="{{ $monthlyTargets['monthly_food']->target_amount ?? '' }}" placeholder="Enter amount">
+                <div class="modal-body p-4">
+                    <p class="text-muted small mb-3">Target for {{ date('F Y', mktime(0,0,0, $month, 1, $year)) }}</p>
+                    <div class="form-group mb-0">
+                        <label class="font-weight-bold">Targeted Bar Sales (TSh)</label>
+                        <div class="input-group">
+                            <div class="input-group-prepend">
+                                <span class="input-group-text bg-light border-right-0">TSh</span>
+                            </div>
+                            <input type="number" name="bar_target" class="form-control form-control-lg border-left-0" value="{{ $monthlyTargets['monthly_bar']->target_amount ?? '' }}" placeholder="e.g. 5,000,000">
+                        </div>
+                        <small class="form-text text-muted mt-2">Setting this goal will update the real-time progress bar on the dashboard.</small>
                     </div>
                 </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-dismiss="modal">Cancel</button>
-                    <button type="submit" class="btn btn-primary">Save Targets</button>
+                <div class="modal-footer bg-light" style="border-radius: 0 0 15px 15px;">
+                    <button type="button" class="btn btn-secondary border-0" data-dismiss="modal" style="border-radius: 10px;">Cancel</button>
+                    <button type="submit" class="btn btn-primary px-4 shadow-sm" style="border-radius: 10px;">Save Changes</button>
                 </div>
             </div>
         </form>

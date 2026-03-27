@@ -62,7 +62,7 @@
             </td>
             <td class="text-center align-middle">
                 @if($variant->total_tots > 0)
-                    <div class="text-primary font-weight-bold">{{ $variant->total_tots }} Servings</div>
+                    <div class="text-primary font-weight-bold">{{ $variant->total_tots }} {{ $variant->portion_unit_name }}s</div>
                     <small class="text-muted smallest">per bottle/pc</small>
                 @else
                     <span class="text-muted">-</span>

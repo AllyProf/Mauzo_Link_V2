@@ -21,20 +21,25 @@
 <div class="app-title">
   <div>
     <h1><i class="fa fa-users"></i> Staff Management</h1>
-    <p>
-      @if(session('active_location'))
-        Viewing staff for branch: <strong>{{ session('active_location') }}</strong>
-      @else
-        Manage all staff members
-      @endif
-    </p>
+    @php
+        $canResetPassword = false;
+        if (auth()->check() && !session('is_staff')) {
+            $canResetPassword = true;
+        } elseif (session('is_staff')) {
+            $currentStaff = \App\Models\Staff::find(session('staff_id'));
+            if ($currentStaff && $currentStaff->role) {
+                $roleName = strtolower($currentStaff->role->name);
+                if ($roleName === 'manager' || $roleName === 'super admin') {
+                    $canResetPassword = true;
+                } else {
+                    $canResetPassword = $currentStaff->role->hasPermission('staff', 'reset_password');
+                }
+            }
+        }
+    @endphp
+    <p>Manage all staff members in your business</p>
   </div>
   <div>
-    @if(session('active_location'))
-      <a href="javascript:void(0)" onclick="switchLocation('all')" class="btn btn-secondary mr-2">
-        <i class="fa fa-globe"></i> Show All Branches
-      </a>
-    @endif
     <a href="{{ route('staff.create') }}" class="btn btn-primary">
       <i class="fa fa-plus"></i> Register New Staff
     </a>
@@ -42,7 +47,7 @@
 </div>
 <!-- Statistics Cards -->
 <div class="row">
-  <div class="col-md-3">
+  <div class="col-md-4">
     <div class="widget-small primary coloured-icon">
       <i class="icon fa fa-users fa-3x"></i>
       <div class="info">
@@ -51,7 +56,7 @@
       </div>
     </div>
   </div>
-  <div class="col-md-3">
+  <div class="col-md-4">
     <div class="widget-small info coloured-icon">
       <i class="icon fa fa-check-circle fa-3x"></i>
       <div class="info">
@@ -60,21 +65,12 @@
       </div>
     </div>
   </div>
-  <div class="col-md-3">
+  <div class="col-md-4">
     <div class="widget-small danger coloured-icon">
       <i class="icon fa fa-money fa-3x"></i>
       <div class="info">
         <h4>Payroll (MTD)</h4>
         <p><b>{{ number_format($stats['total_salary'], 0) }}</b></p>
-      </div>
-    </div>
-  </div>
-  <div class="col-md-3">
-    <div class="widget-small warning coloured-icon">
-      <i class="icon fa fa-map-marker fa-3x"></i>
-      <div class="info">
-        <h4>Branches</h4>
-        <p><b>{{ $stats['branches'] }}</b></p>
       </div>
     </div>
   </div>
@@ -109,7 +105,6 @@
                 <th width="120">Staff ID</th>
                 <th>Full Name</th>
                 <th>Staff Role</th>
-                <th>Location</th>
                 <th width="100">Status</th>
                 <th width="120" class="text-center">Actions</th>
               </tr>
@@ -135,11 +130,6 @@
                     @endif
                   </td>
                   <td>
-                    <span class="text-secondary">
-                      <i class="fa fa-map-marker text-danger mr-1"></i> {{ $member->location_branch ?? 'Main' }}
-                    </span>
-                  </td>
-                  <td>
                     @if($member->is_active)
                       <span class="badge badge-success badge-pill px-3 py-1">Active</span>
                     @else
@@ -154,9 +144,11 @@
                       <a href="{{ route('staff.edit', $member->id) }}" class="btn btn-sm btn-outline-primary" title="Edit">
                         <i class="fa fa-edit"></i>
                       </a>
-                      <button type="button" class="btn btn-sm btn-outline-danger" title="Delete" onclick="deleteStaff({{ $member->id }}, '{{ $member->full_name }}')">
-                        <i class="fa fa-trash"></i>
+                      @if($canResetPassword)
+                      <button type="button" class="btn btn-sm btn-outline-warning" title="Reset Password" onclick="resetPassword({{ $member->id }}, '{{ $member->full_name }}')">
+                        <i class="fa fa-key"></i>
                       </button>
+                      @endif
                     </div>
                   </td>
                 </tr>
@@ -180,6 +172,34 @@
 
 @push('scripts')
 <script>
+function resetPassword(staffId, staffName) {
+  Swal.fire({
+    title: 'Reset Password?',
+    html: `Are you sure you want to reset the password for <strong>${staffName}</strong>?<br><br>A new random password will be generated and displayed.`,
+    icon: 'question',
+    showCancelButton: true,
+    confirmButtonColor: '#f39c12',
+    cancelButtonColor: '#3085d6',
+    confirmButtonText: 'Yes, reset it!',
+    cancelButtonText: 'Cancel'
+  }).then((result) => {
+    if (result.isConfirmed) {
+      const form = document.createElement('form');
+      form.method = 'POST';
+      form.action = `/staff/${staffId}/reset-password`;
+      
+      const csrfInput = document.createElement('input');
+      csrfInput.type = 'hidden';
+      csrfInput.name = '_token';
+      csrfInput.value = '{{ csrf_token() }}';
+      form.appendChild(csrfInput);
+      
+      document.body.appendChild(form);
+      form.submit();
+    }
+  });
+}
+
 function deleteStaff(staffId, staffName) {
   Swal.fire({
     title: 'Delete Staff Member?',

@@ -54,6 +54,7 @@
             </div>
         </div>
 
+        @if($showRevenue)
         <div class="tile shadow-sm border-0 bg-light">
             <h4 class="tile-title border-bottom pb-2">Financial Totals</h4>
             <div class="tile-body">
@@ -78,6 +79,7 @@
                 @endif
             </div>
         </div>
+        @endif
     </div>
 
     <!-- Items in this batch -->
@@ -92,8 +94,10 @@
                                 <th>Product Details</th>
                                 <th class="text-center">Main Qty</th>
                                 <th class="text-center">Tot Btls/Pcs</th>
+                                @if($showRevenue)
                                 <th class="text-right">Unit Price</th>
                                 <th class="text-right">Subtotal</th>
+                                @endif
                             </tr>
                         </thead>
                         <tbody>
@@ -119,7 +123,6 @@
                                         $totalLineTotProfit = $totalLineTots * $totProfitPerGlass;
                                     @endphp
 
-                                    @if($showRevenue)
                                     <div class="mt-2 p-2 border rounded shadow-sm bg-light">
                                         <div class="row no-gutters">
                                             <div class="col-6 border-right pr-2">
@@ -128,10 +131,12 @@
                                                     <span class="text-muted">Price:</span>
                                                     <span class="font-weight-bold">TSh {{ number_format($item->selling_price_per_unit) }}</span>
                                                 </div>
+                                                @if($showRevenue)
                                                 <div class="d-flex justify-content-between x-small text-success">
                                                     <span class="font-weight-bold">Tot Profit:</span>
                                                     <span class="font-weight-bold">+TSh {{ number_format($totalLineBtlProfit) }}</span>
                                                 </div>
+                                                @endif
                                             </div>
                                             <div class="col-6 pl-2">
                                                 <div class="smallest font-weight-bold text-uppercase text-info mb-1 border-bottom pb-1">Portion Channel</div>
@@ -140,10 +145,12 @@
                                                         <span class="text-muted">Price:</span>
                                                         <span class="font-weight-bold">TSh {{ number_format($displayTotPrice) }}</span>
                                                     </div>
+                                                    @if($showRevenue)
                                                     <div class="d-flex justify-content-between x-small text-success">
                                                         <span class="font-weight-bold">Tot Profit:</span>
                                                         <span class="font-weight-bold">+TSh {{ number_format($totalLineTotProfit) }}</span>
                                                     </div>
+                                                    @endif
                                                     <div class="smallest text-muted mt-1 italic">
                                                         Total Yield: {{ number_format($totalLineTots) }} Glasses
                                                     </div>
@@ -153,7 +160,6 @@
                                             </div>
                                         </div>
                                     </div>
-                                    @endif
 
                                     <small class="text-muted d-block mt-2">
                                         @if($item->productVariant->items_per_package <= 1)
@@ -168,6 +174,7 @@
                                 </td>
                                 <td class="text-center">{{ number_format($item->quantity_received, 1) }}</td>
                                 <td class="text-center">{{ number_format($item->total_units) }}</td>
+                                @if($showRevenue)
                                 <td class="text-right">
                                     @if($item->discount_value > 0)
                                         <small class="text-muted strike-through" style="text-decoration: line-through;">{{ number_format($item->buying_price_per_unit) }}</small><br>
@@ -175,6 +182,7 @@
                                     <span class="font-weight-bold">{{ number_format($item->total_units > 0 ? $item->final_buying_cost / $item->total_units : $item->buying_price_per_unit) }}</span>
                                 </td>
                                 <td class="text-right font-weight-bold text-dark">{{ number_format($item->final_buying_cost) }}</td>
+                                @endif
                             </tr>
                             @endforeach
                         </tbody>

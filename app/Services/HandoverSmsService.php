@@ -27,7 +27,7 @@ class HandoverSmsService
 
         $sender = $handover->staff; // The staff (Counter/Chef/Waiter) who submitted
         $date = \Carbon\Carbon::parse($handover->handover_date)->format('M d, Y');
-        $total = number_format($handover->amount, 0);
+        $total = number_format((float)$handover->amount, 0);
         
         $breakdown = $handover->payment_breakdown ?? [];
         $cash = $breakdown['cash'] ?? 0;
@@ -38,26 +38,33 @@ class HandoverSmsService
 
         $cashFormatted = number_format($cash, 0);
         $digitalFormatted = number_format($digital, 0);
+        $circulationFormatted = number_format($handover->circulation_money ?? 0, 0);
+        $profitFormatted = number_format($handover->profit_amount ?? 0, 0);
 
-        $message = "FINANCIAL HANDOVER SUBMITTED\n\n";
-        $message .= "From: " . ($sender->full_name ?? 'Counter') . "\n";
+        $message = "HANDOVER SUBMITTED - MauzoLink\n\n";
+        $message .= "By: " . ($sender->full_name ?? 'Counter') . "\n";
         $message .= "Date: {$date}\n";
-        $message .= "Total: TSh {$total}\n";
-        $message .= "Cash: TSh {$cashFormatted}\n";
-        $message .= "Digital: TSh {$digitalFormatted}\n";
-        $message .= "\nPlease login to verify this handover.";
+        $message .= "Total Collected: TSh {$total}\n";
+        $message .= "  Cash: TSh {$cashFormatted}\n";
+        $message .= "  Digital: TSh {$digitalFormatted}\n";
+        if ($circulationFormatted > 0) {
+            $message .= "Circulation Float: TSh {$circulationFormatted}\n";
+        }
+        $message .= "Est. Profit: TSh {$profitFormatted}\n";
+        $message .= "\nPlease login to review & verify.";
 
-        $accountants = Staff::where('user_id', $ownerId)
+        // Notify both managers and accountants
+        $recipients = Staff::where('user_id', $ownerId)
             ->where('is_active', true)
             ->whereHas('role', function($q) {
-                $q->where('slug', 'accountant');
+                $q->whereIn('slug', ['accountant', 'manager']);
             })
             ->get();
 
         $sentCount = 0;
-        foreach ($accountants as $accountant) {
-            if ($accountant->phone_number) {
-                $result = $this->smsService->sendSms($accountant->phone_number, $message);
+        foreach ($recipients as $recipient) {
+            if ($recipient->phone_number) {
+                $result = $this->smsService->sendSms($recipient->phone_number, $message);
                 if ($result['success']) {
                     $sentCount++;
                 }

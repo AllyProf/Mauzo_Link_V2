@@ -33,235 +33,294 @@ class CounterReconciliationController extends Controller
         }
 
         $ownerId = $this->getOwnerId();
-        $date = $request->get('date', now()->format('Y-m-d'));
+        // Parse week string e.g., '2026-W13'
+        $week = $request->get('week', date('Y-\WW'));
+        $year = (int) substr($week, 0, 4);
+        $weekNum = (int) substr($week, 6, 2);
+        
+        $startDateObj = (new \DateTime())->setISODate($year, $weekNum);
+        $startDate = $startDateObj->format('Y-m-d 00:00:00');
+        $endDateObj = clone $startDateObj;
+        $endDateObj->modify('+6 days');
+        $endDate = $endDateObj->format('Y-m-d 23:59:59');
+        $displayDate = $startDateObj->format('M d') . ' - ' . $endDateObj->format('M d, Y');
+        
+        // For storing in DB (reconciliation_date is visually a Date column)
+        $date = $startDateObj->format('Y-m-d');
+
+        // Get the active shift for the current staff (unless a specific ID is provided)
+        $shiftId = $request->get('shift_id');
+        if ($shiftId) {
+            $activeShift = \App\Models\StaffShift::where('id', $shiftId)
+                ->where('user_id', $ownerId)
+                ->first();
+        } else {
+            $activeShift = \App\Models\StaffShift::where('staff_id', $currentStaff->id)
+                ->where('status', 'open')
+                ->first();
+            
+            // Sync shift ID for the view (important for modal filtering)
+            if ($activeShift) $shiftId = $activeShift->id;
+
+            // If no open shift, check if they JUST finished one today to show its summary
+            if (!$activeShift && !$shiftId && $week === date('Y-\WW')) {
+                $activeShift = \App\Models\StaffShift::where('staff_id', $currentStaff->id)
+                    ->where('status', 'closed')
+                    ->whereDate('closed_at', date('Y-m-d'))
+                    ->latest()
+                    ->first();
+                
+                if ($activeShift) $shiftId = $activeShift->id;
+                $isPostHandoverView = true;
+            }
+        }
+
+        if ($activeShift) {
+            // Override display dates to match the SHIFT timeframe
+            $startDate = $activeShift->opened_at->format('Y-m-d H:i:s');
+            // If viewing history, use closed_at. If active dashboard, use now().
+            $endDate = ($activeShift->closed_at ?: now())->format('Y-m-d H:i:s');
+            
+            // Format for title display
+            if ($activeShift->closed_at) {
+                $displayDate = $activeShift->opened_at->format('M d, Y') . ' - ' . $activeShift->closed_at->format('M d, Y');
+            } else {
+                $displayDate = $activeShift->opened_at->format('M d, Y') . ' (Active Shift)';
+            }
+            
+            // ALSO override the base reconciliation date to match the shift start date
+            $date = $activeShift->opened_at->format('Y-m-d');
+
+            if (isset($isPostHandoverView) && $isPostHandoverView) {
+                // Keep the week range for HISTORY but set display title to show shift specifically
+                $displayDate = $activeShift->opened_at->format('M d, Y') . ' (Recently Closed Shift)';
+            }
+        } else if ($week === date('Y-\WW')) {
+            // Default to TODAY if no shift and viewing the current week
+            $date = date('Y-m-d');
+        }
 
         // Check if current user is accountant (should see all orders across all owners)
         $currentStaff = $this->getCurrentStaff();
         $isAccountant = $currentStaff && strtolower($currentStaff->role->name ?? '') === 'accountant';
-
-        // Get location from session (branch switcher)
         $location = session('active_location');
 
-        // Get waiters, or anyone who placed an order today, or has a reconciliation today
-        $waitersQuery = Staff::where('is_active', true)
-            ->where(function ($query) use ($date, $location) {
-                // Role check
-                $query->whereHas('role', function ($q) {
-                    $q->where('slug', 'waiter');
-                })
-                // OR orders today check
-                ->orWhereHas('orders', function ($q) use ($date, $location) {
-                    $q->whereDate('created_at', $date);
-                    if ($location && $location !== 'all') {
-                        $q->whereHas('table', function ($sq) use ($location) {
-                            $sq->where('location', $location);
-                        });
-                    }
-                })
-                // OR daily reconciliations check
-                ->orWhereHas('dailyReconciliations', function ($q) use ($date) {
-                    $q->where('reconciliation_date', $date)
-                      ->where('reconciliation_type', 'bar');
-                });
-            })
+        // 1. Get ALL orders from all waiters within the shift/range
+        $allOrdersQuery = BarOrder::query()
+            ->with(['items', 'kitchenOrderItems', 'table', 'orderPayments'])
             ->when($location && $location !== 'all', function($q) use ($location) {
-                $q->where('location_branch', $location);
+                $q->whereHas('table', function($sq) use ($location) {
+                    $sq->where('location', $location);
+                });
             });
-        
-        // If not accountant, filter by owner
+
         if (!$isAccountant) {
-            $waitersQuery->where('user_id', $ownerId);
+            $allOrdersQuery->where('user_id', $ownerId);
+        }
+
+        if ($activeShift) {
+            $openedAt = $activeShift->opened_at;
+            $closedAt = $activeShift->closed_at ?: now();
+            $allOrdersQuery->whereBetween('created_at', [$openedAt, $closedAt]);
+            
+            if (!$isAccountant) {
+                // Strictly filter by shift ID to avoid picking up orders from other shifts on the same day
+                $allOrdersQuery->where('shift_id', $activeShift->id);
+            }
+        } else {
+            $allOrdersQuery->whereBetween('created_at', [$startDate, $endDate]);
+            if (!$isAccountant) {
+                $allOrdersQuery->where('user_id', $ownerId);
+            }
+        }
+
+        $allOrders = $allOrdersQuery->get();
+
+        // 2. Group orders by [waiter_id, date]
+        $groupedOrders = $allOrders->groupBy(function($order) {
+            return $order->waiter_id . '_' . $order->created_at->format('Y-m-d');
+        });
+
+        // 3. Build the flattened rows
+        $waiters = collect();
+
+        foreach ($groupedOrders as $key => $ordersInGroup) {
+            $parts = explode('_', $key);
+            $waiterId = $parts[0];
+            $rowDate = $parts[1];
+
+            $waiter = Staff::find($waiterId);
+            if (!$waiter) continue;
+
+            $barOrders = $ordersInGroup->filter(fn($o) => $o->items->count() > 0);
+            $foodSales = $ordersInGroup->sum(fn($o) => $o->kitchenOrderItems ? $o->kitchenOrderItems->sum('total_price') : 0);
+            $barSales = $barOrders->sum(fn($o) => $o->items->sum('total_price'));
+            $totalSales = $barSales;
+            
+            $unpaidBarOrders = $barOrders->filter(fn($o) => $o->status === 'served' && $o->payment_status !== 'paid');
+            $hasUnpaidOrders = $unpaidBarOrders->count() > 0;
+            
+            $totalPaidAmount = $barOrders->filter(fn($o) => $o->status === 'served' && $o->payment_status === 'paid')
+                ->sum(fn($o) => $o->items->sum('total_price'));
+
+            $cashCollected = 0;
+            $mobileMoneyCollected = 0;
+            foreach ($barOrders as $order) {
+                if ($order->orderPayments->count() > 0) {
+                    $cashCollected += $order->orderPayments->where('payment_method', 'cash')->sum('amount');
+                    $mobileMoneyCollected += $order->orderPayments->where('payment_method', '!=', 'cash')->sum('amount');
+                } else {
+                    if ($order->payment_method === 'cash') $cashCollected += $order->paid_amount;
+                    else $mobileMoneyCollected += $order->paid_amount;
+                }
+            }
+
+            $reconciliation = \App\Models\WaiterDailyReconciliation::where('waiter_id', $waiterId)
+                ->where('reconciliation_date', $rowDate)
+                ->where('reconciliation_type', 'bar')
+                ->when($activeShift, fn($q) => $q->where('staff_shift_id', $activeShift->id))
+                ->first();
+
+            $waiterPlatformTotals = [];
+            foreach ($barOrders as $order) {
+                foreach ($order->orderPayments as $payment) {
+                    if ($payment->payment_method === 'cash') continue;
+                    $provider = strtolower(trim($payment->mobile_money_number ?? ''));
+                    $method = strtolower($payment->payment_method ?? '');
+                    
+                    if (str_contains($provider, 'nmb') || str_contains($method, 'nmb')) { $label = 'NMB BANK'; }
+                    elseif (str_contains($provider, 'crdb') || str_contains($method, 'crdb')) { $label = 'CRDB BANK'; }
+                    elseif (str_contains($provider, 'kcb') || str_contains($method, 'kcb')) { $label = 'KCB BANK'; }
+                    elseif (str_contains($provider, 'nbc') || str_contains($method, 'nbc')) { $label = 'NBC BANK'; }
+                    elseif (str_contains($provider, 'm-pesa') || str_contains($provider, 'mpesa') || str_contains($method, 'm-pesa') || str_contains($method, 'mpesa')) { $label = 'M-PESA'; }
+                    elseif (str_contains($provider, 'mixx')) { $label = 'MIXX BY YAS'; }
+                    elseif (str_contains($provider, 'halo')) { $label = 'HALOPESA'; }
+                    elseif (str_contains($provider, 'tigo')) { $label = 'TIGO PESA'; }
+                    elseif (str_contains($provider, 't-pesa') || str_contains($provider, 'tpesa')) { $label = 'T-PESA'; }
+                    elseif (str_contains($provider, 'airtel')) { $label = 'AIRTEL MONEY'; }
+                    elseif (str_contains($provider, 'visa')) { $label = 'VISA CARD'; }
+                    elseif (str_contains($provider, 'mastercard') || str_contains($provider, 'master card')) { $label = 'MASTERCARD'; }
+                    elseif (str_contains($provider, 'equity')) { $label = 'EQUITY BANK'; }
+                    elseif (str_contains($provider, 'absa')) { $label = 'ABSA BANK'; }
+                    elseif (str_contains($provider, 'dtb') || str_contains($provider, 'diamond')) { $label = 'DTB BANK'; }
+                    elseif (str_contains($provider, 'exim')) { $label = 'EXIM BANK'; }
+                    elseif (str_contains($provider, 'azania')) { $label = 'AZANIA BANK'; }
+                    elseif (str_contains($provider, 'stanbic')) { $label = 'STANBIC BANK'; }
+                    elseif ($method === 'card' || str_contains($method, 'pos')) { $label = 'BANK CARD'; }
+                    elseif (str_contains($method, 'bank') || str_contains($provider, 'bank') || str_contains($provider, 'transfer')) { $label = 'BANK TRANSFER'; }
+                    else { $label = 'MOBILE MONEY'; }
+                    $waiterPlatformTotals[$label] = ($waiterPlatformTotals[$label] ?? 0) + $payment->amount;
+                }
+            }
+
+            $totalRecordedAmount = $cashCollected + $mobileMoneyCollected;
+            $isFullyPaid = !$hasUnpaidOrders && $barOrders->count() > 0 && ($totalPaidAmount >= $totalSales - 0.01);
+            
+            if ($isFullyPaid && (!$reconciliation || $reconciliation->status !== 'verified')) {
+                if (!$reconciliation) {
+                    $reconciliation = new \App\Models\WaiterDailyReconciliation([
+                        'user_id' => $ownerId,
+                        'waiter_id' => $waiterId,
+                        'staff_shift_id' => $activeShift ? $activeShift->id : null,
+                        'reconciliation_date' => $rowDate,
+                        'reconciliation_type' => 'bar',
+                    ]);
+                }
+                $reconciliation->expected_amount = $totalSales;
+                $reconciliation->submitted_amount = $totalRecordedAmount;
+                $reconciliation->cash_collected = $cashCollected;
+                $reconciliation->mobile_money_collected = $mobileMoneyCollected;
+                $reconciliation->difference = 0;
+                $reconciliation->status = 'submitted';
+                $reconciliation->submitted_at = now();
+                $reconciliation->notes = json_encode(['auto_reconciled' => true, 'recorded_breakdown' => $waiterPlatformTotals, 'submitted_breakdown' => $waiterPlatformTotals]);
+                $reconciliation->save();
+                $submittedAmount = $totalRecordedAmount;
+                $difference = 0;
+                $status = 'submitted';
+            } else {
+                $submittedAmount = $reconciliation ? $reconciliation->submitted_amount : 0;
+                $difference = $reconciliation ? ($submittedAmount - $totalSales) : ($totalRecordedAmount - $totalSales);
+                $status = $reconciliation ? $reconciliation->status : 'pending';
+                if (!$reconciliation) {
+                    if ($hasUnpaidOrders) $status = 'pending';
+                    else if ($totalPaidAmount > 0 && abs($difference) < 0.01) $status = 'paid';
+                    else if ($totalPaidAmount > 0) $status = 'partial';
+                }
+            }
+
+            $waiters->push([
+                'waiter' => $waiter,
+                'date' => $rowDate,
+                'total_sales' => $totalSales,
+                'bar_sales' => $barSales,
+                'food_sales' => $foodSales,
+                'total_orders' => $barOrders->count(),
+                'has_unpaid_orders' => $hasUnpaidOrders,
+                'cash_collected' => $reconciliation ? $reconciliation->cash_collected : $cashCollected,
+                'mobile_money_collected' => $reconciliation ? $reconciliation->mobile_money_collected : $mobileMoneyCollected,
+                'recorded_cash' => $cashCollected,
+                'recorded_digital' => $mobileMoneyCollected,
+                'expected_amount' => $totalSales,
+                'recorded_amount' => $totalRecordedAmount,
+                'submitted_amount' => $submittedAmount,
+                'difference' => $difference,
+                'status' => $status,
+                'orders' => $barOrders,
+                'reconciliation' => $reconciliation,
+                'platform_totals' => $waiterPlatformTotals
+            ]);
         }
         
-        $waiters = $waitersQuery
-            ->with(['dailyReconciliations' => function($q) use ($date) {
-                $q->where('reconciliation_date', $date)
-                  ->where('reconciliation_type', 'bar'); // Only get bar reconciliations
-            }])
-            ->get()
-            ->map(function($waiter) use ($ownerId, $date, $isAccountant, $location) {
-                $ordersQuery = BarOrder::query()
-                    ->where('waiter_id', $waiter->id)
-                    ->when($location && $location !== 'all', function($q) use ($location) {
-                        $q->whereHas('table', function($sq) use ($location) {
-                            $sq->where('location', $location);
-                        });
-                    });
-                
-                // If not accountant, filter by owner
-                if (!$isAccountant) {
-                    $ordersQuery->where('user_id', $ownerId);
-                }
-                
-                $allOrders = $ordersQuery
-                    ->whereDate('created_at', $date)
-                    ->with(['items', 'kitchenOrderItems', 'table', 'orderPayments'])
-                    ->get();
-                
-                // Separate bar orders (drinks) from food orders
-                // Bar orders: orders that have items (drinks) - may also have food
-                // Food-only orders: orders that only have kitchenOrderItems, no items
-                $barOrders = $allOrders->filter(function($order) {
-                    return $order->items && $order->items->count() > 0;
-                });
-                
-                $foodOnlyOrders = $allOrders->filter(function($order) {
-                    return ($order->items->count() === 0) && ($order->kitchenOrderItems && $order->kitchenOrderItems->count() > 0);
-                });
-                
-                // For Counter reconciliation: only count bar orders (drinks)
-                // Calculate bar sales from items (drinks) only
-                $barSales = $barOrders->sum(function($order) {
-                    return $order->items->sum('total_price');
-                });
-                
-                // Calculate food sales from kitchenOrderItems
-                $foodSales = $allOrders->sum(function($order) {
-                    return $order->kitchenOrderItems ? $order->kitchenOrderItems->sum('total_price') : 0;
-                });
-                
-                // Total sales for counter = bar sales only
-                $totalSales = $barSales;
-                
-                // Count only bar orders (orders with drinks)
-                $barOrdersCount = $barOrders->count();
-                $foodOrdersCount = $foodOnlyOrders->count();
-                
-                // Check for unpaid served bar orders
-                $unpaidBarOrders = $barOrders->filter(function($order) {
-                    return $order->status === 'served' && $order->payment_status !== 'paid';
-                });
-                $hasUnpaidOrders = $unpaidBarOrders->count() > 0;
-                
-                // Calculate total paid amount (only orders that have been reconciled/submitted)
-                $totalPaidAmount = $barOrders->filter(function($order) {
-                    return $order->status === 'served' && $order->payment_status === 'paid';
-                })->sum(function($order) {
-                    return $order->items->sum('total_price');
-                });
-
-                // Payment collection from bar orders only (Avoiding double counting)
-                $cashCollected = 0;
-                $mobileMoneyCollected = 0;
-                
-                foreach ($barOrders as $order) {
-                    if ($order->orderPayments->count() > 0) {
-                        // Use OrderPayments if they exist
-                        $cashCollected += $order->orderPayments->where('payment_method', 'cash')->sum('amount');
-                        // Sum everything that is NOT cash as digital/mobile money
-                        $mobileMoneyCollected += $order->orderPayments->where('payment_method', '!=', 'cash')->sum('amount');
-                    } else {
-                        // Fallback to order fields
-                        if ($order->payment_method === 'cash') {
-                            $cashCollected += $order->paid_amount;
-                        } else {
-                            // Any other payment method (mobile_money, bank_transfer, etc.)
-                            $mobileMoneyCollected += $order->paid_amount;
-                        }
-                    }
-                }
-                
-                // Detailed platform breakdown for the waiter
-                $waiterPlatformTotals = [];
-                foreach ($barOrders as $order) {
-                    foreach ($order->orderPayments as $payment) {
-                        if ($payment->payment_method === 'cash') continue;
-                        
-                        $provider = strtolower(trim($payment->mobile_money_number ?? 'mobile'));
-                        $label = 'MOBILE MONEY';
-                        if (str_contains($provider, 'm-pesa') || str_contains($provider, 'mpesa')) { $label = 'M-PESA'; }
-                        elseif (str_contains($provider, 'mixx')) { $label = 'MIXX BY YAS'; }
-                        elseif (str_contains($provider, 'halo')) { $label = 'HALOPESA'; }
-                        elseif (str_contains($provider, 'tigo')) { $label = 'TIGO PESA'; }
-                        elseif (str_contains($provider, 'airtel')) { $label = 'AIRTEL MONEY'; }
-                        elseif (str_contains($provider, 'nmb')) { $label = 'NMB BANK'; }
-                        elseif (str_contains($provider, 'crdb')) { $label = 'CRDB BANK'; }
-                        elseif (str_contains($provider, 'kcb')) { $label = 'KCB BANK'; }
-                        
-                        $waiterPlatformTotals[$label] = ($waiterPlatformTotals[$label] ?? 0) + $payment->amount;
-                    }
-                }
-
-                
-                // Re-calculate Total Recorded to match the above logic
-                $totalRecordedAmount = $cashCollected + $mobileMoneyCollected;
-                
-                $reconciliation = $waiter->dailyReconciliations->first();
-                
-                // Submitted amount: use reconciliation if exists, otherwise 0 (not yet submitted)
-                // Don't use totalPaidAmount here - that would show as submitted before reconciliation
-                $submittedAmount = $reconciliation ? $reconciliation->submitted_amount : 0;
-                
-                // Calculate difference: 
-                // If submitted, use submitted - total. Else use recorded - total.
-                $difference = ($submittedAmount > 0 || $reconciliation) 
-                              ? ($submittedAmount - $totalSales) 
-                              : ($totalRecordedAmount - $totalSales);
-                
-                // Determine status intelligently
-                $status = 'pending';
-                if ($reconciliation) {
-                    // If reconciliation exists, use its status
-                    $status = $reconciliation->status;
-                } else {
-                    // No reconciliation record - determine status based on payment
-                    if ($hasUnpaidOrders) {
-                        $status = 'pending'; // Still has unpaid orders
-                    } else if ($totalPaidAmount > 0 && abs($difference) < 0.01) {
-                        $status = 'paid'; // All orders paid and amounts match
-                    } else if ($totalPaidAmount > 0) {
-                        $status = 'partial'; // Some orders paid but amounts don't match
-                    }
-                }
-                
-                // Final amounts for the UI: Use reconciliation record if it exists
-                $finalCash = $reconciliation ? $reconciliation->cash_collected : $cashCollected;
-                $finalDigital = $reconciliation ? $reconciliation->mobile_money_collected : $mobileMoneyCollected;
-
-                return [
-                    'waiter' => $waiter,
-                    'total_sales' => $totalSales, // Bar sales only
-                    'bar_sales' => $barSales,
-                    'food_sales' => $foodSales,
-                    'total_orders' => $barOrdersCount, // Bar orders count only
-                    'bar_orders_count' => $barOrdersCount,
-                    'food_orders_count' => $foodOrdersCount,
-                    'has_unpaid_orders' => $hasUnpaidOrders,
-                    'cash_collected' => $finalCash,
-                    'mobile_money_collected' => $finalDigital,
-                    'recorded_cash' => $cashCollected,
-                    'recorded_digital' => $mobileMoneyCollected,
-                    'expected_amount' => $totalSales, // Expected = bar sales only
-                    'recorded_amount' => $totalRecordedAmount, // Amount recorded by waiter (from OrderPayments)
-                    'submitted_amount' => $submittedAmount, // Amount submitted/reconciled by counter
-                    'difference' => $difference, // Always calculate difference
-                    'status' => $status,
-                    'orders' => $barOrders, // Only bar orders
-                    'reconciliation' => $reconciliation,
-                    'platform_totals' => $waiterPlatformTotals
-                ];
-            })
+        $waiters = $waiters->sortByDesc('date')->values()
             ->filter(function($data) {
                 return $data['total_orders'] > 0; // Only show waiters with orders
             })
             ->sortByDesc('total_sales')
             ->values();
 
-        // Get an active accountant to handover to
-        $accountant = Staff::where('user_id', $ownerId)
+        // Get an active manager to handover to (accountant as fallback)
+        $manager = Staff::where('user_id', $ownerId)
             ->whereHas('role', function($q) {
-                $q->where('slug', 'accountant');
+                $q->where('slug', 'manager');
             })
             ->where('is_active', true)
             ->first();
 
-        // Check if there is already a handover today
+        if (!$manager) {
+            $manager = Staff::where('user_id', $ownerId)
+                ->whereHas('role', function($q) {
+                    $q->where('slug', 'accountant');
+                })
+                ->where('is_active', true)
+                ->first();
+        }
+
+        // Check if there is already a handover for the SELECTED shift or SELECTED date
         $todayHandover = null;
-        if ($currentStaff) {
+        if ($activeShift) {
+            $todayHandover = FinancialHandover::where('staff_shift_id', $activeShift->id)
+                ->first();
+        } 
+        
+        // If we are NOT in an active shift context and checking by date, check the date fallback
+        if (!$activeShift && !$todayHandover) {
             $todayHandover = FinancialHandover::where('user_id', $ownerId)
-                ->where('accountant_id', $currentStaff->id) // Current Counter
+                ->where('accountant_id', $currentStaff->id)
                 ->whereDate('handover_date', $date)
-                ->where('handover_type', 'staff_to_accountant')
+                ->where('department', 'bar')
+                ->orderBy('created_at', 'desc')
+                ->first();
+        }
+
+        // Determine which shift is most relevant for the 'Print Report' button
+        // If an active shift is running, we show the report for THAT shift.
+        // Otherwise we show the report for the most recently closed shift.
+        $latestClosedShift = $activeShift;
+        if (!$latestClosedShift) {
+            $latestClosedShift = \App\Models\StaffShift::where('staff_id', $currentStaff->id)
+                ->where('status', 'closed')
+                ->latest('closed_at')
                 ->first();
         }
 
@@ -275,10 +334,20 @@ class CounterReconciliationController extends Controller
             'nmb_amount' => 0,
             'crdb_amount' => 0,
             'kcb_amount' => 0,
+            'bank_card_amount' => 0,
         ];
 
+        // When calculating shift totals, only count orders paid by the person WHO OWNED THIS SHIFT
+        $shiftStaffId = $activeShift ? $activeShift->staff_id : ($currentStaff ? $currentStaff->id : null);
+
         foreach ($waiters as $data) {
-            foreach ($data['orders'] as $order) {
+            foreach (data_get($data, 'orders', []) as $order) {
+                // Determine payments to iterate over
+                // Ensure we only count orders where payment was collected by the shifts' counter person
+                if ($order->payment_status !== 'paid' || $order->paid_by_waiter_id != $shiftStaffId) {
+                    continue;
+                }
+
                 // Determine payments to iterate over
                 if ($order->orderPayments && $order->orderPayments->count() > 0) {
                     $payments = $order->orderPayments;
@@ -305,6 +374,8 @@ class CounterReconciliationController extends Controller
                             $expectedBreakdowns['mpesa_amount'] += $amount;
                         } elseif (str_contains($provider, 'mixx')) {
                             $expectedBreakdowns['mixx_amount'] += $amount;
+                        } elseif (str_contains($provider, 't-pesa') || str_contains($provider, 'tpesa')) {
+                            $expectedBreakdowns['tigo_pesa_amount'] += $amount; // Mapping T-Pesa to tigo_pesa key for now or add new
                         } elseif (str_contains($provider, 'halo')) {
                             $expectedBreakdowns['halopesa_amount'] += $amount;
                         } elseif (str_contains($provider, 'tigo')) {
@@ -317,11 +388,16 @@ class CounterReconciliationController extends Controller
                             $expectedBreakdowns['crdb_amount'] += $amount;
                         } elseif (str_contains($provider, 'kcb')) {
                             $expectedBreakdowns['kcb_amount'] += $amount;
+                        } elseif (str_contains($provider, 'nbc')) {
+                            $expectedBreakdowns['nmb_amount'] += $amount; // Map NBC to nmb for simplicity or add new
+                        } elseif ($payment->payment_method === 'card') {
+                            $expectedBreakdowns['bank_card_amount'] += $amount;
                         } else {
                             // If somehow generic mobile money or bank without explicit provider
-                            if (str_contains($payment->payment_method, 'bank') || $payment->payment_method === 'card') {
-                                // Defaulting unspecified banks to NMB to prevent loss (could adjust as needed)
+                            if (str_contains($payment->payment_method, 'bank')) {
                                 $expectedBreakdowns['nmb_amount'] += $amount;
+                            } elseif ($payment->payment_method === 'card') {
+                                $expectedBreakdowns['bank_card_amount'] += $amount;
                             } else {
                                 // default generic M-PESA
                                 $expectedBreakdowns['mpesa_amount'] += $amount;
@@ -332,7 +408,7 @@ class CounterReconciliationController extends Controller
             }
         }
 
-        return view('bar.counter.reconciliation', compact('waiters', 'date', 'accountant', 'todayHandover', 'expectedBreakdowns'));
+        return view('bar.counter.reconciliation', compact('waiters', 'week', 'displayDate', 'date', 'manager', 'todayHandover', 'expectedBreakdowns', 'latestClosedShift', 'shiftId'));
     }
 
     /**
@@ -414,7 +490,7 @@ class CounterReconciliationController extends Controller
         }
         
         $orders = $ordersQuery
-            ->whereDate('created_at', $validated['date'])
+            ->whereBetween('created_at', [$validated['date'] . ' 00:00:00', date('Y-m-d 23:59:59', strtotime($validated['date'] . ' +6 days'))])
             ->where('status', 'served')
             ->where('payment_status', '!=', 'paid')
             ->whereHas('items') // Only orders with drinks (bar items)
@@ -439,7 +515,7 @@ class CounterReconciliationController extends Controller
         }
         
         $expectedAmount = $expectedOrdersQuery
-            ->whereDate('created_at', $validated['date'])
+            ->whereBetween('created_at', [$validated['date'] . ' 00:00:00', date('Y-m-d 23:59:59', strtotime($validated['date'] . ' +6 days'))])
             ->where('status', 'served')
             ->whereHas('items') // Only bar orders
             ->with('items')
@@ -490,7 +566,7 @@ class CounterReconciliationController extends Controller
                 // Calculate submitted amount from OrderPayments (what waiters have recorded)
                 $allOrdersWithPaymentsQuery = BarOrder::query()
                     ->where('waiter_id', $waiter->id)
-                    ->whereDate('created_at', $validated['date'])
+                    ->whereBetween('created_at', [$validated['date'] . ' 00:00:00', date('Y-m-d 23:59:59', strtotime($validated['date'] . ' +6 days'))])
                     ->where('status', 'served')
                     ->whereHas('items') // Only bar orders
                     ->whereHas('orderPayments') // Must have recorded payments
@@ -518,7 +594,7 @@ class CounterReconciliationController extends Controller
             // Get bar orders for cash/mobile money calculation
             $barOrdersQuery = BarOrder::query()
                 ->where('waiter_id', $waiter->id)
-                ->whereDate('created_at', $validated['date'])
+                ->whereBetween('created_at', [$validated['date'] . ' 00:00:00', date('Y-m-d 23:59:59', strtotime($validated['date'] . ' +6 days'))])
                 ->where('status', 'served')
                 ->whereHas('items') // Only bar orders
                 ->with(['items', 'orderPayments']);
@@ -533,7 +609,13 @@ class CounterReconciliationController extends Controller
             foreach ($barOrders as $order) {
                 if ($order->orderPayments->count() > 0) {
                     foreach ($order->orderPayments as $payment) {
-                        $pKey = ($payment->payment_method === 'cash') ? 'cash' : strtolower(trim(str_replace(' ', '_', $payment->mobile_money_number ?? 'mobile')));
+                        if ($payment->payment_method === 'card' || $payment->payment_method === 'bank_transfer' || $payment->payment_method === 'bank') {
+                            $pKey = $payment->payment_method;
+                        } elseif ($payment->payment_method === 'cash') {
+                            $pKey = 'cash';
+                        } else {
+                            $pKey = strtolower(trim(str_replace(' ', '_', $payment->mobile_money_number ?? 'mobile')));
+                        }
                         $waiterPlatformTotals[$pKey] = ($waiterPlatformTotals[$pKey] ?? 0) + $payment->amount;
                     }
                 } else {
@@ -636,14 +718,22 @@ class CounterReconciliationController extends Controller
 
         $ownerId = $this->getOwnerId();
         $date = $request->get('date', now()->format('Y-m-d'));
-
-        // Check if current user is accountant
         $currentStaff = $this->getCurrentStaff();
         $isAccountant = $currentStaff && strtolower($currentStaff->role->name ?? '') === 'accountant';
 
         // Verify waiter belongs to owner (unless accountant)
         if (!$isAccountant && $waiter->user_id !== $ownerId) {
             return response()->json(['error' => 'Unauthorized'], 403);
+        }
+
+        $shiftId = $request->get('shift_id');
+        $activeShift = null;
+        if ($shiftId) {
+            $activeShift = \App\Models\StaffShift::find($shiftId);
+        } else {
+            $activeShift = \App\Models\StaffShift::where('staff_id', $currentStaff->id)
+                ->where('status', 'open')
+                ->first();
         }
 
         // Return all orders (both bar and food) for counter reconciliation view
@@ -657,6 +747,9 @@ class CounterReconciliationController extends Controller
         
         $orders = $ordersQuery
             ->whereDate('created_at', $date)
+            ->when($activeShift && !$isAccountant, function($q) use ($activeShift) {
+                $q->where('shift_id', $activeShift->id);
+            })
             ->with(['items.productVariant.product', 'kitchenOrderItems', 'table', 'orderPayments', 'paidByWaiter'])
             ->orderBy('created_at', 'desc')
             ->get();
@@ -678,14 +771,27 @@ class CounterReconciliationController extends Controller
         
         $request->validate([
             'cash_amount' => 'required|numeric|min:0',
+            'circulation_money' => 'nullable|numeric|min:0',
             'mpesa_amount' => 'nullable|numeric|min:0',
             'nmb_amount' => 'nullable|numeric|min:0',
             'kcb_amount' => 'nullable|numeric|min:0',
             'crdb_amount' => 'nullable|numeric|min:0',
+            'nbc_amount' => 'nullable|numeric|min:0',
+            'equity_amount' => 'nullable|numeric|min:0',
+            'absa_amount' => 'nullable|numeric|min:0',
+            'dtb_amount' => 'nullable|numeric|min:0',
+            'exim_amount' => 'nullable|numeric|min:0',
+            'azania_amount' => 'nullable|numeric|min:0',
+            'visa_amount' => 'nullable|numeric|min:0',
+            'mastercard_amount' => 'nullable|numeric|min:0',
             'mixx_amount' => 'nullable|numeric|min:0',
             'tigo_pesa_amount' => 'nullable|numeric|min:0',
             'airtel_money_amount' => 'nullable|numeric|min:0',
             'halopesa_amount' => 'nullable|numeric|min:0',
+            'stanbic_amount' => 'nullable|numeric|min:0',
+            'bank_card_amount' => 'nullable|numeric|min:0',
+            'bank_transfer_amount' => 'nullable|numeric|min:0',
+            'mobile_money_amount' => 'nullable|numeric|min:0',
         ]);
 
         // Calculate total amount
@@ -695,10 +801,22 @@ class CounterReconciliationController extends Controller
             'nmb' => $request->input('nmb_amount', 0),
             'kcb' => $request->input('kcb_amount', 0),
             'crdb' => $request->input('crdb_amount', 0),
+            'nbc' => $request->input('nbc_amount', 0),
+            'equity' => $request->input('equity_amount', 0),
+            'absa' => $request->input('absa_amount', 0),
+            'dtb' => $request->input('dtb_amount', 0),
+            'exim' => $request->input('exim_amount', 0),
+            'azania' => $request->input('azania_amount', 0),
+            'visa' => $request->input('visa_amount', 0),
+            'mastercard' => $request->input('mastercard_amount', 0),
             'mixx' => $request->input('mixx_amount', 0),
             'tigo_pesa' => $request->input('tigo_pesa_amount', 0),
             'airtel_money' => $request->input('airtel_money_amount', 0),
             'halopesa' => $request->input('halopesa_amount', 0),
+            'stanbic' => $request->input('stanbic_amount', 0),
+            'bank_card' => $request->input('bank_card_amount', 0),
+            'bank_transfer' => $request->input('bank_transfer_amount', 0),
+            'mobile_money' => $request->input('mobile_money_amount', 0),
         ];
         
         $totalAmount = array_sum($breakdown);
@@ -714,32 +832,75 @@ class CounterReconciliationController extends Controller
             return back()->with('error', 'Handover for this date already exists.');
         }
 
-        // Find an active accountant for the owner to be the recipient
-        $accountant = Staff::where('user_id', $ownerId)
+        // Find an active manager for the owner to be the recipient
+        $manager = Staff::where('user_id', $ownerId)
             ->whereHas('role', function($q) {
-                $q->where('slug', 'accountant');
+                $q->where('slug', 'manager');
             })
             ->where('is_active', true)
             ->first();
 
+        // If no manager, try accountant as fallback
+        if (!$manager) {
+            $manager = Staff::where('user_id', $ownerId)
+                ->whereHas('role', function($q) {
+                    $q->where('slug', 'accountant');
+                })
+                ->where('is_active', true)
+                ->first();
+        }
+
+        // 1. Find the current open shift BEFORE creating handover
+        $openShift = \App\Models\StaffShift::where('staff_id', $staff->id)->where('status', 'open')->first();
+
+        // Calculate Profit for this handover
+        $profitAmount = \App\Models\OrderItem::whereHas('order', function($q) use ($ownerId, $date, $openShift) {
+            $q->where('user_id', $ownerId)
+              ->whereDate('created_at', $date)
+              ->where('status', 'served');
+            
+            // Filter by the specific shift to ensure multiple shifts on the same day don't aggregate profits
+            if ($openShift) $q->where('shift_id', $openShift->id);
+        })
+        ->join('product_variants', 'order_items.product_variant_id', '=', 'product_variants.id')
+        ->selectRaw('SUM((order_items.unit_price - COALESCE(product_variants.buying_price_per_unit, 0)) * order_items.quantity) as profit')
+        ->value('profit') ?? 0;
+
         $handover = FinancialHandover::create([
             'user_id' => $ownerId,
             'accountant_id' => $staff->id,
-            'handover_type' => 'staff_to_accountant',
-            'recipient_id' => $accountant ? $accountant->id : null,
+            'staff_shift_id' => $openShift ? $openShift->id : null,
+            'handover_type' => 'staff_to_manager',
+            'recipient_id' => $manager ? $manager->id : null,
             'department' => 'bar',
             'amount' => $totalAmount,
+            'circulation_money' => $request->input('circulation_money', 0),
+            'profit_amount' => $profitAmount,
             'payment_breakdown' => $breakdown,
             'handover_date' => $date,
             'status' => 'pending',
             'notes' => $request->notes
         ]);
 
-        // No longer auto-reconciling here.
-        // The Counter Staff MUST explicitly reconcile each waiter in the table 
-        // BEFORE submitting the final handover. This ensures all shortages, 
-        // surpluses, and paid/unpaid statuses are accurately recorded and 
-        // not overwritten by automatic order matching.
+        // 2. Automatically close the Counter's shift when they complete handover
+        if ($openShift) {
+            $cashAmountInput = $request->input('cash_amount', 0);
+            $digitalAmountTotal = $totalAmount - $cashAmountInput;
+            
+            // Expected closing balance should be: Opening Cash + Cash collected from waiters
+            // For now, we use the totalAmount as the basis but subtract digital components for the 'cash' tracking
+            $expectedCashAtHand = $openShift->opening_balance + $cashAmountInput; 
+
+            $openShift->update([
+                'closing_balance' => $cashAmountInput,
+                'total_sales_cash' => $cashAmountInput,
+                'total_sales_digital' => $digitalAmountTotal,
+                'expected_closing_balance' => $expectedCashAtHand,
+                'status' => 'closed',
+                'closed_at' => now(),
+                'notes' => 'Shift closed automatically via Manager Handover.'
+            ]);
+        }
 
         // Send SMS notification to accountant
         try {
@@ -749,7 +910,7 @@ class CounterReconciliationController extends Controller
             \Log::error('SMS notification failed for handover: ' . $e->getMessage());
         }
 
-        return back()->with('success', 'Handover mapped and sent to Accountant successful! Awaiting confirmation.');
+        return back()->with('success', 'Handover mapped and sent to Manager successfully! Awaiting confirmation.');
     }
 
     /**

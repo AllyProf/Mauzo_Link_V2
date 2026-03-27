@@ -55,18 +55,20 @@ class StockTransferSmsService
             }
         }
 
-        // Also send to Stock Keeper(s) as confirmation if approved
-        if ($status === 'approved') {
-            $stockKeepers = Staff::where('user_id', $ownerId)
-                ->where('is_active', true)
-                ->whereHas('role', function($query) {
-                    $query->whereIn('name', ['Stock Keeper', 'Stockkeeper']);
-                })->get();
+        // Send to Managers AND Stock Keepers
+        $roles = ($status === 'approved' || $status === 'completed') 
+            ? ['manager', 'stock-keeper'] 
+            : ['manager'];
 
-            foreach ($stockKeepers as $sk) {
-                if ($sk->phone_number) {
-                    $this->smsService->sendSms($sk->phone_number, $message);
-                }
+        $notifiableStaff = Staff::where('user_id', $ownerId)
+            ->where('is_active', true)
+            ->whereHas('role', function($query) use ($roles) {
+                $query->whereIn('slug', $roles);
+            })->get();
+
+        foreach ($notifiableStaff as $staff) {
+            if ($staff->phone_number) {
+                $this->smsService->sendSms($staff->phone_number, $message);
             }
         }
 

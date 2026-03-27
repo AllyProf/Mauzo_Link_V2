@@ -56,8 +56,16 @@ class StaffController extends Controller
         // Get user's enabled business types
         $businessTypes = $user->enabledBusinessTypes()->get();
 
-        // Get user's roles for dropdown (only roles created by this owner)
-        $roles = $user->ownedRoles()->where('is_active', true)->get();
+        // Get user's roles for dropdown (only Manager, Counter and Waiter roles)
+        $roles = $user->ownedRoles()->where('is_active', true)
+            ->where(function($q) {
+                $q->where(function($sq) {
+                    $sq->where('name', 'LIKE', '%manager%')
+                      ->orWhere('name', 'LIKE', '%counter%')
+                      ->orWhere('name', 'LIKE', '%waiter%')
+                      ->orWhere('name', 'LIKE', '%super admin%');
+                })->where('name', 'NOT LIKE', '%HR%')->where('name', 'NOT LIKE', '%Human Resources%');
+            })->get();
 
         if ($roles->count() == 0) {
             return redirect()->route('business-configuration.edit')
@@ -112,7 +120,7 @@ class StaffController extends Controller
             'location_branch' => 'nullable|string|max:255',
             'business_type_id' => 'nullable|exists:business_types,id',
             'role_id' => 'required|exists:roles,id',
-            'salary_paid' => 'required|numeric|min:0',
+            'salary_paid' => 'nullable|numeric|min:0',
             'religion' => 'nullable|string|max:100',
             'nida_attachment' => 'nullable|file|mimes:pdf,jpg,jpeg,png|max:5120', // 5MB max
             'voter_id_attachment' => 'nullable|file|mimes:pdf,jpg,jpeg,png|max:5120',
@@ -165,7 +173,7 @@ class StaffController extends Controller
             'location_branch' => $validated['location_branch'] ?? null,
             'business_type_id' => $validated['business_type_id'] ?? null,
             'role_id' => $validated['role_id'],
-            'salary_paid' => $validated['salary_paid'],
+            'salary_paid' => $validated['salary_paid'] ?? 0,
             'religion' => $validated['religion'] ?? null,
             'nida_attachment' => $nidaAttachment,
             'voter_id_attachment' => $voterIdAttachment,
@@ -191,9 +199,9 @@ class StaffController extends Controller
             return redirect()->route('login');
         }
         
-        // Check permission (Manager role has all permissions)
+        // Check permission (Manager / Super Admin role has all permissions)
         if (!$this->hasPermission('staff', 'view')) {
-            \Log::warning('User denied access to staff list', [
+            \Illuminate\Support\Facades\Log::warning('User denied access to staff list', [
                 'is_staff' => session('is_staff'),
                 'staff_id' => session('staff_id'),
                 'has_permission' => $this->hasPermission('staff', 'view')
@@ -219,10 +227,7 @@ class StaffController extends Controller
         $staffQuery = Staff::where('user_id', $ownerId)
             ->with(['role', 'businessType']);
             
-        // Filter by active location if context is set
-        if (session('active_location')) {
-            $staffQuery->where('location_branch', session('active_location'));
-        }
+        $staff = $staffQuery->orderBy('created_at', 'desc')->get();
 
         $staff = $staffQuery->orderBy('created_at', 'desc')->get();
 
@@ -230,8 +235,7 @@ class StaffController extends Controller
         $stats = [
             'total' => $staff->count(),
             'active' => $staff->where('is_active', true)->count(),
-            'total_salary' => $staff->sum('salary_paid'),
-            'branches' => $staff->pluck('location_branch')->unique()->filter()->count() ?: 1
+            'total_salary' => $staff->sum('salary_paid')
         ];
 
         return view('staff.index', compact('staff', 'stats'));
@@ -282,10 +286,24 @@ class StaffController extends Controller
             return in_array($roleNameLower, $suggestedRoleNames);
         });
         
-        // If no matching roles found, return all roles as fallback
+        // If no matching roles found, return all roles as fallback (but still filtered by manager/counter/waiter/super admin)
         if ($filteredRoles->isEmpty()) {
             $filteredRoles = $allRoles;
         }
+        
+        // Final strict filter to ensure only Manager, Counter, Waiter, and Super Admin roles are shown, and NO HR
+        $filteredRoles = $filteredRoles->filter(function($role) {
+            $name = strtolower($role->name);
+            $isAllowedRole = str_contains($name, 'manager') || 
+                             str_contains($name, 'counter') || 
+                             str_contains($name, 'waiter') || 
+                             str_contains($name, 'super admin') ||
+                             str_contains($name, 'super-admin');
+            
+            $isHr = str_contains($name, 'hr') || str_contains($name, 'human resource');
+            
+            return $isAllowedRole && !$isHr;
+        });
         
         // Return filtered roles
         return response()->json([
@@ -297,6 +315,39 @@ class StaffController extends Controller
                 ];
             })->values()
         ]);
+    }
+
+    /**
+     * Check if the current user or staff has a specific permission.
+     * This method is assumed to be part of the controller or a trait used by it.
+     * It's being added/updated based on the user's instruction.
+     */
+    protected function hasPermission(string $module, string $action): bool
+    {
+        // If the current user is a staff member
+        if (session('is_staff')) {
+            $staff = Staff::find(session('staff_id'));
+            if ($staff && $staff->role) {
+                // Manager / Super Admin roles always have all permissions
+                $roleName = strtolower($staff->role->name);
+                if ($roleName === 'manager' || $roleName === 'super admin') {
+                    return true;
+                }
+                return $staff->role->hasPermission($module, $action);
+            }
+            return false; // Staff not found or no role assigned
+        }
+
+        // If it's a regular user (owner)
+        $user = $this->getCurrentUser();
+        if (!$user) {
+            return false;
+        }
+
+        // Owners (users) are assumed to have all permissions for their own account
+        // unless a more granular permission system is implemented for owners themselves.
+        // For the context of staff management, the owner implicitly has all rights.
+        return true;
     }
 
     /**
@@ -331,7 +382,8 @@ class StaffController extends Controller
 
         // Create default roles that don't exist yet
         foreach ($suggestedRoles as $roleSuggestion) {
-            $roleNameLower = strtolower($roleSuggestion['name']);
+            $roleName = is_array($roleSuggestion) ? ($roleSuggestion['name'] ?? '') : (string)$roleSuggestion;
+            $roleNameLower = strtolower($roleName);
             
             // Check if role already exists
             if ($existingRoles->has($roleNameLower)) {
@@ -406,8 +458,16 @@ class StaffController extends Controller
         // Get user's enabled business types
         $businessTypes = $user->enabledBusinessTypes()->get();
         
-        // Get user's roles for dropdown
-        $roles = $user->ownedRoles()->where('is_active', true)->get();
+        // Get user's roles for dropdown (filtered)
+        $roles = $user->ownedRoles()->where('is_active', true)
+            ->where(function($q) {
+                $q->where(function($sq) {
+                    $sq->where('name', 'LIKE', '%manager%')
+                      ->orWhere('name', 'LIKE', '%counter%')
+                      ->orWhere('name', 'LIKE', '%waiter%')
+                      ->orWhere('name', 'LIKE', '%super admin%');
+                })->where('name', 'NOT LIKE', '%HR%')->where('name', 'NOT LIKE', '%Human Resources%');
+            })->get();
 
         return view('staff.edit', compact('staff', 'roles', 'businessTypes'));
     }
@@ -450,7 +510,7 @@ class StaffController extends Controller
             'location_branch' => 'nullable|string|max:255',
             'business_type_id' => 'nullable|exists:business_types,id',
             'role_id' => 'required|exists:roles,id',
-            'salary_paid' => 'required|numeric|min:0',
+            'salary_paid' => 'nullable|numeric|min:0',
             'religion' => 'nullable|string|max:100',
             'is_active' => 'nullable|boolean',
             'nida_attachment' => 'nullable|file|mimes:pdf,jpg,jpeg,png|max:5120',
@@ -500,6 +560,7 @@ class StaffController extends Controller
         }
 
         // Update staff record
+        $validated['salary_paid'] = $validated['salary_paid'] ?? 0;
         $staff->update($validated);
 
         return redirect()->route('staff.index')
@@ -518,7 +579,7 @@ class StaffController extends Controller
         }
         
         // Check permission
-        if (!$this->hasPermission('staff', 'edit')) {
+        if (!$this->hasPermission('staff', 'delete')) {
             return redirect()->route('dashboard')
                 ->with('error', 'You do not have permission to delete staff members.');
         }
@@ -528,19 +589,48 @@ class StaffController extends Controller
 
         // Delete associated files
         if ($staff->nida_attachment) {
-            Storage::disk('public')->delete($staff->nida_attachment);
+            \Illuminate\Support\Facades\Storage::disk('public')->delete($staff->nida_attachment);
         }
         if ($staff->voter_id_attachment) {
-            Storage::disk('public')->delete($staff->voter_id_attachment);
+            \Illuminate\Support\Facades\Storage::disk('public')->delete($staff->voter_id_attachment);
         }
         if ($staff->professional_certificate_attachment) {
-            Storage::disk('public')->delete($staff->professional_certificate_attachment);
+            \Illuminate\Support\Facades\Storage::disk('public')->delete($staff->professional_certificate_attachment);
         }
 
         $staff->delete();
 
         return redirect()->route('staff.index')
             ->with('success', 'Staff member deleted successfully!');
+    }
+
+    /**
+     * Reset staff password
+     */
+    public function resetPassword(Request $request, $id)
+    {
+        $user = $this->getCurrentUser();
+        
+        if (!$user) {
+            return redirect()->route('login');
+        }
+        
+        // Check permission
+        if (!$this->hasPermission('staff', 'reset_password')) {
+            return redirect()->route('staff.index')
+                ->with('error', 'You do not have permission to reset staff passwords.');
+        }
+        
+        $ownerId = $this->getOwnerId();
+        $staff = Staff::where('user_id', $ownerId)->findOrFail($id);
+        
+        // Generate new random password
+        $newPassword = \Illuminate\Support\Str::random(8);
+        $staff->password = \Illuminate\Support\Facades\Hash::make($newPassword);
+        $staff->save();
+        
+        return redirect()->route('staff.index')
+            ->with('success', "Password for {$staff->full_name} has been reset to: <strong>{$newPassword}</strong>. Please share this with the staff member.");
     }
 
     /**

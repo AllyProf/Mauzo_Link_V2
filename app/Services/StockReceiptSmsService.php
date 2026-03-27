@@ -62,10 +62,7 @@ class StockReceiptSmsService
         $stockKeepers = Staff::where('user_id', $ownerId)
             ->where('is_active', true)
             ->whereHas('role', function($query) {
-                $query->where(function($q) {
-                    $q->where('name', 'Stock Keeper')
-                      ->orWhere('name', 'Stockkeeper');
-                });
+                $query->whereIn('slug', ['stock-keeper', 'stockkeeper']);
             })
             ->get();
 
@@ -95,30 +92,29 @@ class StockReceiptSmsService
         $counterStaff = Staff::where('user_id', $ownerId)
             ->where('is_active', true)
             ->whereHas('role', function($query) {
-                $query->where('name', 'Counter')
-                      ->orWhere('name', 'Bar Counter');
+                $query->whereIn('slug', ['counter', 'bar-counter', 'bar_counter']);
             })
             ->get();
 
         foreach ($counterStaff as $counter) {
             if ($counter->phone_number) {
-                $result = $this->smsService->sendSms($counter->phone_number, $counterMessage);
-                
-                if ($result['success']) {
-                    $sentCount++;
-                    \Log::info('Stock receipt SMS sent to counter staff', [
-                        'counter_id' => $counter->id,
-                        'receipt_id' => $stockReceipt->id,
-                        'phone' => $counter->phone_number
-                    ]);
-                } else {
-                    $failedCount++;
-                    \Log::error('Failed to send stock receipt SMS to counter staff', [
-                        'counter_id' => $counter->id,
-                        'receipt_id' => $stockReceipt->id,
-                        'error' => $result['error'] ?? 'Unknown error'
-                    ]);
-                }
+                $this->smsService->sendSms($counter->phone_number, $counterMessage);
+                $sentCount++;
+            }
+        }
+
+        // Send SMS to Managers
+        $managers = Staff::where('user_id', $ownerId)
+            ->where('is_active', true)
+            ->whereHas('role', function($query) {
+                $query->where('slug', 'manager');
+            })
+            ->get();
+
+        foreach ($managers as $manager) {
+            if ($manager->phone_number) {
+                $this->smsService->sendSms($manager->phone_number, $stockKeeperMessage);
+                $sentCount++;
             }
         }
 

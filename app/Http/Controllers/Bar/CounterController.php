@@ -39,7 +39,7 @@ class CounterController extends Controller
             ->whereNotNull('waiter_id')
             ->with(['waiter', 'items.productVariant.product', 'table', 'paidByWaiter', 'orderPayments'])
             ->orderBy('created_at', 'desc')
-            ->paginate(20);
+            ->paginate(10);
 
         // Get order counts by status
         $pendingCount = BarOrder::where('user_id', $ownerId)
@@ -216,6 +216,9 @@ class CounterController extends Controller
 
                         // Mark item as served to prevent double deduction
                         $orderItem->update(['is_served' => true]);
+
+                        // Check low stock and notify
+                        $this->notifyLowStock($orderItem->product_variant_id, (float)$counterStock->quantity, $ownerId);
                     }
                 }
 
@@ -230,7 +233,7 @@ class CounterController extends Controller
             ]);
         } catch (\Exception $e) {
             DB::rollBack();
-            \Log::error('Failed to update order status: ' . $e->getMessage());
+            Log::error('Failed to update order status: ' . $e->getMessage());
             return response()->json([
                 'error' => 'Failed to update order status: ' . $e->getMessage(),
             ], 500);
@@ -370,15 +373,151 @@ class CounterController extends Controller
         }
 
         $ownerId = $this->getOwnerId();
+        $staff = $this->getCurrentStaff();
 
-        // Get order statistics
+        // Check for active shift
+        $activeShift = \App\Models\StaffShift::where('staff_id', $staff->id)
+            ->where('status', 'open')
+            ->first();
+
+        if (!$activeShift) {
+            // Get detailed counter stock similar to counterStock() method
+            $counterVariantIds = \App\Models\StockLocation::where('user_id', $ownerId)
+                ->where('location', 'counter')
+                ->pluck('product_variant_id');
+
+            $variants = ProductVariant::whereIn('id', $counterVariantIds)
+                ->with(['product', 'stockLocations' => function($query) use ($ownerId) {
+                    $query->where('user_id', $ownerId)->where('location', 'counter');
+                }])
+                ->get()
+                ->map(function($variant) use ($ownerId) {
+                    $stock = $variant->stockLocations->where('location', 'counter')->first();
+                    $qty = $stock ? (float)$stock->quantity : 0.0;
+                    
+                    // Add open bottle contents if applicable for precise verification
+                    if ($variant->can_sell_in_tots && $variant->total_tots > 0) {
+                        $openBottle = \App\Models\OpenBottle::where('user_id', $ownerId)
+                            ->where('product_variant_id', $variant->id)
+                            ->first();
+                        if ($openBottle) {
+                            $qty += ($openBottle->tots_remaining / (float)$variant->total_tots);
+                        }
+                    }
+
+                    return [
+                        'id' => $variant->id,
+                        'product_name' => $variant->product->name,
+                        'variant_name' => $variant->display_name,
+                        'variant' => ($variant->measurement ?? '') . ($variant->unit ?? '') . ' - ' . ($variant->packaging ?? ''),
+                        'brand' => $variant->product->brand ?? 'N/A',
+                        'category' => $variant->product->category ?? 'General',
+                        'measurement' => $variant->measurement,
+                        'unit' => $variant->unit ?? '',
+                        'portion_unit_name' => $variant->portion_unit_name,
+                        'quantity' => $qty,
+                        'formatted_quantity' => $variant->formatUnits($qty),
+                        'quantity_in_tots' => round($qty * ($variant->total_tots ?? 1)),
+                        'selling_price' => $stock->selling_price ?? $variant->selling_price_per_unit ?? 0,
+                        'selling_price_per_tot' => $stock->selling_price_per_tot ?? $variant->selling_price_per_tot ?? 0,
+                        'can_sell_in_tots' => $variant->can_sell_in_tots,
+                        'total_tots' => $variant->total_tots,
+                        'items_per_package' => $variant->items_per_package ?? 1,
+                        'packaging_type' => $variant->packaging ?: 'Bottle',
+                        'product_image' => $variant->product->image ?? null,
+                        'is_low_stock' => $qty < 10,
+                    ];
+                })
+                ->groupBy(function($v) {
+                    return $v['variant_name'] . '|' . $v['measurement'] . '|' . $v['unit'] . '|' . $v['category'];
+                })
+                ->map(function($group) {
+                    $first = $group->first();
+                    $totalQty = $group->sum('quantity');
+                    $totalTots = $group->sum('quantity_in_tots');
+                    
+                    // We need a real variant instance to call formatUnits on the total sum
+                    $dummyVariant = \App\Models\ProductVariant::find($first['id']);
+                    
+                    return array_merge($first, [
+                        'quantity' => $totalQty,
+                        'formatted_quantity' => $dummyVariant ? $dummyVariant->formatUnits($totalQty) : $first['formatted_quantity'],
+                        'quantity_in_tots' => $totalTots,
+                        'is_low_stock' => $totalQty < 10,
+                    ]);
+                })
+                ->values();
+
+            // Normalize categories to avoid near-duplicate filter pills
+            $catNorm = function(string $raw): string {
+                $map = [
+                    'water' => 'Water', 'drinking water' => 'Water', 'mineral water' => 'Water',
+                    'still water' => 'Water', 'sparkling water' => 'Water',
+                    'energy' => 'Energy Drinks', 'energies' => 'Energy Drinks',
+                    'energy drink' => 'Energy Drinks', 'energy drinks' => 'Energy Drinks',
+                    'soft drink' => 'Soft Drinks', 'soft drinks' => 'Soft Drinks',
+                    'soda' => 'Soft Drinks', 'sodas' => 'Soft Drinks', 'carbonated' => 'Soft Drinks',
+                    'juice' => 'Juice', 'juices' => 'Juice', 'fresh juice' => 'Juice',
+                    'beer' => 'Beer', 'beers' => 'Beer', 'lager' => 'Beer',
+                    'wine' => 'Wines', 'wines' => 'Wines', 'wine collection' => 'Wines',
+                    'red wine' => 'Wines', 'white wine' => 'Wines',
+                    'spirit' => 'Spirits', 'spirits' => 'Spirits', 'whiskey' => 'Spirits',
+                    'whisky' => 'Spirits', 'vodka' => 'Spirits', 'gin' => 'Spirits',
+                    'rum' => 'Spirits', 'tequila' => 'Spirits', 'brandy' => 'Spirits', 'liqueur' => 'Spirits',
+                ];
+                return $map[strtolower(trim($raw))] ?? ucwords($raw);
+            };
+            $variants = $variants->map(function($v) use ($catNorm) {
+                $v['category'] = $catNorm($v['category']);
+                return $v;
+            });
+            // Define keywords to filter out of brands (avoid duplicates)
+            $catKeywords = ['water', 'drinking water', 'mineral water', 'energy', 'energies', 'energizer', 'energizers', 'soft drink', 'soda', 'beer', 'wine', 'spirit', 'juice'];
+            
+            $categories = $variants->pluck('category')->unique()->sort()->values();
+            $brands = $variants->pluck('brand')->unique()->filter(function($b) use ($catKeywords) {
+                if(empty($b) || strtolower($b) == 'n/a') return false;
+                if(stripos($b, 'bonite') !== false) return false;
+                if(in_array(strtolower(trim($b)), $catKeywords)) return false;
+                return true;
+            })->sort()->values();
+
+            // Get last shift for reference (opening balance)
+            $lastShift = \App\Models\StaffShift::where('staff_id', $staff->id)
+                ->where('status', 'closed')
+                ->latest()
+                ->first();
+                
+            return view('bar.counter.dashboard', [
+                'needs_shift' => true,
+                'last_closing_balance' => $lastShift ? $lastShift->closing_balance : 0,
+                'variants' => $variants,
+                'categories' => $categories,
+                'brands' => $brands,
+                'pendingOrders' => 0,
+                'todayRevenue' => 0,
+                'counterStockItems' => count($variants),
+                'lowStockItems' => 0,
+                'lowStockItemsList' => collect([]),
+                'tables' => [],
+                'waiters' => [],
+            ]);
+        }
+
+        // Shift stats were moved to closeShiftPage() for a dedicated closer view
+        $shiftRevenue = 0;
+        $shiftOrderCount = 0;
+        $shiftWaiterBreakdown = collect([]);
+        $shiftStockRemains = collect([]);
+
         $todayOrders = BarOrder::where('user_id', $ownerId)
             ->whereDate('created_at', today())
             ->count();
 
         $pendingOrders = BarOrder::where('user_id', $ownerId)
             ->whereNotNull('waiter_id')
-            ->where('status', 'pending')
+            ->whereIn('status', ['pending', 'served'])
+            ->where('payment_status', '!=', 'paid')
             ->count();
 
         $todayRevenue = BarOrder::where('user_id', $ownerId)
@@ -409,25 +548,14 @@ class CounterController extends Controller
         })
         ->count();
 
-        // Get pending stock transfer requests (transfers requested by counter/owner)
-        // Since transfers are always warehouse to counter, we count all pending transfers
-        $pendingTransfers = StockTransfer::where('user_id', $ownerId)
-            ->where('status', 'pending')
-            ->count();
-
-        // Get warehouse stock statistics
-        $warehouseStockItems = ProductVariant::whereHas('product', function($query) use ($ownerId) {
-            $query->where('user_id', $ownerId);
-        })
-        ->whereHas('stockLocations', function($query) use ($ownerId) {
-            $query->where('user_id', $ownerId)->where('location', 'warehouse')->where('quantity', '>', 0);
-        })
-        ->count();
-
         // Get low stock threshold from settings
         $lowStockThreshold = \App\Models\SystemSetting::get('low_stock_threshold_' . $ownerId, 10);
         $criticalStockThreshold = \App\Models\SystemSetting::get('critical_stock_threshold_' . $ownerId, 5);
         
+        // Removed: Warehouse Stock and Pending Transfers (as warehouse is deprecated for counter model)
+        $pendingTransfers = 0;
+        $warehouseStockItems = 0;
+
         // Get low stock items (both warehouse and counter)
         $lowStockItemsList = ProductVariant::whereHas('product', function($query) use ($ownerId) {
             $query->where('user_id', $ownerId);
@@ -437,89 +565,119 @@ class CounterController extends Controller
         }])
         ->get()
         ->filter(function($variant) use ($lowStockThreshold) {
-            $warehouseStock = $variant->stockLocations->where('location', 'warehouse')->first();
             $counterStock = $variant->stockLocations->where('location', 'counter')->first();
-            $warehouseQty = $warehouseStock ? $warehouseStock->quantity : 0;
             $counterQty = $counterStock ? $counterStock->quantity : 0;
-            $totalQty = $warehouseQty + $counterQty;
-            return $totalQty > 0 && $totalQty < $lowStockThreshold;
+            return $counterQty > 0 && $counterQty < $lowStockThreshold;
         })
         ->take(10)
         ->map(function($variant) use ($ownerId, $criticalStockThreshold) {
-            $warehouseStock = $variant->stockLocations->where('location', 'warehouse')->first();
             $counterStock = $variant->stockLocations->where('location', 'counter')->first();
-            $warehouseQty = $warehouseStock ? $warehouseStock->quantity : 0;
             $counterQty = $counterStock ? $counterStock->quantity : 0;
-            $totalQty = $warehouseQty + $counterQty;
             
             return [
                 'id' => $variant->id,
-                'product_name' => $variant->product->name,
+                'product_name' => $variant->display_name,
                 'variant' => $variant->measurement,
-                'warehouse_qty' => $warehouseQty,
                 'counter_qty' => $counterQty,
-                'total_qty' => $totalQty,
-                'is_critical' => $totalQty < $criticalStockThreshold,
+                'is_critical' => $counterQty < $criticalStockThreshold,
             ];
         });
 
-        // Recent stock transfer requests
-        $recentTransferRequests = StockTransfer::where('user_id', $ownerId)
-            ->with(['productVariant.product', 'requestedBy'])
-            ->orderBy('created_at', 'desc')
-            ->limit(5)
+        // Calculate Shift Specific Stats
+        $shiftRevenue = BarOrder::where('user_id', $ownerId)
+            ->where('shift_id', $activeShift->id)
+            ->where('payment_status', 'paid')
+            ->sum('total_amount');
+            
+        $shiftOrderCount = BarOrder::where('user_id', $ownerId)
+            ->where('shift_id', $activeShift->id)
+            ->count();
+
+        // Get waiters for POS selection
+        $waiters = Staff::where('user_id', $ownerId)
+            ->where('is_active', true)
+            ->whereHas('role', function($query) {
+                $query->whereIn('slug', ['waiter', 'counter']);
+            })
             ->get();
+        
+        $tables = \App\Models\BarTable::where('user_id', $ownerId)->get();
+        $variants = ProductVariant::whereHas('product', function($query) use ($ownerId) {
+            $query->where('user_id', $ownerId);
+        })->with('product')->get();
+
+
+
+        // Recent stock transfer requests (Deprecated for this version)
+        $recentTransferRequests = collect([]);
+
 
         // Recent orders
         $recentOrders = BarOrder::where('user_id', $ownerId)
             ->with(['waiter', 'items.productVariant.product', 'table'])
             ->orderBy('created_at', 'desc')
-            ->limit(10)
+            ->limit(3)
             ->get();
 
         // --- NEW POS DATA FOR COUNTER ---
         // Get all products with counter stock
         $variants = ProductVariant::whereHas('product', function($query) use ($ownerId) {
-            $query->where('user_id', $ownerId)
-                  ->where(function($q) {
-                      $q->where('category', 'like', '%beverage%')
-                        ->orWhere('category', 'like', '%drink%')
-                        ->orWhere('category', 'like', '%alcohol%')
-                        ->orWhere('category', 'like', '%beer%')
-                        ->orWhere('category', 'like', '%wine%')
-                        ->orWhere('category', 'like', '%spirit%');
-                  });
+            $query->where('user_id', $ownerId);
         })
         ->with(['product', 'stockLocations' => function($query) use ($ownerId) {
             $query->where('user_id', $ownerId)
                   ->where('location', 'counter');
         }])
         ->get()
-        ->filter(function($variant) {
-            $counterStock = $variant->stockLocations->where('location', 'counter')->first();
-            return $counterStock && $counterStock->quantity > 0;
-        })
-        ->map(function($variant) {
+        ->map(function($variant) use ($ownerId) {
             $counterStock = $variant->stockLocations->where('location', 'counter')->first();
             $category = $variant->product->category ?? '';
             $isAlcoholic = stripos($category, 'alcoholic') !== false;
             
+            $fullBottles = $counterStock ? (float)$counterStock->quantity : 0.0;
+            $openTotsRemaining = 0;
+            
+            // Add open bottle contents if applicable
+            if ($variant->can_sell_in_tots && $variant->total_tots > 0) {
+                $openBottle = \App\Models\OpenBottle::where('user_id', $ownerId)
+                    ->where('product_variant_id', $variant->id)
+                    ->first();
+                if ($openBottle) {
+                    $openTotsRemaining = $openBottle->tots_remaining;
+                    $fullBottles += ($openTotsRemaining / (float)$variant->total_tots);
+                }
+            }
+
+            $totalTots = round($fullBottles * ($variant->total_tots ?? 1));
+
             return [
                 'id' => $variant->id,
                 'product_name' => $variant->product->name,
                 'variant_name' => $variant->name,
-                'variant' => $variant->measurement . ' - ' . $variant->packaging,
-                'quantity' => $counterStock->quantity,
+                'variant' => ($variant->measurement ?? '') . ($variant->unit ?? '') . ' - ' . ($variant->packaging ?? ''),
+                'measurement' => $variant->measurement,
+                'unit' => $variant->unit ?? '',
+                'portion_unit_name' => $variant->portion_unit_name,
+                'quantity' => $fullBottles,
+                'formatted_quantity' => $variant->formatUnits($fullBottles),
+                'quantity_in_tots' => $totalTots,
                 'selling_price' => $counterStock->selling_price ?? $variant->selling_price_per_unit ?? 0,
                 'selling_price_per_tot' => $counterStock->selling_price_per_tot ?? $variant->selling_price_per_tot ?? 0,
                 'can_sell_in_tots' => $variant->can_sell_in_tots,
                 'total_tots' => $variant->total_tots,
                 'items_per_package' => $variant->items_per_package ?? 1,
-                'packaging_type' => $variant->packaging ?? 'Packages',
+                'packaging_type' => $variant->packaging ?: 'Bottle',
                 'category' => $category,
                 'is_alcoholic' => $isAlcoholic,
                 'product_image' => $variant->product->image ?? null,
+                'low_stock_threshold' => $variant->low_stock_threshold ?? 10,
+                'is_low_stock' => $fullBottles < ($variant->low_stock_threshold ?? 10),
             ];
+        })
+        ->filter(function($v) {
+            // Hide if total stock (decimal) is 0. 
+            // This also keeps partial bottles (e.g. 0.2 bottles/1 glass) visible.
+            return $v['quantity'] > 0;
         });
 
         // Get all active tables
@@ -541,11 +699,8 @@ class CounterController extends Controller
             });
 
         // Get all active food items
-        $foodItems = FoodItem::where('user_id', $ownerId)
-            ->where('is_available', true)
-            ->orderBy('sort_order')
-            ->orderBy('name')
-            ->get();
+        // Counter only handles drinks, no food items
+        $foodItems = collect([]);
 
         // Get completed and served orders (for history view in POS)
         $completedOrders = BarOrder::where('user_id', $ownerId)
@@ -564,6 +719,13 @@ class CounterController extends Controller
 
         $staff = $this->getCurrentStaff();
 
+        $waiters = \App\Models\Staff::where('user_id', $ownerId)
+            ->where('is_active', true)
+            ->whereHas('role', function($query) {
+                $query->where('name', 'Waiter');
+            })
+            ->get();
+
         return view('bar.counter.dashboard', compact(
             'todayOrders',
             'pendingOrders',
@@ -579,13 +741,283 @@ class CounterController extends Controller
             'foodItems',
             'tables',
             'completedOrders',
+            'staff',
+            'waiters',
+            'activeShift',
+            'shiftRevenue',
+            'shiftOrderCount',
+            'shiftWaiterBreakdown',
+            'shiftStockRemains'
+        ));
+    }
+
+    /**
+     * Store New Shift
+     */
+    public function storeShift(Request $request)
+    {
+        $ownerId = $this->getOwnerId();
+        $staff = $this->getCurrentStaff();
+
+        $validated = $request->validate([
+            'opening_balance' => 'nullable|numeric|min:0',
+            'notes' => 'nullable|string',
+        ]);
+
+        // Check if shift already open
+        $existing = \App\Models\StaffShift::where('staff_id', $staff->id)->where('status', 'open')->first();
+        if ($existing) {
+            return redirect()->back()->with('error', 'You already have an active shift.');
+        }
+
+        $openingBalance = $validated['opening_balance'] ?? null;
+        
+        // If opening balance not provided, use last shift's closing balance
+        if ($openingBalance === null) {
+            $lastShift = \App\Models\StaffShift::where('staff_id', $staff->id)
+                ->where('status', 'closed')
+                ->latest()
+                ->first();
+            $openingBalance = $lastShift ? $lastShift->closing_balance : 0;
+        }
+
+        $shift = \App\Models\StaffShift::create([
+            'user_id' => $ownerId,
+            'staff_id' => $staff->id,
+            'shift_number' => \App\Models\StaffShift::generateShiftNumber($ownerId),
+            'opening_balance' => $openingBalance,
+            'status' => 'open',
+            'opened_at' => now(),
+            'notes' => $validated['notes'],
+        ]);
+
+        $this->notifyShiftEvent($shift, 'open');
+
+        return redirect()->route('bar.counter.dashboard')->with('success', 'Shift opened successfully.');
+    }
+
+    /**
+     * Dedicated Close Shift Page
+     */
+    public function closeShiftPage()
+    {
+        $ownerId = $this->getOwnerId();
+        $staff = $this->getCurrentStaff();
+        
+        $activeShift = \App\Models\StaffShift::where('staff_id', $staff->id)
+            ->where('status', 'open')
+            ->first();
+
+        if (!$activeShift) {
+            return redirect()->route('bar.counter.dashboard')->with('error', 'No active shift found to close.');
+        }
+
+        // Calculate stats (revenue, orders, waiters, stock)
+        $shiftOrders = BarOrder::where('shift_id', $activeShift->id)->get();
+        $shiftRevenue = $shiftOrders->where('payment_status', 'paid')->sum('total_amount');
+        $shiftOrderCount = $shiftOrders->count();
+
+        // Waiter Breakdown
+        $shiftWaiterBreakdown = $shiftOrders->groupBy('waiter_id')->map(function($orders) use ($staff) {
+            $waiterId = $orders->first()->waiter_id;
+            $waiter = \App\Models\Staff::find($waiterId);
+            return [
+                'name' => ($waiterId == $staff->id) ? 'Counter/Self' : ($waiter ? $waiter->full_name : 'Counter/Self'),
+                'orders' => $orders->count(),
+                'amount' => $orders->where('payment_status', 'paid')->sum('total_amount')
+            ];
+        })->values();
+
+        // Counter Stock Remains
+        $shiftStockRemains = ProductVariant::whereHas('stockLocations', function($q) use ($ownerId) {
+            $q->where('user_id', $ownerId)->where('location', 'counter');
+        })
+        ->with(['product', 'stockLocations' => function($q) use ($ownerId) {
+            $q->where('user_id', $ownerId)->where('location', 'counter');
+        }])
+        ->get()
+        ->map(function($v) {
+            $s = $v->stockLocations->where('location', 'counter')->first();
+            return [
+                'name' => $v->display_name,
+                'quantity' => $s ? $s->quantity : 0
+            ];
+        });
+
+        return view('bar.counter.close_shift', compact(
+            'activeShift',
+            'shiftRevenue',
+            'shiftOrderCount',
+            'shiftWaiterBreakdown',
+            'shiftStockRemains',
             'staff'
         ));
     }
 
     /**
+     * Close Active Shift
+     */
+    public function closeShift(Request $request)
+    {
+        $staff = $this->getCurrentStaff();
+        $shift = \App\Models\StaffShift::where('staff_id', $staff->id)->where('status', 'open')->first();
+
+        if (!$shift) {
+            return redirect()->back()->with('error', 'No active shift found.');
+        }
+
+        $validated = $request->validate([
+            'closing_balance' => 'required|numeric|min:0',
+            'notes' => 'nullable|string',
+        ]);
+
+        // Calculate sales during shift
+        $orders = \App\Models\BarOrder::where('shift_id', $shift->id)
+            ->where('payment_status', 'paid')
+            ->with('orderPayments')
+            ->get();
+
+        $cashSales = 0;
+        $digitalSales = 0;
+
+        foreach ($orders as $order) {
+            foreach ($order->orderPayments as $payment) {
+                if ($payment->payment_method === 'cash') {
+                    $cashSales += $payment->amount;
+                } else {
+                    $digitalSales += $payment->amount;
+                }
+            }
+        }
+
+        $expectedClosing = $shift->opening_balance + $cashSales;
+
+        $shift->update([
+            'closing_balance' => $validated['closing_balance'],
+            'total_sales_cash' => $cashSales,
+            'total_sales_digital' => $digitalSales,
+            'expected_closing_balance' => $expectedClosing,
+            'status' => 'closed',
+            'closed_at' => now(),
+            'notes' => ($shift->notes ? $shift->notes . "\n" : "") . "Closure Notes: " . $validated['notes'],
+        ]);
+
+        $this->notifyShiftEvent($shift, 'close');
+
+        // Shift history remains accessible, but core workflow now drops directly to Manager Handover view
+        return redirect()->route('bar.counter.reconciliation')->with('alert_success', 'Shift #' . $shift->shift_number . ' closed successfully! You can now verify the Waiters and submit your final handover to the Manager.');
+    }
+
+    /**
+     * Print Shift Reconciliation
+     */
+    public function printShift($id)
+    {
+        $ownerId = $this->getOwnerId();
+        $shift = \App\Models\StaffShift::where('user_id', $ownerId)->findOrFail($id);
+        
+        // Fetch all orders for the shift with waiter details
+        $orders = \App\Models\BarOrder::where('shift_id', $shift->id)
+            ->where('payment_status', 'paid')
+            ->with(['waiter', 'orderPayments'])
+            ->get();
+
+        // Find the specific financial handover created for this shift
+        // First try finding directly by staff_shift_id linkage
+        $handover = \App\Models\FinancialHandover::where('department', 'bar')
+            ->where('user_id', $ownerId)
+            ->where('staff_shift_id', $shift->id)
+            ->first();
+            
+        // Fallback for legacy shifts that didn't record staff_shift_id
+        if (!$handover) {
+            $handover = \App\Models\FinancialHandover::where('department', 'bar')
+                ->where('user_id', $ownerId)
+                ->whereBetween('handover_date', [
+                    $shift->opened_at,
+                    $shift->closed_at ? $shift->closed_at->addMinutes(120) : now()->addMinutes(120)
+                ])
+                ->orderBy('created_at', 'desc')
+                ->first();
+        }
+
+        return view('bar.counter.print_shift', compact('shift', 'orders', 'handover'));
+    }
+
+
+    /**
      * View Warehouse Stock (available products from stock keeper)
      */
+    /**
+     * View Shift History (for managers/owners)
+     */
+    public function shiftHistory(Request $request)
+    {
+        $ownerId = $this->getOwnerId();
+        $staff = $this->getCurrentStaff();
+        
+        // Managers/Owners with 'financial_reports' permission can see ALL shifts
+        $canViewAll = $this->hasPermission('financial_reports', 'view') || !session('is_staff');
+
+        // All staff are allowed to see THEIR OWN shift history
+        $query = \App\Models\StaffShift::where('user_id', $ownerId)
+            ->with('staff')
+            ->orderBy('opened_at', 'desc');
+
+        // If not a manager/owner, force filter to only their own shifts
+        if (!$canViewAll) {
+            $query->where('staff_id', $staff->id);
+        }
+
+        // Apply additional filters if provided (and allowed)
+        if ($canViewAll && $request->has('staff_id') && $request->staff_id) {
+            $query->where('staff_id', $request->staff_id);
+        }
+
+        if ($request->has('date') && $request->date) {
+            $query->whereDate('opened_at', $request->date);
+        }
+
+        $shifts = $query->paginate(20);
+        $allStaff = \App\Models\Staff::where('user_id', $ownerId)->get();
+
+        // Load manager handover records for displayed shifts (to show audit status)
+        $shiftIds = $shifts->pluck('id')->filter()->values()->toArray();
+        $handoversByShift = \App\Models\FinancialHandover::where('user_id', $ownerId)
+            ->whereIn('staff_shift_id', $shiftIds)
+            ->get()
+            ->keyBy('staff_shift_id');
+
+        // Load manager reconciliation status per shift
+        $reconciliationsByShift = \App\Models\WaiterDailyReconciliation::where('user_id', $ownerId)
+            ->whereIn('staff_shift_id', $shiftIds)
+            ->get()
+            ->groupBy('staff_shift_id')
+            ->map(function($group) use ($handoversByShift) {
+                $shiftId = $group->first()->staff_shift_id;
+                $handover = $handoversByShift[$shiftId] ?? null;
+
+                // Priority: Manager's finished audit
+                if ($handover && $handover->status === 'verified') {
+                    $status = 'verified';
+                } else {
+                    // MIN(status) check
+                    $status = $group->every(fn($r) => $r->status === 'verified') ? 'verified' : $group->first()->status;
+                }
+
+                $totalExpected = $group->sum('expected_amount');
+                $totalSubmitted = $group->sum('submitted_amount');
+                return [
+                    'status'    => $status,
+                    'expected'  => $totalExpected,
+                    'submitted' => $totalSubmitted,
+                    'shortage'  => $totalExpected - $totalSubmitted,
+                ];
+            });
+
+        return view('bar.counter.shift_history', compact('shifts', 'allStaff', 'canViewAll', 'handoversByShift', 'reconciliationsByShift'));
+    }
+
     public function warehouseStock()
     {
         // Check permission - allow inventory view or stock_transfer view, or counter/stock keeper roles
@@ -609,15 +1041,7 @@ class CounterController extends Controller
         $ownerId = $this->getOwnerId();
 
         $variants = ProductVariant::whereHas('product', function($query) use ($ownerId) {
-            $query->where('user_id', $ownerId)
-                  ->where(function($q) {
-                      $q->where('category', 'like', '%beverage%')
-                        ->orWhere('category', 'like', '%drink%')
-                        ->orWhere('category', 'like', '%alcohol%')
-                        ->orWhere('category', 'like', '%beer%')
-                        ->orWhere('category', 'like', '%wine%')
-                        ->orWhere('category', 'like', '%spirit%');
-                  });
+            $query->where('user_id', $ownerId);
         })
         ->with(['product', 'stockLocations' => function($query) use ($ownerId) {
             $query->where('user_id', $ownerId);
@@ -693,13 +1117,27 @@ class CounterController extends Controller
                 $query->where('user_id', $ownerId)->where('location', 'counter');
             }])
             ->get()
-            ->map(function($variant) {
+            ->map(function($variant) use ($ownerId) {
                 $counterStock    = $variant->stockLocations->where('location', 'counter')->first();
                 $itemsPerPackage = $variant->items_per_package ?? 1;
                 $packaging       = $variant->packaging ?? 'Package';
-                $quantity        = $counterStock ? $counterStock->quantity : 0;
-                $packages        = $itemsPerPackage > 1 ? floor($quantity / $itemsPerPackage) : 0;
-                $remainingBottles= $itemsPerPackage > 1 ? ($quantity % $itemsPerPackage) : $quantity;
+                $fullBottles     = $counterStock ? (float)$counterStock->quantity : 0.0;
+                
+                // Add open bottle contents if applicable
+                $openTotsValue = 0;
+                if ($variant->can_sell_in_tots && $variant->total_tots > 0) {
+                    $openBottle = \App\Models\OpenBottle::where('user_id', $ownerId)
+                        ->where('product_variant_id', $variant->id)
+                        ->first();
+                    if ($openBottle) {
+                        $openTotsValue = $openBottle->tots_remaining;
+                        $fullBottles += ($openTotsValue / $variant->total_tots);
+                    }
+                }
+
+                $quantity         = $fullBottles;
+                $packages         = ($itemsPerPackage > 1 && $quantity >= 1) ? floor($quantity / $itemsPerPackage) : 0;
+                $remainingBottles = ($itemsPerPackage > 1) ? ($quantity % $itemsPerPackage) : $quantity;
 
                 return [
                     'id'                   => $variant->id,
@@ -707,35 +1145,163 @@ class CounterController extends Controller
                     'variant_name'         => $variant->name,
                     'product_image'        => $variant->product->image,
                     'brand'                => $variant->product->brand ?? 'N/A',
-                    'category'             => $variant->product->category ?? 'General',
+                    'category'             => (stripos($variant->product->category ?? '', 'Wine Collection') !== false || strtolower($variant->product->category ?? '') === 'wine') ? 'Wines' : ($variant->product->category ?? 'General'),
                     'variant'              => $variant->measurement,
+                    'unit'                 => $variant->unit ?? '',
                     'quantity'             => $quantity,
+                    'formatted_quantity'   => $variant->formatUnits($quantity),
                     'items_per_package'    => $itemsPerPackage,
                     'packaging'            => $packaging,
-                    'packages'             => $packages,
+                    'packages'             => (int)$packages,
                     'remaining_bottles'    => $remainingBottles,
                     'selling_price'        => $counterStock->selling_price ?? $variant->selling_price_per_unit ?? 0,
                     'selling_price_per_tot'=> $counterStock->selling_price_per_tot ?? $variant->selling_price_per_tot ?? 0,
+                    'quantity_in_tots'     => round($quantity * ($variant->total_tots ?? 1)),
                     'can_sell_in_tots'     => $variant->can_sell_in_tots && ($variant->total_tots > 0),
                     'buying_price'         => $counterStock->average_buying_price ?? $variant->buying_price_per_unit ?? 0,
-                    'is_low_stock'         => $quantity < 10,
+                    'packaging_type'       => $variant->packaging ?: 'Bottle',
+                    'portion_unit_name'    => $variant->portion_unit_name,
+                    'low_stock_threshold'  => $variant->low_stock_threshold ?? 10,
+                    'is_low_stock'         => $quantity < ($variant->low_stock_threshold ?? 10),
                 ];
             });
 
+        // Normalize categories so near-identical names (e.g. "Water"/"Drinking Water") are merged
+        $categoryMap = [
+            // Water variants
+            'water'           => 'Water',
+            'drinking water'  => 'Water',
+            'mineral water'   => 'Water',
+            'still water'     => 'Water',
+            'sparkling water' => 'Water',
+            // Energy drinks
+            'energy'          => 'Energies',
+            'energies'        => 'Energies',
+            'energizer'       => 'Energies',
+            'energizers'      => 'Energies',
+            'energy drink'    => 'Energies',
+            'energy drinks'   => 'Energies',
+            // Soft drinks / sodas
+            'soft drink'      => 'Soft Drinks',
+            'soft drinks'     => 'Soft Drinks',
+            'soda'            => 'Soft Drinks',
+            'sodas'           => 'Soft Drinks',
+            'carbonated'      => 'Soft Drinks',
+            // Juice
+            'juice'           => 'Juice',
+            'juices'          => 'Juice',
+            'fresh juice'     => 'Juice',
+            // Beer
+            'beer'            => 'Beers',
+            'beers'           => 'Beers',
+            'lager'           => 'Beers',
+            // Wines
+            'wine'            => 'Wines',
+            'wines'           => 'Wines',
+            'wine collection' => 'Wines',
+            'red wine'        => 'Wines',
+            'white wine'      => 'Wines',
+            // Spirits / Whiskey
+            'spirit'          => 'Spirits',
+            'spirits'         => 'Spirits',
+            'whiskey'         => 'Spirits',
+            'whisky'          => 'Spirits',
+            'vodka'           => 'Spirits',
+            'gin'             => 'Spirits',
+            'rum'             => 'Spirits',
+            'tequila'         => 'Spirits',
+            'brandy'          => 'Spirits',
+            'liqueur'         => 'Spirits',
+        ];
+
+        $normalizeCategory = function(string $raw) use ($categoryMap): string {
+            $lower = strtolower(trim($raw));
+            return $categoryMap[$lower] ?? ucwords($raw);
+        };
+
+        // Apply normalization to each variant's category
+        $variants = $variants->map(function($v) use ($normalizeCategory) {
+            $v['category'] = $normalizeCategory($v['category']);
+            return $v;
+        });
+
+        // Filter variants to only include those with stock (quantity > 0)
+        // This ensures "received products" are shown and empty categories are hidden
+        $variants = $variants->filter(function($v) {
+            return $v['quantity'] > 0;
+        });
+
         $totalValue = $variants->sum(fn($v) => $v['quantity'] * $v['selling_price']);
 
-        // Get unique categories for tabs; exclude 'bonite' from brand filter pills
+        // Get unique normalized categories for filter pills based on items in stock
         $categories = $variants->pluck('category')->unique()->sort()->values();
-        $brands = $variants->pluck('brand')->unique()->filter(function($b) {
-            return stripos($b, 'bonite') === false;
+        
+        // Define a list of "dirty" brand descriptors that should be ignored if they're just categories
+        $categoryKeywords = array_map('strtolower', array_keys($categoryMap));
+        $categoryValues   = array_map('strtolower', array_values($categoryMap));
+        $allBadKeywords   = array_unique(array_merge($categoryKeywords, $categoryValues));
+
+        $brands = $variants->pluck('brand')->unique()->filter(function($b) use ($allBadKeywords) {
+            if (empty($b) || strtolower($b) == 'n/a') return false;
+            // Exclude 'bonite' as per existing logic
+            if (stripos($b, 'bonite') !== false) return false;
+            // Exclude brands that are just category names (e.g. "Drinking Water", "Energizers")
+            if (in_array(strtolower(trim($b)), $allBadKeywords)) return false;
+            return true;
         })->sort()->values();
 
         return view('bar.counter.counter-stock', compact('variants', 'totalValue', 'categories', 'brands'));
     }
 
     /**
-     * Request Stock Transfer from Warehouse
+     * Delete / Zero-out a product variant from Counter Stock
      */
+    public function deleteCounterStock(Request $request, $variantId)
+    {
+        $ownerId = $this->getOwnerId();
+
+        $stockLocation = StockLocation::where('user_id', $ownerId)
+            ->where('product_variant_id', $variantId)
+            ->where('location', 'counter')
+            ->first();
+
+        if (!$stockLocation) {
+            return response()->json(['success' => false, 'message' => 'Product not found in counter stock.'], 404);
+        }
+
+        $stockLocation->delete();
+
+        return response()->json(['success' => true, 'message' => 'Product removed from counter stock successfully.']);
+    }
+
+    /**
+     * Update low stock threshold for a product variant
+     */
+    public function updateLowStockThreshold(Request $request, $variantId)
+    {
+        $ownerId = $this->getOwnerId();
+        
+        $variant = ProductVariant::whereHas('product', function($query) use ($ownerId) {
+            $query->where('user_id', $ownerId);
+        })->findOrFail($variantId);
+
+        $validated = $request->validate([
+            'threshold' => 'required|integer|min:0',
+        ]);
+
+        $variant->update([
+            'low_stock_threshold' => $validated['threshold'],
+        ]);
+
+        return response()->json([
+            'success' => true, 
+            'message' => 'Low stock threshold updated successfully.',
+            'threshold' => $variant->low_stock_threshold,
+        ]);
+    }
+
+
+
     public function requestStockTransfer(Request $request)
     {
         // Check permission
@@ -1265,6 +1831,85 @@ class CounterController extends Controller
     }
 
     /**
+     * Send SMS notification for shift open/close
+     */
+    private function notifyShiftEvent($shift, $type)
+    {
+        $ownerId = $shift->user_id;
+        $staff = $shift->staff;
+        $staffName = $staff ? $staff->full_name : 'Staff';
+        
+        $eventType = strtoupper($type);
+        $time = $shift->updated_at->format('M d, Y H:i');
+        
+        if ($type === 'open') {
+            $message = "SHIFT OPENED - MauzoLink\n\nStaff: {$staffName}\nShift #: {$shift->shift_number}\nOpening Bal: " . number_format($shift->opening_balance, 0) . "\nTime: {$time}";
+        } else {
+            $message = "SHIFT CLOSED - MauzoLink\n\nStaff: {$staffName}\nShift #: {$shift->shift_number}\nCash Sales: " . number_format($shift->total_sales_cash, 0) . "\nDigital Sales: " . number_format($shift->total_sales_digital, 0) . "\nClosing Bal: " . number_format($shift->closing_balance, 0) . "\nTime: {$time}\n\nReconciliation is pending.";
+        }
+
+        $smsService = new \App\Services\SmsService();
+
+        // Notify Managers
+        $managers = \App\Models\Staff::where('user_id', $ownerId)
+            ->where('is_active', true)
+            ->whereHas('role', function($q) {
+                $q->where('slug', 'manager');
+            })->get();
+
+        // Notify Counter Staff (excluding sender if you want, but user said "both")
+        $counterStaff = \App\Models\Staff::where('user_id', $ownerId)
+            ->where('is_active', true)
+            ->whereHas('role', function($q) {
+                $q->whereIn('slug', ['counter', 'bar-counter', 'bar_counter']);
+            })->get();
+
+        $phoneNumbers = $managers->pluck('phone_number')->merge($counterStaff->pluck('phone_number'))->unique()->filter();
+
+        foreach ($phoneNumbers as $phone) {
+            $smsService->sendSms($phone, $message);
+        }
+    }
+
+    /**
+     * Send SMS notification when stock is low
+     */
+    private function notifyLowStock($variantId, $currentQty, $ownerId)
+    {
+        $variant = ProductVariant::with('product')->find($variantId);
+        if (!$variant) return;
+
+        $threshold = $variant->low_stock_threshold ?? 10;
+        
+        // Only notify if we just crossed the threshold
+        if ($currentQty < $threshold) {
+            $smsService = new \App\Services\SmsService();
+            $productName = $variant->display_name;
+            $message = "LOW STOCK ALERT - MauzoLink\n\nItem: {$productName}\nRemaining: " . $variant->formatUnits($currentQty) . "\nThreshold: {$threshold}\n\nPlease restock soon.";
+
+            // 1. Notify Managers
+            $managers = \App\Models\Staff::where('user_id', $ownerId)
+                ->where('is_active', true)
+                ->whereHas('role', function($q) {
+                    $q->where('slug', 'manager');
+                })->get();
+
+            // 2. Notify Current Counter Staff
+            $counterStaff = \App\Models\Staff::where('user_id', $ownerId)
+                ->where('is_active', true)
+                ->whereHas('role', function($q) {
+                    $q->whereIn('slug', ['counter', 'bar-counter', 'bar_counter']);
+                })->get();
+
+            $phoneNumbers = $managers->pluck('phone_number')->merge($counterStaff->pluck('phone_number'))->unique()->filter();
+
+            foreach ($phoneNumbers as $phone) {
+                $smsService->sendSms($phone, $message);
+            }
+        }
+    }
+
+    /**
      * Create Order from Counter
      */
     public function createOrder(Request $request)
@@ -1285,6 +1930,7 @@ class CounterController extends Controller
         $validated = $request->validate([
             'items' => 'required|array|min:1',
             'table_id' => 'nullable|exists:bar_tables,id',
+            'waiter_id' => 'nullable|exists:staff,id',
             'existing_order_id' => 'nullable|exists:orders,id',
             'customer_name' => 'nullable|string|max:255',
             'customer_phone' => 'nullable|string|max:20',
@@ -1396,25 +2042,30 @@ class CounterController extends Controller
                 if (!empty($newNotes)) {
                     $existingOrder->notes = ($existingOrder->notes ? $existingOrder->notes . ' | ' : '') . $newNotes;
                 }
-                // If it was served, revert back to pending to process the new items
-                if ($existingOrder->status === 'served' || $existingOrder->status === 'completed') {
-                    $existingOrder->status = 'pending';
-                }
+                // Maintain served status for counter orders
+                $existingOrder->status = 'served';
                 $existingOrder->save();
                 $order = $existingOrder;
                 $message = 'Items added to existing order successfully';
             } else {
                 // CREATE NEW ORDER
                 $orderNumber = BarOrder::generateOrderNumber($ownerId);
+                
+                // Get active shift
+                $activeShift = \App\Models\StaffShift::where('staff_id', $staff->id)
+                    ->where('status', 'open')
+                    ->first();
+                    
                 $order = BarOrder::create([
                     'user_id' => $ownerId,
                     'order_number' => $orderNumber,
-                    'waiter_id' => $staff->id, // Attributed to counter staff
+                    'waiter_id' => !empty($validated['waiter_id']) ? $validated['waiter_id'] : $staff->id,
                     'order_source' => 'counter',
+                    'shift_id' => $activeShift ? $activeShift->id : null,
                     'table_id' => $validated['table_id'] ?? null,
                     'customer_name' => $validated['customer_name'] ?? null,
                     'customer_phone' => $validated['customer_phone'] ?? null,
-                    'status' => 'pending',
+                    'status' => 'served',
                     'payment_status' => 'pending',
                     'total_amount' => $totalAmount,
                     'paid_amount' => 0,
@@ -1423,8 +2074,10 @@ class CounterController extends Controller
                 $message = 'Order created successfully';
             }
 
-            // Create items and attribute via service
+            // Create items, deduct stock, and attribute via service
             $transferSaleService = new \App\Services\TransferSaleService();
+            $currentUser = $this->getCurrentUser();
+
             foreach ($orderItems as $item) {
                 $orderItem = OrderItem::create([
                     'order_id' => $order->id,
@@ -1433,7 +2086,85 @@ class CounterController extends Controller
                     'quantity' => $item['quantity'],
                     'unit_price' => $item['unit_price'],
                     'total_price' => $item['total_price'],
+                    'is_served' => true, // Counter orders are served immediately
                 ]);
+
+                // --- DEDUCT STOCK IMMEDIATELY FOR COUNTER ORDERS ---
+                $counterStock = StockLocation::where('user_id', $ownerId)
+                    ->where('product_variant_id', $orderItem->product_variant_id)
+                    ->where('location', 'counter')
+                    ->first();
+
+                if ($counterStock) {
+                    if ($orderItem->sell_type === 'tot') {
+                        $variant = ProductVariant::find($orderItem->product_variant_id);
+                        $totsPerBottle = $variant->total_tots ?: 1;
+                        $totsNeeded = $orderItem->quantity;
+                        
+                        $openBottle = \App\Models\OpenBottle::where('user_id', $ownerId)
+                            ->where('product_variant_id', $orderItem->product_variant_id)
+                            ->first();
+                            
+                        if ($openBottle) {
+                            if ($openBottle->tots_remaining >= $totsNeeded) {
+                                $openBottle->decrement('tots_remaining', $totsNeeded);
+                                if ($openBottle->tots_remaining <= 0) $openBottle->delete();
+                                $totsNeeded = 0;
+                            } else {
+                                $totsNeeded -= $openBottle->tots_remaining;
+                                $openBottle->delete();
+                            }
+                        }
+                        
+                        while ($totsNeeded > 0) {
+                            $counterStock->decrement('quantity', 1);
+                            if ($totsNeeded >= $totsPerBottle) {
+                                $totsNeeded -= $totsPerBottle;
+                            } else {
+                                \App\Models\OpenBottle::create([
+                                    'user_id' => $ownerId,
+                                    'product_variant_id' => $orderItem->product_variant_id,
+                                    'tots_remaining' => $totsPerBottle - $totsNeeded,
+                                ]);
+                                $totsNeeded = 0;
+                            }
+
+                            StockMovement::create([
+                                'user_id' => $ownerId,
+                                'product_variant_id' => $orderItem->product_variant_id,
+                                'movement_type' => 'sale',
+                                'from_location' => 'counter',
+                                'to_location' => null,
+                                'quantity' => 1,
+                                'unit_price' => $orderItem->unit_price,
+                                'reference_type' => BarOrder::class,
+                                'reference_id' => $order->id,
+                                'created_by' => $currentUser ? $currentUser->id : null,
+                                'notes' => 'Bottle opened for POS shots: ' . $order->order_number,
+                            ]);
+                        }
+                    } else {
+                        $counterStock->decrement('quantity', $orderItem->quantity);
+                        StockMovement::create([
+                            'user_id' => $ownerId,
+                            'product_variant_id' => $orderItem->product_variant_id,
+                            'movement_type' => 'sale',
+                            'from_location' => 'counter',
+                            'to_location' => null,
+                            'quantity' => $orderItem->quantity,
+                            'unit_price' => $orderItem->unit_price,
+                            'reference_type' => BarOrder::class,
+                            'reference_id' => $order->id,
+                            'created_by' => $currentUser ? $currentUser->id : null,
+                            'notes' => 'POS Order served: ' . $order->order_number,
+                        ]);
+                    }
+                    // Check low stock and notify
+                    $this->notifyLowStock($orderItem->product_variant_id, (float)$counterStock->quantity, $ownerId);
+                }
+
+                // ----------------------------------------------------
+
                 $transferSaleService->attributeSaleToTransfer($orderItem, $ownerId);
             }
 
@@ -1492,12 +2223,16 @@ class CounterController extends Controller
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 
-        if ($order->status !== 'pending') {
-            return response()->json(['error' => 'Only pending orders can be cancelled'], 400);
+        if ($order->status !== 'pending' && $order->status !== 'served') {
+            return response()->json(['error' => 'Only pending or served orders can be cancelled'], 400);
+        }
+
+        if ($order->payment_status === 'paid') {
+            return response()->json(['error' => 'Paid orders cannot be cancelled'], 400);
         }
 
         $validated = $request->validate([
-            'reason' => 'nullable|string|max:500',
+            'reason' => 'required|string|max:500',
         ]);
 
         DB::beginTransaction();
@@ -1536,8 +2271,8 @@ class CounterController extends Controller
 
         $validated = $request->validate([
             'payment_method' => 'required|in:cash,mobile_money,bank,card',
-            'mobile_money_number' => 'required_if:payment_method,mobile_money|nullable|string|max:20',
-            'transaction_reference' => 'required_if:payment_method,mobile_money|nullable|string|max:50',
+            'mobile_money_number' => 'nullable|string|max:50',
+            'transaction_reference' => 'nullable|string|max:100',
         ]);
 
         DB::beginTransaction();
@@ -1578,4 +2313,109 @@ class CounterController extends Controller
             return response()->json(['error' => 'Failed to record payment: ' . $e->getMessage()], 500);
         }
     }
+
+    /**
+     * Print receipt for an order from counter
+     */
+    public function printReceipt(BarOrder $order)
+    {
+        $ownerId = $this->getOwnerId();
+        if ($order->user_id !== $ownerId) {
+            abort(403, 'Unauthorized');
+        }
+
+        $order->load(['items.productVariant.product', 'table', 'waiter', 'user']);
+
+        return view('bar.waiter.receipt', compact('order'));
+    }
+
+    /**
+     * Display a printable Daily Stock Sheet
+     */
+    public function dailyStockSheet()
+    {
+        if (!$this->hasPermission('inventory', 'view')) {
+            abort(403, 'You do not have permission to view counter stock.');
+        }
+
+        $ownerId = $this->getOwnerId();
+        
+        $staff = $this->getCurrentStaff();
+        $staffName = $staff ? $staff->full_name : (auth()->user()->name ?? auth()->user()->first_name ?? 'Counter Staff');
+
+        // Get today's sold items
+        $today = \Carbon\Carbon::today();
+        $soldItems = \App\Models\OrderItem::whereHas('order', function($q) use ($ownerId, $today) {
+                $q->where('user_id', $ownerId)->whereDate('created_at', $today)->where('status', 'served');
+            })
+            ->get()
+            ->groupBy('product_variant_id');
+
+        $stockQuery = \App\Models\StockLocation::where('user_id', $ownerId)
+            ->where('location', 'counter')
+            ->where('quantity', '>', 0)
+            ->with(['productVariant.product']);
+
+        $openBottles = \App\Models\OpenBottle::where('user_id', $ownerId)->get()->keyBy('product_variant_id');
+
+        $stock = $stockQuery->get()->map(function($item) use ($openBottles, $soldItems) {
+            $variant = $item->productVariant;
+            if (!$variant) return null;
+            
+            // Today's Sales Calculation
+            $variantSales = $soldItems->get($variant->id, collect());
+            $bottlesSold = $variantSales->where('sell_type', 'unit')->sum('quantity');
+            $totsSold = $variantSales->where('sell_type', 'tot')->sum('quantity');
+            
+            $soldRevenue = $variantSales->sum('total_price');
+            
+            $totalSoldQuantity = $bottlesSold;
+            if ($variant->can_sell_in_tots && $variant->total_tots > 0) {
+                $totalSoldQuantity += ($totsSold / $variant->total_tots);
+            }
+            
+            $soldFormatted = $totalSoldQuantity > 0 ? $variant->formatUnits($totalSoldQuantity) : '-';
+
+            $quantity = (float)$item->quantity;
+            $openBottle = $openBottles->get($item->product_variant_id);
+            
+            $fraction = 0;
+            if ($variant->can_sell_in_tots && $variant->total_tots > 0 && $openBottle) {
+                $fraction = ($openBottle->tots_remaining / $variant->total_tots);
+                $quantity += $fraction;
+            }
+
+            // Calculations
+            $totalValue = 0;
+            if ($variant->can_sell_in_tots && $variant->total_tots > 0) {
+                // If it sells in glasses, value is calculated by glass logic across all available
+                $totalTots = ($item->quantity * $variant->total_tots) + ($openBottle ? $openBottle->tots_remaining : 0);
+                $totalValue = $totalTots * $variant->tot_price;
+            } else {
+                // Plain bottle logic
+                $totalValue = $item->quantity * $variant->bottle_price;
+            }
+            
+            return (object)[
+                'id' => $variant->id,
+                'name' => $variant->display_name ?? $variant->product?->name ?? 'Unknown',
+                'category' => $variant->product?->category ?? 'General',
+                'measurement' => $variant->measurement,
+                'packaging' => $variant->packaging,
+                'sold_formatted' => $soldFormatted,
+                'sold_revenue' => $soldRevenue,
+                'price_label' => $variant->can_sell_in_tots 
+                                 ? 'TSh ' . number_format($variant->tot_price) . '/' . ($variant->portion_unit_name ?? 'Gl') 
+                                 : 'TSh ' . number_format($variant->bottle_price) . '/Btl',
+                'quantity_formatted' => $variant->formatUnits($quantity),
+                'total_value' => $totalValue
+            ];
+        })->filter()->sortBy('name');
+
+        $totalInventoryValue = $stock->sum('total_value');
+        $totalSalesRevenue = $stock->sum('sold_revenue');
+
+        return view('bar.counter.daily-stock-sheet', compact('stock', 'totalInventoryValue', 'totalSalesRevenue', 'staffName'));
+    }
 }
+

@@ -243,9 +243,7 @@ class MenuItemSeeder extends Seeder
                     ['name' => 'Register Products', 'slug' => 'bar-products-create', 'icon' => 'fa-plus-circle', 'route' => 'bar.products.create', 'sort_order' => 1],
                     ['name' => 'Products List', 'slug' => 'bar-products', 'icon' => 'fa-list', 'route' => 'bar.products.index', 'sort_order' => 2],
                     ['name' => 'Receiving Stock', 'slug' => 'bar-stock-receipts', 'icon' => 'fa-download', 'route' => 'bar.stock-receipts.index', 'sort_order' => 3],
-                    ['name' => 'Stock Transfers', 'slug' => 'bar-stock-transfers', 'icon' => 'fa-exchange', 'route' => 'bar.stock-transfers.index', 'sort_order' => 4],
-                    ['name' => 'Stock Levels', 'slug' => 'bar-stock-levels', 'icon' => 'fa-bar-chart', 'route' => 'bar.beverage-inventory.stock-levels', 'sort_order' => 5],
-                    ['name' => 'Warehouse Stock', 'slug' => 'bar-warehouse-stock', 'icon' => 'fa-archive', 'route' => 'bar.beverage-inventory.warehouse-stock', 'sort_order' => 6],
+                    ['name' => 'Receiving Stock', 'slug' => 'bar-stock-receipts', 'icon' => 'fa-download', 'route' => 'bar.stock-receipts.index', 'sort_order' => 3],
                 ]],
                 ['name' => 'Operations & Settings', 'slug' => 'bar-ops-settings', 'icon' => 'fa-gears', 'route' => null, 'sort_order' => 4.5, 'children' => [
                     ['name' => 'Suppliers', 'slug' => 'bar-suppliers', 'icon' => 'fa-truck', 'route' => 'bar.suppliers.index', 'sort_order' => 1],

@@ -14,6 +14,24 @@ class RoleSuggestionService
         $suggestions = [
             'bar' => [
                 [
+                    'name' => 'Super Admin',
+                    'description' => 'Maximum system access with staff password reset capabilities',
+                    'permissions' => [
+                        'bar_orders' => ['view', 'create', 'edit', 'delete'],
+                        'bar_payments' => ['view', 'create', 'edit', 'delete'],
+                        'bar_tables' => ['view', 'create', 'edit', 'delete'],
+                        'products' => ['view', 'create', 'edit', 'delete'],
+                        'inventory' => ['view', 'create', 'edit', 'delete'],
+                        'stock_receipt' => ['view', 'create', 'edit', 'delete'],
+                        'stock_transfer' => ['view', 'create', 'edit', 'delete'],
+                        'suppliers' => ['view', 'create', 'edit', 'delete'],
+                        'customers' => ['view', 'create', 'edit', 'delete'],
+                        'reports' => ['view'],
+                        'staff' => ['view', 'create', 'edit', 'delete', 'reset_password'],
+                        'settings' => ['view', 'edit'],
+                    ]
+                ],
+                [
                     'name' => 'Manager',
                     'description' => 'Full management access to bar operations',
                     'permissions' => [

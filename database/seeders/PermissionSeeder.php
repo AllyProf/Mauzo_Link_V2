@@ -28,7 +28,6 @@ class PermissionSeeder extends Seeder
             'bar_payments' => 'Bar Payments',
             'bar_tables' => 'Bar Tables',
             'marketing' => 'Marketing',
-            'hr' => 'Human Resources',
         ];
 
         $actions = [
@@ -36,6 +35,7 @@ class PermissionSeeder extends Seeder
             'create' => 'Create',
             'edit' => 'Edit',
             'delete' => 'Delete',
+            'reset_password' => 'Reset Password',
         ];
 
         foreach ($modules as $module => $moduleName) {

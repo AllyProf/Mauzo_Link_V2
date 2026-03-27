@@ -3,8 +3,7 @@
 @section('title', 'Daily Reconciliation')
 
 @push('styles')
-<link rel="stylesheet" type="text/css" href="https://cdn.datatables.net/1.13.6/css/dataTables.bootstrap4.min.css">
-<link rel="stylesheet" type="text/css" href="https://cdn.datatables.net/responsive/2.5.0/css/responsive.bootstrap4.min.css">
+{{-- Use local styles instead of CDN --}}
 <style>
   #waiters-table { border-collapse: collapse !important; border-radius: 8px; overflow: hidden; }
   #waiters-table th, #waiters-table td { vertical-align: middle; white-space: nowrap; border: 1px solid #dee2e6 !important; }
@@ -21,6 +20,7 @@
     .widget-small { margin-bottom: 10px; }
     .tile-title { font-size: 1.2rem; }
   }
+  .date-header-row td { background-color: #5d6d7e !important; color: white !important; font-size: 0.85rem; letter-spacing: 0.5px; border-top: 2px solid #34495e !important; position: sticky; top: 0; z-index: 5; }
 </style>
 @endpush
 
@@ -33,7 +33,7 @@
   <ul class="app-breadcrumb breadcrumb">
     <li class="breadcrumb-item"><i class="fa fa-home fa-lg"></i></li>
     <li class="breadcrumb-item"><a href="{{ route('dashboard') }}">Dashboard</a></li>
-    <li class="breadcrumb-item">{{ Route::currentRouteName() === 'accountant.counter.reconciliation' ? 'Accountant' : 'Counter' }}</li>
+    <li class="breadcrumb-item">Finance</li>
     <li class="breadcrumb-item">Reconciliation</li>
   </ul>
 </div>
@@ -44,22 +44,22 @@
     <div class="tile">
       <form method="GET" action="{{ Route::currentRouteName() === 'accountant.counter.reconciliation' ? route('accountant.counter.reconciliation') : route('bar.counter.reconciliation') }}" class="form-inline">
         <div class="form-group mr-3">
-          <label for="date" class="mr-2">Select Date:</label>
-          <input type="date" name="date" id="date" class="form-control" value="{{ $date }}" required>
+          <label for="week" class="mr-2">Select Week:</label>
+          <input type="week" name="week" id="week" class="form-control" value="{{ $week }}" required>
         </div>
         <div class="form-group mr-3">
           <label for="status-filter" class="mr-2">Status:</label>
           <select id="status-filter" class="form-control">
             <option value="">All Statuses</option>
             <option value="verified">Verified</option>
-            <option value="submitted">Submitted</option>
+            <option value="submitted">Settled (Ready)</option>
             <option value="paid">Paid</option>
             <option value="partial">Partial</option>
             <option value="pending">Pending</option>
           </select>
         </div>
         <button type="submit" class="btn btn-primary">
-          <i class="fa fa-search"></i> View Reconciliation
+          <i class="fa fa-search"></i> View Weekly Reconciliation
         </button>
       </form>
     </div>
@@ -83,7 +83,6 @@
       <div class="info">
         <h4>Bar Sales (Drinks)</h4>
         <p><b>TSh {{ number_format($waiters->sum('bar_sales'), 0) }}</b></p>
-        <small class="text-muted">Food: TSh {{ number_format($waiters->sum('food_sales'), 0) }}</small>
       </div>
     </div>
   </div>
@@ -111,7 +110,7 @@
 <div class="row">
   <div class="col-md-12">
     <div class="tile">
-      <h3 class="tile-title">Waiters Reconciliation - {{ \Carbon\Carbon::parse($date)->format('F d, Y') }}</h3>
+      <h3 class="tile-title">Waiters Reconciliation - {{ $displayDate }}</h3>
       <div class="tile-body">
         @if($waiters->count() > 0)
           <div class="table-responsive shadow-sm">
@@ -120,21 +119,28 @@
                 <tr>
                   <th class="all">#</th>
                   <th class="all">Staff</th>
+                  <th class="all text-center">Date</th>
                   <th>Bar Sales</th>
                   <th>Orders</th>
-                  <th class="none">Food</th>
                   <th>Cash</th>
                   <th>Digital</th>
-                  <th class="all audit-col-bg">Expected</th>
+                  <th class="all audit-col-bg text-center">Expected Amount</th>
                   <th class="all audit-col-bg">Recorded</th>
-                  <th class="all audit-col-bg">Submitted</th>
-                  <th class="all diff-col-bg">Diff</th>
+                  <th class="all audit-col-bg">Settled Amount</th>
+                  <th class="all diff-col-bg text-center">Diff</th>
                   <th class="all text-center">Status</th>
                   <th class="all">Actions</th>
                 </tr>
               </thead>
               <tbody>
+                @php $lastDate = null; @endphp
                 @foreach($waiters as $index => $data)
+                  @php 
+                    $currentDate = date('Y-m-d', strtotime($data['date']));
+                    $dayName = date('l, F d, Y', strtotime($data['date']));
+                  @endphp
+
+ @php $lastDate = $currentDate; @endphp
                 <tr data-waiter-id="{{ $data['waiter']->id }}" class="waiter-row">
                   <td>{{ $index + 1 }}</td>
                    <td>
@@ -142,14 +148,13 @@
                     <span class="badge badge-secondary ml-1">{{ $data['waiter']->role->name ?? 'Staff' }}</span><br>
                     <small class="text-muted">{{ $data['waiter']->email }}</small>
                   </td>
+                  <td class="text-center">
+                    <span class="badge badge-light border">{{ date('M d, Y', strtotime($data['date'])) }}</span>
+                  </td>
                   <td>
                     <strong>TSh {{ number_format($data['bar_sales'], 0) }}</strong>
-                    @if($data['food_sales'] > 0)
-                      <br><small class="text-muted">Food: TSh {{ number_format($data['food_sales'], 0) }}</small>
-                    @endif
                   </td>
-                  <td><span class="badge badge-info">{{ $data['bar_orders_count'] }}</span></td>
-                  <td><span class="badge badge-secondary">{{ $data['food_orders_count'] }}</span></td>
+                  <td><span class="badge badge-info">{{ $data['total_orders'] }}</span></td>
                   <td>TSh {{ number_format($data['cash_collected'], 0) }}</td>
                   <td>TSh {{ number_format($data['mobile_money_collected'], 0) }}</td>
                   <td class="audit-col-bg"><strong>TSh {{ number_format($data['expected_amount'], 0) }}</strong></td>
@@ -186,7 +191,7 @@
                     @if($data['status'] === 'verified')
                       <span class="badge badge-success">Verified</span>
                     @elseif($data['status'] === 'submitted')
-                      <span class="badge badge-info">Submitted</span>
+                      <span class="badge badge-info">Settled</span>
                     @elseif($data['status'] === 'paid')
                       <span class="badge badge-success">Paid</span>
                     @elseif($data['status'] === 'partial')
@@ -201,6 +206,7 @@
                     <!-- Always show View Orders -->
                     <button class="btn btn-sm btn-info view-orders-btn mr-1 mb-1" 
                             data-waiter-id="{{ $data['waiter']->id }}"
+                            data-date="{{ $data['date'] }}"
                             data-waiter-name="{{ $data['waiter']->full_name }}" title="View Orders">
                       <i class="fa fa-eye"></i> View
                     </button>
@@ -216,7 +222,7 @@
                     @if($data['status'] !== 'verified' && ($data['status'] === 'pending' || $data['status'] === 'partial' || ($data['status'] === 'paid' && $data['submitted_amount'] == 0)))
                       <button class="btn btn-sm btn-success mark-all-paid-btn mr-1 mb-1 font-weight-bold" 
                               data-waiter-id="{{ $data['waiter']->id }}"
-                              data-date="{{ $date }}"
+                              data-date="{{ $data['date'] }}"
                               data-total-amount="{{ $data['expected_amount'] }}"
                               data-recorded-amount="{{ $data['recorded_amount'] ?? 0 }}"
                               data-submitted-amount="{{ $data['submitted_amount'] ?? 0 }}"
@@ -227,13 +233,7 @@
                       </button>
                     @endif
 
-                    {{-- Show Undo button if a reconciliation record exists and it's not verified --}}
-                    @if($data['reconciliation'] && $data['status'] !== 'verified')
-                      <button class="btn btn-sm btn-outline-danger reset-btn mb-1" 
-                              data-reconciliation-id="{{ $data['reconciliation']->id }}" title="Reset/Undo Reconciliation">
-                        <i class="fa fa-undo"></i> Undo
-                      </button>
-                    @endif
+
                   </td>
                 </tr>
                 @endforeach
@@ -254,7 +254,15 @@
 <div class="row">
   <div class="col-md-12">
     <div class="tile">
-      <h3 class="tile-title"><i class="fa fa-handshake-o"></i> My Handover to Accountant</h3>
+      <h3 class="tile-title">
+        <i class="fa fa-handshake-o"></i> My Handover to Manager
+        
+        @if(isset($latestClosedShift) && $latestClosedShift)
+        <a href="{{ route('bar.counter.shift.print', $latestClosedShift->id) }}" target="_blank" class="btn {{ $latestClosedShift->status === 'open' ? 'btn-info' : 'btn-primary' }} btn-sm float-right shadow-sm">
+          <i class="fa fa-print"></i> Export {{ $latestClosedShift->status === 'open' ? 'Current Active' : 'Recent' }} Shift #{{ $latestClosedShift->shift_number }} Report
+        </a>
+        @endif
+      </h3>
       <div class="tile-body">
         @if($todayHandover)
           <div class="alert {{ $todayHandover->status === 'verified' ? 'alert-success' : ($todayHandover->status === 'disputed' ? 'alert-danger' : 'alert-info') }}">
@@ -275,7 +283,7 @@
                 @endif
               </div>
               <div class="col-md-6">
-                <strong>Accountant:</strong> {{ $todayHandover->recipientStaff->full_name ?? 'N/A' }}<br>
+                <strong>Manager:</strong> {{ $todayHandover->recipientStaff->full_name ?? 'N/A' }}<br>
                 @if($todayHandover->notes)
                   <strong>Notes:</strong> {{ $todayHandover->notes }}<br>
                 @endif
@@ -285,17 +293,9 @@
               </div>
             </div>
 
-            @if($todayHandover->status === 'pending')
-              <hr>
-              <div class="text-right">
-                <button class="btn btn-outline-danger btn-sm reset-handover-btn" data-date="{{ $date }}">
-                  <i class="fa fa-undo"></i> Reset Handover & Redo Reconciliation
-                </button>
-                <p class="small text-muted mt-2 mb-0 font-italic">Clicking this will cancel your submission and allow you to adjust the waiter rows again.</p>
-              </div>
-            @endif
+
           </div>
-        @elseif($accountant)
+        @elseif($manager)
 
           @php
             $totalCashHandover = 0;
@@ -306,49 +306,71 @@
             $totalDigitalRecordedArr = 0;
             
             foreach($waiters as $data) {
+                // Only include in the Handover Summary if the date matches the targeted handover date ($date)
+                if ($data['date'] !== $date) continue;
+
                 $totalCashHandover += $data['cash_collected'];
                 $totalDigitalHandover += $data['mobile_money_collected'];
                 $totalCashRecordedArr += $data['recorded_cash'];
                 $totalDigitalRecordedArr += $data['recorded_digital'];
                 
-                // For platform breakdown, we prioritize the saved breakdown in 'notes' if it exists.
-                $savedBreakdown = null;
-                if ($data['reconciliation'] && $data['reconciliation']->notes) {
-                    try {
-                        $notesData = json_decode($data['reconciliation']->notes, true);
-                        if (is_array($notesData) && isset($notesData['submitted_breakdown'])) {
-                            $savedBreakdown = $notesData['submitted_breakdown'];
-                        }
-                    } catch (\Exception $e) {}
-                }
-
-                if ($savedBreakdown) {
-                    // Update the totals to match the saved submitted breakdown
-                    // Note: cash_collected and mobile_money_collected are already reconciled in Controller
-                    foreach($savedBreakdown as $label => $amt) {
-                        if ($label === 'cash') continue;
-                        $platformTotals[strtoupper(str_replace('_', ' ', $label))] = ($platformTotals[strtoupper(str_replace('_', ' ', $label))] ?? 0) + $amt;
-                    }
-                } else {
-                    foreach($data['orders'] as $order) {
-                        if ($order->orderPayments->count() > 0) {
-                            foreach($order->orderPayments as $payment) {
-                                if ($payment->payment_method === 'cash') continue;
-                                
-                                $provider = strtolower(trim($payment->mobile_money_number ?? 'mobile'));
-                                $label = 'MOBILE MONEY';
-                                if (str_contains($provider, 'm-pesa') || str_contains($provider, 'mpesa')) { $label = 'M-PESA'; }
-                                elseif (str_contains($provider, 'mixx')) { $label = 'MIXX BY YAS'; }
-                                elseif (str_contains($provider, 'halo')) { $label = 'HALOPESA'; }
-                                elseif (str_contains($provider, 'tigo')) { $label = 'TIGO PESA'; }
-                                elseif (str_contains($provider, 'airtel')) { $label = 'AIRTEL MONEY'; }
-                                elseif (str_contains($provider, 'nmb')) { $label = 'NMB BANK'; }
-                                elseif (str_contains($provider, 'crdb')) { $label = 'CRDB BANK'; }
-                                elseif (str_contains($provider, 'kcb')) { $label = 'KCB BANK'; }
-                                
-                                $platformTotals[$label] = ($platformTotals[$label] ?? 0) + $payment->amount;
+                foreach($data['orders'] as $order) {
+                    if ($order->orderPayments->count() > 0) {
+                        foreach($order->orderPayments as $payment) {
+                            if ($payment->payment_method === 'cash') continue;
+                            
+                            $provider = strtolower(trim($payment->mobile_money_number ?? ''));
+                            $method = strtolower($payment->payment_method ?? '');
+                            $label = 'MOBILE MONEY';
+                            
+                            if (str_contains($provider, 'nmb') || str_contains($method, 'nmb')) $label = 'NMB BANK';
+                            elseif (str_contains($provider, 'crdb') || str_contains($method, 'crdb')) $label = 'CRDB BANK';
+                            elseif (str_contains($provider, 'kcb') || str_contains($method, 'kcb')) $label = 'KCB BANK';
+                            elseif (str_contains($provider, 'nbc') || str_contains($method, 'nbc')) $label = 'NBC BANK';
+                            elseif (str_contains($provider, 'mpesa') || str_contains($provider, 'm-pesa')) $label = 'M-PESA';
+                            elseif (str_contains($provider, 'mixx')) $label = 'MIXX BY YAS';
+                            elseif (str_contains($provider, 'airtel')) $label = 'AIRTEL MONEY';
+                            elseif (str_contains($provider, 'tigo')) $label = 'TIGO PESA';
+                            elseif (str_contains($provider, 'halo')) $label = 'HALOPESA';
+                            elseif (str_contains($provider, 'visa')) $label = 'VISA CARD';
+                            elseif (str_contains($provider, 'mastercard') || str_contains($provider, 'master card')) $label = 'MASTERCARD';
+                            elseif (str_contains($provider, 'equity')) $label = 'EQUITY BANK';
+                            elseif (str_contains($provider, 'absa')) $label = 'ABSA BANK';
+                            elseif (str_contains($provider, 'dtb') || str_contains($provider, 'diamond')) $label = 'DTB BANK';
+                            elseif (str_contains($provider, 'exim')) $label = 'EXIM BANK';
+                            elseif (str_contains($provider, 'azania')) $label = 'AZANIA BANK';
+                            elseif (str_contains($provider, 'stanbic')) $label = 'STANBIC BANK';
+                            elseif ($method === 'card' || str_contains($method, 'pos')) {
+                                $label = 'BANK CARD';
+                            } elseif (str_contains($method, 'bank') || str_contains($provider, 'bank') || str_contains($provider, 'transfer')) {
+                                $label = 'BANK TRANSFER';
                             }
+                            
+                            $platformTotals[$label] = ($platformTotals[$label] ?? 0) + $payment->amount;
                         }
+                    } else {
+                        // Support for orders with older database structure
+                        if ($order->payment_method === 'cash') continue;
+                        $provider = strtolower(trim($order->mobile_money_number ?? ''));
+                        $method = strtolower($order->payment_method ?? '');
+                        $label = 'MOBILE MONEY';
+                        
+                        if (str_contains($provider, 'nmb') || str_contains($method, 'nmb')) $label = 'NMB BANK';
+                        elseif (str_contains($provider, 'crdb') || str_contains($method, 'crdb')) $label = 'CRDB BANK';
+                        elseif (str_contains($provider, 'kcb') || str_contains($method, 'kcb')) $label = 'KCB BANK';
+                        elseif (str_contains($provider, 'nbc') || str_contains($method, 'nbc')) $label = 'NBC BANK';
+                        elseif (str_contains($provider, 'equity')) $label = 'EQUITY BANK';
+                        elseif (str_contains($provider, 'mpesa') || str_contains($provider, 'm-pesa')) $label = 'M-PESA';
+                        elseif (str_contains($provider, 'visa')) $label = 'VISA CARD';
+                        elseif (str_contains($provider, 'mastercard')) $label = 'MASTERCARD';
+                        elseif (str_contains($provider, 'stanbic')) $label = 'STANBIC BANK';
+                        elseif ($method === 'card' || str_contains($method, 'pos')) {
+                            $label = 'BANK CARD';
+                        } elseif (str_contains($method, 'bank') || str_contains($provider, 'bank') || str_contains($provider, 'transfer')) {
+                            $label = 'BANK TRANSFER';
+                        }
+                        
+                        $platformTotals[$label] = ($platformTotals[$label] ?? 0) + $order->total_amount;
                     }
                 }
             }
@@ -357,12 +379,24 @@
             $keyMap = [
                 'M-PESA' => 'mpesa_amount',
                 'MIXX BY YAS' => 'mixx_amount',
+                'T-PESA' => 'tigo_pesa_amount',
                 'HALOPESA' => 'halopesa_amount',
                 'TIGO PESA' => 'tigo_pesa_amount',
                 'AIRTEL MONEY' => 'airtel_money_amount',
                 'NMB BANK' => 'nmb_amount',
                 'CRDB BANK' => 'crdb_amount',
                 'KCB BANK' => 'kcb_amount',
+                'NBC BANK' => 'nbc_amount',
+                'EQUITY BANK' => 'equity_amount',
+                'ABSA BANK' => 'absa_amount',
+                'DTB BANK' => 'dtb_amount',
+                'EXIM BANK' => 'exim_amount',
+                'AZANIA BANK' => 'azania_amount',
+                'STANBIC BANK' => 'stanbic_amount',
+                'VISA CARD' => 'visa_amount',
+                'MASTERCARD' => 'mastercard_amount',
+                'BANK CARD' => 'bank_card_amount',
+                'BANK TRANSFER' => 'bank_transfer_amount',
                 'MOBILE MONEY' => 'mobile_money_amount'
             ];
           @endphp
@@ -395,13 +429,13 @@
             </div>
           </div>
 
-          <form action="{{ route('bar.counter.handover') }}" method="POST">
+          <form action="{{ route('bar.counter.handover') }}" method="POST" id="handoverForm">
             @csrf
             <input type="hidden" name="date" value="{{ $date }}">
             
             <div class="alert alert-warning">
               <h5><i class="fa fa-warning"></i> Ready to Close Your Day?</h5>
-              <p>Please confirm the totals gathered from waiter reconciliations today.</p>
+              <p>Please confirm the totals gathered from waiter reconciliations for <strong>{{ date('M d, Y', strtotime($date)) }}</strong>.</p>
             </div>
 
             <div class="row">
@@ -413,6 +447,8 @@
                   <input type="number" name="cash_amount" class="form-control handover-input bg-light" value="{{ round($totalCashHandover) }}" readonly>
                 </div>
               </div>
+              @else
+              <input type="hidden" name="cash_amount" value="0">
               @endif
 
               @foreach($platformTotals as $label => $amount)
@@ -444,6 +480,9 @@
               </div>
             </div>
 
+            {{-- Hidden: circulation_money defaults to 0, manager can view/adjust from their end --}}
+            <input type="hidden" name="circulation_money" value="0">
+
             <div class="row">
               <div class="col-md-12 form-group">
                 <label>Notes / Comments (Optional)</label>
@@ -452,12 +491,12 @@
             </div>
             
             <button type="submit" class="btn btn-primary btn-block">
-              <i class="fa fa-paper-plane"></i> Submit Detailed Handover to Accountant
+              <i class="fa fa-paper-plane"></i> Submit Detailed Handover to Manager
             </button>
           </form>
         @else
           <div class="alert alert-warning">
-            <i class="fa fa-exclamation-triangle"></i> No active accountant found. You cannot handover money until an accountant is registered by the owner.
+            <i class="fa fa-exclamation-triangle"></i> No active manager found. You cannot handover money until a manager is registered by the owner.
           </div>
         @endif
       </div>
@@ -492,21 +531,38 @@
 @endsection
 
 @push('scripts')
-<script type="text/javascript" src="https://cdn.datatables.net/1.13.6/js/jquery.dataTables.min.js"></script>
-<script type="text/javascript" src="https://cdn.datatables.net/1.13.6/js/dataTables.bootstrap4.min.js"></script>
-<script type="text/javascript" src="https://cdn.datatables.net/responsive/2.5.0/js/dataTables.responsive.min.js"></script>
-<script type="text/javascript" src="https://cdn.datatables.net/responsive/2.5.0/js/responsive.bootstrap4.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+<script type="text/javascript" src="{{ asset('js/admin/plugins/jquery.dataTables.min.js') }}?v=2.1"></script>
+<script type="text/javascript" src="{{ asset('js/admin/plugins/dataTables.bootstrap.min.js') }}?v=2.1"></script>
 <script>
-$(document).ready(function() {
+jQuery(document).ready(function($) {
   // Initialize DataTables
   if ($('#waiters-table').length > 0) {
     const table = $('#waiters-table').DataTable({
-      "pageLength": 25,
-      "responsive": true,
+      "pageLength": 50,
+      "responsive": false,
+      "ordering": false,
       "language": {
         "search": "_INPUT_",
-        "searchPlaceholder": "Search Waiter..."
+        "searchPlaceholder": "Search Waiter or Date..."
+      },
+      "drawCallback": function(settings) {
+        var api = this.api();
+        var rows = api.rows({ page: 'current' }).nodes();
+        var last = null;
+ 
+        api.column(2, { page: 'current' }).data().each(function(group, i) {
+          // Extract the plain date text from the badge/span if needed
+          let tempDiv = document.createElement('div');
+          tempDiv.innerHTML = group;
+          let dateText = tempDiv.innerText.trim();
+
+          if (last !== dateText) {
+              $(rows[i]).before(
+                '<tr class="date-header-row"><td colspan="13" style="background-color: #5d6d7e !important; color: white !important; font-weight: bold; padding: 10px;"><i class="fa fa-calendar-check-o mr-2"></i> ' + dateText.toUpperCase() + '</td></tr>'
+              );
+            last = dateText;
+          }
+        });
       }
     });
 
@@ -527,7 +583,7 @@ $(document).ready(function() {
   $(document).on('click', '.view-orders-btn', function() {
     const waiterId = $(this).data('waiter-id');
     const waiterName = $(this).data('waiter-name');
-    const date = '{{ $date }}';
+    const date = $(this).data('date');
     
     $('#modal-waiter-name').text(waiterName);
     $('#orders-content').html('<div class="text-center"><i class="fa fa-spinner fa-spin fa-3x"></i><p>Loading orders...</p></div>');
@@ -536,11 +592,11 @@ $(document).ready(function() {
     $.ajax({
       url: '{{ Route::currentRouteName() === "accountant.counter.reconciliation" ? route("accountant.counter.reconciliation.waiter-orders", ":id") : route("bar.counter.reconciliation.waiter-orders", ":id") }}'.replace(':id', waiterId),
       method: 'GET',
-      data: { date: date },
+      data: { date: date, shift_id: '{{ $shiftId }}' },
       success: function(response) {
         if (response.success && response.orders.length > 0) {
           let html = '<div class="table-responsive"><table class="table table-sm">';
-          html += '<thead><tr><th>Order #</th><th>Time</th><th>Platform</th><th>Bar Items (Drinks)</th><th>Food Items</th><th>Bar Amount</th><th>Food Amount</th><th>Total</th><th>Payment</th><th>Status</th></tr></thead><tbody>';
+          html += '<thead><tr><th>Order #</th><th>Time</th><th>Platform</th><th>Bar Items (Drinks)</th><th>Bar Amount</th><th>Total Order</th><th>Payment</th><th>Status</th></tr></thead><tbody>';
           
           response.orders.forEach(function(order) {
             // Calculate bar amount (from items - drinks)
@@ -582,15 +638,7 @@ $(document).ready(function() {
               });
             } else { html += '<span class="text-muted">-</span>'; }
             html += '</td>';
-            html += '<td>';
-            if (order.kitchen_order_items && order.kitchen_order_items.length > 0) {
-              order.kitchen_order_items.forEach(function(item) {
-                html += '<span class="badge badge-info">' + item.quantity + 'x ' + item.food_item_name + '</span> ';
-              });
-            } else { html += '<span class="text-muted">-</span>'; }
-            html += '</td>';
             html += '<td><strong>TSh ' + barAmount.toLocaleString() + '</strong></td>';
-            html += '<td><strong>TSh ' + foodAmount.toLocaleString() + '</strong></td>';
             html += '<td><strong>TSh ' + parseFloat(order.total_amount).toLocaleString() + '</strong></td>';
             html += '<td>';
             if (order.order_payments && order.order_payments.length > 0) {
@@ -839,40 +887,6 @@ $(document).ready(function() {
   });
 
   
-  // Reset reconciliation button
-  $(document).on('click', '.reset-btn', function() {
-    const reconciliationId = $(this).data('reconciliation-id');
-    const btn = $(this);
-    Swal.fire({
-      title: 'Reset Reconciliation?',
-      text: 'This will reopen the staff row so you can adjust the submitted amount. Continue?',
-      icon: 'warning',
-      showCancelButton: true,
-      confirmButtonColor: '#d33',
-      cancelButtonColor: '#3085d6',
-      confirmButtonText: 'Yes, Reset',
-      cancelButtonText: 'Cancel'
-    }).then((result) => {
-      if (result.isConfirmed) {
-        btn.prop('disabled', true).html('<i class="fa fa-spinner fa-spin"></i> Resetting...');
-        $.ajax({
-          url: '{{ route("bar.counter.reset-reconciliation", ":id") }}'.replace(':id', reconciliationId),
-          method: 'POST',
-          data: { _token: '{{ csrf_token() }}' },
-          success: function(response) {
-            if (response.success) {
-              Swal.fire({ icon: 'success', title: 'Reset!', text: 'Row reopened.', timer: 2000 }).then(() => { location.reload(); });
-            }
-          },
-          error: function(xhr) {
-            Swal.fire({ icon: 'error', title: 'Error', text: xhr.responseJSON?.error || 'Failed to reset' });
-            btn.prop('disabled', false).html('<i class="fa fa-undo"></i> Reset');
-          }
-        });
-      }
-    });
-  });
-
   // Auto-calculate handover total
   $('.handover-input').on('input', function() {
     let total = 0;
@@ -885,42 +899,40 @@ $(document).ready(function() {
   // Trigger calculation on load
   $('.handover-input').first().trigger('input');
 
-  // Reset Handover Button
-  $(document).on('click', '.reset-handover-btn', function() {
-    const date = $(this).data('date');
-    const btn = $(this);
+  
+  // Handover Form Confirmation
+  $('#handoverForm').on('submit', function(e) {
+    e.preventDefault();
+    const form = this;
+    
+    // Parse the total dynamically
+    const totalValue = parseFloat($('#handover-total').text().replace(/[^0-9.-]+/g, "")) || 0;
+    
+    if (totalValue <= 0) {
+      Swal.fire({
+        icon: 'error',
+        title: 'Empty Handover',
+        text: 'You cannot submit a handover with zero collections. Reconcile staff payments first!'
+      });
+      return false;
+    }
+
     Swal.fire({
-      title: 'Reset Entire Handover?',
-      text: 'This will cancel your handover and allow you to adjust each waiter row again. Continue?',
-      icon: 'warning',
+      title: 'Final Confirmation',
+      text: "Are you ready? Please confirm you want to submit your final collection to the manager. You will not be able to edit these reconciliations once submitted.",
+      icon: 'question',
       showCancelButton: true,
-      confirmButtonColor: '#d33',
-      confirmButtonText: 'Yes, Reset Everything'
+      confirmButtonColor: '#009688',
+      cancelButtonColor: '#6c757d',
+      confirmButtonText: 'Yes, I am ready!'
     }).then((result) => {
       if (result.isConfirmed) {
-        btn.prop('disabled', true).html('<i class="fa fa-spinner fa-spin"></i> Resetting...');
-        $.ajax({
-          url: '{{ route("bar.counter.reset-handover") }}',
-          method: 'POST',
-          data: { _token: '{{ csrf_token() }}', date: date },
-          success: function(response) {
-            if (response.success) {
-              Swal.fire({ icon: 'success', title: 'Reset!', text: 'The day has been re-opened.', timer: 2000 }).then(() => { location.reload(); });
-            } else {
-              Swal.fire({ icon: 'error', title: 'Error', text: response.error || 'Failed to reset' });
-              btn.prop('disabled', false).html('<i class="fa fa-undo"></i> Reset Handover');
-            }
-          },
-          error: function(xhr) {
-            Swal.fire({ icon: 'error', title: 'Error', text: 'Server error' });
-            btn.prop('disabled', false).html('<i class="fa fa-undo"></i> Reset Handover');
-          }
-        });
+        form.submit();
       }
     });
   });
 });
 </script>
+
+
 @endpush
-
-

@@ -47,36 +47,35 @@
   </div>
 </div>
 
-<!-- Audio Enable Banner -->
-<div id="audio-enable-banner" class="alert alert-warning" style="display: none; margin-bottom: 20px;">
-  <div class="row align-items-center">
-    <div class="col-md-10">
-      <strong><i class="fa fa-volume-up"></i> Audio Not Enabled</strong>
-      <p class="mb-0">Click the button below to enable audio announcements for new orders.</p>
-    </div>
-    <div class="col-md-2 text-right">
-      <button id="enable-audio-btn" class="btn btn-primary btn-lg">
-        <i class="fa fa-volume-up"></i> Enable Audio
-      </button>
-    </div>
-  </div>
-</div>
+
 
 <div class="row">
   <div class="col-md-12">
     <div class="tile">
       <div class="tile-title-w-btn">
         <h3 class="title">All Waiter Orders</h3>
-        <div class="btn-group">
-          <button class="btn btn-primary filter-btn" data-status="all">
-            <i class="fa fa-list"></i> All
-          </button>
-          <button class="btn btn-outline-primary filter-btn" data-status="pending">
-            <i class="fa fa-clock-o"></i> Pending
-          </button>
-          <button class="btn btn-outline-primary filter-btn" data-status="served">
-            <i class="fa fa-truck"></i> Served
-          </button>
+        <div class="d-flex flex-wrap align-items-center">
+            <div class="input-group input-group-sm mr-2 mb-2" style="width: 250px;">
+                <div class="input-group-prepend"><span class="input-group-text"><i class="fa fa-search"></i></span></div>
+                <input type="text" id="orderSearch" class="form-control" placeholder="Search Order # or Waiter...">
+            </div>
+            <select id="filterWaiter" class="form-control form-control-sm mr-2 mb-2" style="width: 150px;">
+                <option value="">All Waiters</option>
+                @foreach($waiters as $waiter)
+                    <option value="{{ $waiter->full_name }}">{{ $waiter->full_name }}</option>
+                @endforeach
+            </select>
+            <select id="filterStatus" class="form-control form-control-sm mr-2 mb-2" style="width: 130px;">
+                <option value="">All Status</option>
+                <option value="pending">Pending</option>
+                <option value="served">Served</option>
+                <option value="cancelled">Cancelled</option>
+            </select>
+            <select id="filterPayment" class="form-control form-control-sm mb-2" style="width: 130px;">
+                <option value="">All Payment</option>
+                <option value="paid">Paid</option>
+                <option value="unpaid">Unpaid</option>
+            </select>
         </div>
       </div>
       <div class="tile-body">
@@ -97,7 +96,7 @@
             </thead>
             <tbody>
               @forelse($orders as $order)
-              <tr data-status="{{ $order->status }}" data-order-id="{{ $order->id }}">
+              <tr data-status="{{ $order->status }}" data-order-id="{{ $order->id }}" class="{{ $order->payment_status === 'paid' ? 'table-success' : ($order->status === 'cancelled' ? 'table-danger opacity-75' : '') }}">
                 <td><strong>{{ $order->order_number }}</strong></td>
                 <td>
                   @if($order->waiter)
@@ -123,7 +122,15 @@
                     @foreach($order->items->take(3) as $item)
                     <li>
                       @if($item->productVariant)
-                        <small>{{ $item->quantity }}x {{ \App\Helpers\ProductHelper::generateDisplayName($item->productVariant->product->name ?? 'N/A', ($item->productVariant->measurement ?? '') . ' - ' . ($item->productVariant->packaging ?? ''), $item->productVariant->name) }}</small>
+                        <small>
+                          {{ $item->quantity }}x 
+                          @if($item->sell_type === 'tot')
+                            {{ $item->productVariant->portion_unit_name ?? 'Glass' }}
+                          @else
+                            Btl
+                          @endif
+                          of {{ \App\Helpers\ProductHelper::generateDisplayName($item->productVariant->product->name ?? 'N/A', ($item->productVariant->measurement ?? '') . ' - ' . ($item->productVariant->packaging ?? ''), $item->productVariant->name) }}
+                        </small>
                       @elseif($item->food_item_name)
                         <small>{{ $item->quantity }}x {{ $item->food_item_name }}</small>
                       @else
@@ -147,15 +154,21 @@
                     <span class="badge badge-success">
                       <i class="fa fa-check"></i> Paid
                     </span>
+                    @if($order->payment_method)
+                      <br><small class="text-muted">
+                        <i class="fa fa-{{ $order->payment_method === 'cash' ? 'money' : ($order->payment_method === 'bank' ? 'university' : ($order->payment_method === 'card' ? 'credit-card' : 'mobile')) }}"></i> 
+                        {{ $order->mobile_money_number ? strtoupper($order->mobile_money_number) : ucfirst(str_replace('_', ' ', $order->payment_method)) }}
+                      </small>
+                    @endif
                     @if($order->paidByWaiter)
-                      <br><small class="text-muted">Paid by {{ $order->paidByWaiter->full_name }}</small>
+                      <br><small class="text-muted">By {{ $order->paidByWaiter->full_name }}</small>
                     @endif
                   @elseif($order->payment_status === 'partial')
                     <span class="badge badge-warning">
                       Partial: TSh {{ number_format($order->paid_amount, 2) }}
                     </span>
                     @if($order->paidByWaiter)
-                      <br><small class="text-muted">Paid by {{ $order->paidByWaiter->full_name }}</small>
+                      <br><small class="text-muted">By {{ $order->paidByWaiter->full_name }}</small>
                     @endif
                   @elseif($order->orderPayments && $order->orderPayments->count() > 0 || $order->paid_by_waiter_id)
                     {{-- Payment has been recorded by waiter but not yet reconciled --}}
@@ -179,32 +192,38 @@
                       <i class="fa fa-eye"></i> View
                     </button>
 
-                    @if($order->status === 'pending' && $order->payment_status !== 'paid')
-                      {{-- PENDING: Mark Served --}}
-                      <button class="btn btn-sm btn-info update-status-btn mr-1 mb-1"
+                    @if($order->payment_status !== 'paid' && $order->status !== 'cancelled')
+                      <a href="{{ route('bar.counter.dashboard', ['add_item_to_order' => $order->id]) }}" class="btn btn-sm btn-primary mr-1 mb-1">
+                        <i class="fa fa-plus"></i> Add
+                      </a>
+                      <button class="btn btn-sm btn-danger cancel-order-btn mr-1 mb-1"
                               data-order-id="{{ $order->id }}"
-                              data-status="served">
-                        <i class="fa fa-check"></i> Serve
+                              data-order-num="{{ $order->order_number }}">
+                        <i class="fa fa-times"></i> Cancel
                       </button>
+                      @if($order->status === 'served')
+                        <button class="btn btn-sm btn-success pay-order-btn mr-1 mb-1"
+                                data-order-id="{{ $order->id }}"
+                                data-total="{{ $order->total_amount }}">
+                          <i class="fa fa-money"></i> PAY
+                        </button>
+                      @endif
+                    @endif
 
-                    @elseif($order->status === 'served' && $order->payment_status !== 'paid')
-                      {{-- SERVED & UNPAID: PAY button --}}
-                      <button class="btn btn-sm btn-success font-weight-bold pay-order-btn mr-1 mb-1"
-                              data-order-id="{{ $order->id }}"
-                              data-total="{{ $order->total_amount }}">
-                        <i class="fa fa-money"></i> PAY
-                      </button>
-
-                    @elseif($order->payment_status === 'paid')
-                      {{-- PAID: no actions --}}
-                      <button class="btn btn-sm btn-success" disabled style="opacity: 1;">
+                    @if($order->payment_status === 'paid')
+                      <button class="btn btn-sm btn-success mr-1 mb-1" disabled style="opacity: 1;">
                         <i class="fa fa-check-circle"></i> Paid
                       </button>
-
                     @elseif($order->status === 'cancelled')
                       <button class="btn btn-sm btn-secondary" disabled style="opacity: 1;">
                         <i class="fa fa-ban"></i> Cancelled
                       </button>
+                    @endif
+
+                    @if($order->status !== 'cancelled')
+                      <a href="{{ route('bar.counter.print-receipt', $order->id) }}" target="_blank" class="btn btn-sm btn-dark mr-1 mb-1" title="Print Docket">
+                        <i class="fa fa-print"></i> Print
+                      </a>
                     @endif
                   </div>
                 </td>
@@ -333,11 +352,11 @@
           <div class="form-group">
             <label class="font-weight-bold small">MM Provider</label>
             <select class="form-control" id="mobile-money-provider">
-              <option value="Tigo Pesa">Tigo Pesa</option>
+              <option value="Halopesa">Halopesa</option>
+              <option value="Mixx By Yas">Mixx By Yas</option>
               <option value="M-Pesa">M-Pesa</option>
               <option value="Airtel Money">Airtel Money</option>
-              <option value="HaloPesa">HaloPesa</option>
-              <option value="MIXX BY YAS">MIXX BY YAS</option>
+              <option value="T-Pesa">T-Pesa</option>
             </select>
           </div>
           <div class="form-group mb-0">
@@ -414,12 +433,8 @@
   let announcedOrders = new Set();
   let isPolling = true;
   let pollInterval = null;
-  let speechSynthesis = window.speechSynthesis;
-  let speechEnabled = false; // Will be enabled after user interaction
-  let audioEnabled = false; // Audio playback enabled after user interaction
-  let pollCount = 0;
   let errorCount = 0;
-  
+
   // Debug logging
   function debugLog(message, data = null) {
     if (DEBUG_MODE) {
@@ -433,827 +448,23 @@
     errorCount++;
     const timestamp = new Date().toLocaleTimeString();
     console.error(`[${timestamp}] ERROR: ${message}`, error || '');
-    
-    // Show error in UI if too many errors
-    if (errorCount > 5) {
-      showDebugMessage('Multiple errors detected. Check console.', 'error');
-    }
   }
   
   // Show debug message on screen (only in console when DEBUG_MODE is true)
   function showDebugMessage(message, type = 'info') {
-    // Only log to console, no visual panel
     if (DEBUG_MODE) {
       debugLog(message, type);
     }
   }
-
-  // Check browser support for speech synthesis
-  if (!speechSynthesis) {
-    errorLog('Speech synthesis not supported in this browser');
-    showDebugMessage('Speech synthesis not supported', 'error');
-  } else {
-    debugLog('Speech synthesis API available');
-    showDebugMessage('Speech synthesis API available', 'success');
-  }
-  
-  // Enable speech and audio after user interaction (browser security requirement)
-  function enableSpeech() {
-    if (speechSynthesis && !speechEnabled) {
-      // Test speech with a silent utterance
-      const testUtterance = new SpeechSynthesisUtterance('');
-      testUtterance.volume = 0;
-      speechSynthesis.speak(testUtterance);
-      speechEnabled = true;
-      debugLog('Speech enabled after user interaction');
-    }
-    
-    // Enable audio playback - just mark as enabled after user interaction
-    // The actual audio files will work once user has interacted with the page
-    // (browser autoplay policy requires user interaction)
-    if (!audioEnabled) {
-      audioEnabled = true;
-      debugLog('Audio playback enabled (user interaction detected)');
-      
-      // Test audio playback with a real audio file to unlock autoplay
-      // This must happen during the user interaction event
-      if (voiceClipsLoaded && voiceClips.static && Object.keys(voiceClips.static).length > 0) {
-        // Get the first available audio clip URL
-        const firstClipUrl = Object.values(voiceClips.static)[0];
-        if (firstClipUrl) {
-          const testAudio = new Audio(firstClipUrl);
-          testAudio.volume = 0.01; // Very quiet, just to unlock autoplay
-          testAudio.play().then(() => {
-            debugLog('Audio autoplay unlocked successfully');
-            testAudio.pause();
-            testAudio.currentTime = 0;
-          }).catch((error) => {
-            debugLog('Audio autoplay test failed (will retry on actual playback):', error);
-          });
-        }
-      }
-      
-      updateAudioUI();
-    }
-  }
-  
-  // Update UI after audio is enabled
-  function updateAudioUI() {
-    // Hide the banner
-    const banner = document.getElementById('audio-enable-banner');
-    if (banner) {
-      banner.style.display = 'none';
-    }
-    // Update button
-    const btn = document.getElementById('enable-audio-btn');
-    if (btn) {
-      btn.innerHTML = '<i class="fa fa-check"></i> Audio Enabled';
-      btn.classList.remove('btn-primary');
-      btn.classList.add('btn-success');
-      btn.disabled = true;
-    }
-    
-    // Play any queued announcements immediately (as part of user interaction)
-    if (announcementQueue.length > 0) {
-      debugLog(`Playing ${announcementQueue.length} queued announcement(s) immediately`);
-      const queuedOrders = [...announcementQueue];
-      announcementQueue = []; // Clear queue
-      
-      // Play the first announcement immediately (as part of user interaction)
-      if (queuedOrders.length > 0) {
-        const firstOrder = queuedOrders[0];
-        debugLog(`Playing first queued announcement immediately: ${firstOrder.order_number}`);
-        // Play immediately - this is still part of the user interaction
-        playAnnouncementWithAudio(firstOrder);
-        
-        // Play remaining announcements with delays
-        if (queuedOrders.length > 1) {
-          queuedOrders.slice(1).forEach((order, index) => {
-            setTimeout(() => {
-              debugLog(`Playing queued announcement: ${order.order_number}`);
-              playAnnouncementWithAudio(order);
-            }, (index + 1) * 3000); // 3 second delay between announcements
-          });
-        }
-      }
-    }
-  }
-  
-  // Show banner if audio not enabled
-  function checkAudioStatus() {
-    if (!audioEnabled || !speechEnabled) {
-      const banner = document.getElementById('audio-enable-banner');
-      if (banner) {
-        banner.style.display = 'block';
-      }
-    }
-  }
-  
-  // Enable audio button click handler
-  document.addEventListener('DOMContentLoaded', function() {
-    const enableBtn = document.getElementById('enable-audio-btn');
-    if (enableBtn) {
-      enableBtn.addEventListener('click', function() {
-        enableSpeech();
-        // Also enable on any click anywhere
-        document.addEventListener('click', enableSpeech, { once: true });
-        document.addEventListener('keydown', enableSpeech, { once: true });
-        document.addEventListener('touchstart', enableSpeech, { once: true });
-      });
-    }
-    
-    // Check status on load
-    checkAudioStatus();
-  });
-  
-  // Enable speech on any user interaction (as fallback)
-  ['click', 'keydown', 'touchstart'].forEach(event => {
-    document.addEventListener(event, enableSpeech, { once: true });
-  });
-
-  /**
-   * Get Swahili voice (wait for voices to load if needed)
-   */
-  function getSwahiliVoice() {
-    const voices = speechSynthesis.getVoices();
-    
-    // Try multiple Swahili language codes and name patterns
-    const swahiliPatterns = [
-      { lang: 'sw-TZ', name: 'Swahili' }, // Tanzania Swahili
-      { lang: 'sw-KE', name: 'Swahili' }, // Kenya Swahili
-      { lang: 'sw', name: 'Swahili' },    // Generic Swahili
-    ];
-    
-    // First, try to find exact Swahili voice
-    for (const pattern of swahiliPatterns) {
-      const voice = voices.find(v => 
-        v.lang === pattern.lang || 
-        (v.lang.startsWith('sw') && v.name.toLowerCase().includes('swahili'))
-      );
-      if (voice) {
-        debugLog(`Found Swahili voice: ${voice.name} (${voice.lang})`);
-        return voice;
-      }
-    }
-    
-    // Try broader search
-    const swahiliVoice = voices.find(voice => 
-      voice.lang.startsWith('sw') || 
-      voice.lang.toLowerCase().includes('swahili') ||
-      voice.name.toLowerCase().includes('swahili')
-    );
-    
-    if (swahiliVoice) {
-      debugLog(`Found Swahili voice: ${swahiliVoice.name} (${swahiliVoice.lang})`);
-      return swahiliVoice;
-    }
-    
-    return null;
-  }
-
-  // Load voice clips on page load
-  let voiceClips = {};
-  let voiceClipsLoaded = false;
-
-  /**
-   * Load recorded voice clips from server
-   */
-  function loadVoiceClips() {
-    if (voiceClipsLoaded) return;
-    
-    $.ajax({
-      url: '{{ route("bar.counter.get-voice-clips") }}',
-      method: 'GET',
-      headers: {
-        'Accept': 'application/json'
-      },
-      success: function(response) {
-        if (response.success && response.clips) {
-          response.clips.forEach(clip => {
-            if (!voiceClips[clip.category]) {
-              voiceClips[clip.category] = {};
-            }
-            voiceClips[clip.category][clip.name] = clip.audio_url;
-          });
-          voiceClipsLoaded = true;
-          debugLog('Voice clips loaded', Object.keys(voiceClips).length + ' categories');
-        }
-      },
-      error: function() {
-        debugLog('Failed to load voice clips, will use TTS only');
-      }
-    });
-  }
-
-  // Queue for announcements waiting for audio to be enabled
-  let announcementQueue = [];
-
-  /**
-   * Play announcement using recorded audio clips + TTS for dynamic parts
-   */
-  function playAnnouncementWithAudio(order) {
-    // Check if audio is enabled, if not, queue it
-    if (!audioEnabled || !speechEnabled) {
-      debugLog('Audio not enabled yet, queuing announcement for order:', order.order_number);
-      announcementQueue.push(order);
-      
-      // Show banner if not already shown
-      const banner = document.getElementById('audio-enable-banner');
-      if (banner && banner.style.display === 'none') {
-        banner.style.display = 'block';
-        banner.innerHTML = '<div class="row align-items-center"><div class="col-md-10"><strong><i class="fa fa-volume-up"></i> New Order Waiting</strong><p class="mb-0">Click "Enable Audio" to hear the order announcement.</p></div><div class="col-md-2 text-right"><button id="enable-audio-btn" class="btn btn-primary btn-lg"><i class="fa fa-volume-up"></i> Enable Audio</button></div></div>';
-      }
-      
-      return;
-    }
-    
-    // Extract order number for TTS
-    // Format: "ORD-01" -> "1", "ORD-02" -> "2", "ORD-10" -> "10"
-    let orderNum = order.order_number;
-    // Extract number after "ORD-"
-    if (orderNum.includes('-')) {
-      orderNum = orderNum.split('-')[1]; // Get part after "ORD-"
-      // Remove leading zeros (e.g., "01" -> "1", "02" -> "2", "10" -> "10")
-      orderNum = parseInt(orderNum).toString();
-    } else {
-      // Fallback: extract all digits
-      orderNum = order.order_number.replace(/[^0-9]/g, '') || order.order_number;
-      // If it's a long number, take just the last 4 digits and remove leading zeros
-      if (orderNum.length > 4) {
-        orderNum = parseInt(orderNum.slice(-4)).toString();
-      }
-    }
-    const waiterName = order.waiter_name || 'Mhudumu';
-    const itemsList = order.items.map(item => {
-      const qty = item.quantity;
-      const name = item.name;
-      return `${qty} ${qty === 1 ? 'chupa' : 'chupa'} ya ${name}`;
-    }).join(', ');
-    const totalAmount = Math.round(order.total_amount || 0).toLocaleString('en-US');
-
-    // Build audio sequence
-    const audioSequence = [];
-    
-    // Try to use recorded clips, fallback to TTS
-    function addAudio(text, useTTS = false) {
-      if (useTTS || !voiceClips.static || !voiceClips.static[text]) {
-        // Use TTS
-        return { type: 'tts', text: text };
-      } else {
-        // Use recorded audio
-        return { type: 'audio', url: voiceClips.static[text] };
-      }
-    }
-
-    // Helper function to find clip by name (case-insensitive, partial match)
-    function findClip(searchName) {
-      if (!voiceClips.static) {
-        debugLog('No voice clips loaded');
-        return null;
-      }
-      
-      const clipNames = Object.keys(voiceClips.static);
-      debugLog('Available clips:', clipNames);
-      debugLog('Searching for:', searchName);
-      
-      // Try exact match first (case-insensitive)
-      const exactMatch = clipNames.find(name => 
-        name.toLowerCase() === searchName.toLowerCase()
-      );
-      if (exactMatch) {
-        debugLog(`Found exact match: ${exactMatch}`);
-        return voiceClips.static[exactMatch];
-      }
-      
-      // Try partial match (contains) - check if searchName contains clip name or vice versa
-      const partialMatch = clipNames.find(name => {
-        const nameLower = name.toLowerCase();
-        const searchLower = searchName.toLowerCase();
-        return nameLower.includes(searchLower) || searchLower.includes(nameLower);
-      });
-      if (partialMatch) {
-        debugLog(`Found partial match: ${partialMatch}`);
-        return voiceClips.static[partialMatch];
-      }
-      
-      debugLog(`No match found for: ${searchName}`);
-      return null;
-    }
-
-    // Build sequence: "Order nambari [number] kutoka meza nambari [table] kutoka kwa mhudumu [name] ameagiza [items] karibu Kili Home"
-    // Try to find clips with flexible matching based on uploaded names
-    const orderNambariClip = findClip('Order nambari') || findClip('Oda nambari');
-    const kutokaMezaClip = findClip('Kutoka meza nambari') || findClip('kutoka meza');
-    const kutokaMhudumuClip = findClip('kutoka kwa mhudumu') || findClip('Kutoka kwa') || findClip('kutoka');
-    const ameagizaClip = findClip('ameagiza') || findClip('Ameagiza');
-    const karibuClip = findClip('karibu Kili Home') || findClip('karibu') || findClip('asante') || findClip('Asante');
-
-    debugLog('Clip matching results:', {
-      'Order nambari': !!orderNambariClip,
-      'Kutoka meza nambari': !!kutokaMezaClip,
-      'kutoka kwa mhudumu': !!kutokaMhudumuClip,
-      'ameagiza': !!ameagizaClip,
-      'karibu Kili Home': !!karibuClip
-    });
-
-    // 1. "Order nambari"
-    if (orderNambariClip) {
-      audioSequence.push({ type: 'audio', url: orderNambariClip });
-      debugLog('Using recorded clip: Order nambari');
-    } else {
-      audioSequence.push({ type: 'tts', text: 'Order nambari' });
-      debugLog('Using TTS: Order nambari');
-    }
-    
-    // 2. Order number via TTS
-    audioSequence.push({ type: 'tts', text: orderNum });
-    
-    // 3. "Kutoka meza nambari" (if table exists)
-    if (order.table_number) {
-      if (kutokaMezaClip) {
-        audioSequence.push({ type: 'audio', url: kutokaMezaClip });
-        debugLog('Using recorded clip: Kutoka meza nambari');
-      } else {
-        audioSequence.push({ type: 'tts', text: 'kutoka meza nambari' });
-        debugLog('Using TTS: kutoka meza nambari');
-      }
-      
-      // Table number via TTS
-      const tableNum = order.table_number.replace(/[^0-9]/g, '') || order.table_number;
-      audioSequence.push({ type: 'tts', text: tableNum });
-    }
-    
-    // 4. "kutoka kwa mhudumu"
-    if (kutokaMhudumuClip) {
-      audioSequence.push({ type: 'audio', url: kutokaMhudumuClip });
-      debugLog('Using recorded clip: kutoka kwa mhudumu');
-    } else {
-      audioSequence.push({ type: 'tts', text: 'kutoka kwa mhudumu' });
-      debugLog('Using TTS: kutoka kwa mhudumu');
-    }
-    
-    // 5. Waiter name via TTS
-    audioSequence.push({ type: 'tts', text: waiterName });
-    
-    // 6. "ameagiza"
-    if (ameagizaClip) {
-      audioSequence.push({ type: 'audio', url: ameagizaClip });
-      debugLog('Using recorded clip: ameagiza');
-    } else {
-      audioSequence.push({ type: 'tts', text: 'ameagiza' });
-      debugLog('Using TTS: ameagiza');
-    }
-    
-    // 7. Items via TTS
-    audioSequence.push({ type: 'tts', text: itemsList });
-    
-    // 8. "karibu Kili Home"
-    if (karibuClip) {
-      audioSequence.push({ type: 'audio', url: karibuClip });
-      debugLog('Using recorded clip: karibu Kili Home');
-    } else {
-      audioSequence.push({ type: 'tts', text: 'karibu Kili Home' });
-      debugLog('Using TTS: karibu Kili Home');
-    }
-
-    // Log the complete sequence for debugging
-    debugLog('Complete audio sequence:', audioSequence.map((item, idx) => 
-      `${idx + 1}. ${item.type}: ${item.text || item.url || 'N/A'}`
-    ));
-    debugLog(`Total items in sequence: ${audioSequence.length}`);
-
-    // Play sequence
-    playAudioSequence(audioSequence, 0);
-  }
-
-  /**
-   * Play audio sequence (recorded clips + TTS)
-   */
-  function playAudioSequence(sequence, index) {
-    if (index >= sequence.length) {
-      debugLog('Audio sequence completed');
-      return;
-    }
-
-    const item = sequence[index];
-    
-    if (item.type === 'audio') {
-      // Play recorded audio
-      if (!audioEnabled) {
-        debugLog('Audio not enabled yet, skipping recorded clip');
-        // Skip to next item
-        setTimeout(() => playAudioSequence(sequence, index + 1), 100);
-        return;
-      }
-      
-      debugLog(`🎵 Attempting to play recorded audio: ${item.url}`);
-      
-      const audio = new Audio(item.url);
-      audio.volume = 1.0;
-      audio.preload = 'auto';
-      
-      let completed = false;
-      let playbackStarted = false;
-      
-      const completeCallback = function() {
-        if (!completed) {
-          completed = true;
-          debugLog(`✅ Recorded audio sequence item ${index + 1} completed`);
-          // Play next in sequence immediately (no delay for seamless transition)
-          playAudioSequence(sequence, index + 1);
-        }
-      };
-      
-      // Load event
-      audio.onloadstart = function() {
-        debugLog(`📥 Audio loading started: ${item.url}`);
-      };
-      
-      audio.oncanplay = function() {
-        debugLog(`✅ Audio can play: ${item.url}`);
-      };
-      
-      audio.oncanplaythrough = function() {
-        debugLog(`✅ Audio can play through: ${item.url}`);
-        // Pre-load next item if it's audio for smoother transition
-        if (index + 1 < sequence.length && sequence[index + 1].type === 'audio') {
-          const nextAudio = new Audio(sequence[index + 1].url);
-          nextAudio.preload = 'auto';
-        }
-      };
-      
-      // Start next item slightly before current ends (for seamless transition)
-      audio.ontimeupdate = function() {
-        // When audio is 90% complete, prepare next item
-        if (audio.duration > 0 && audio.currentTime / audio.duration > 0.9 && !completed) {
-          // Pre-start the next item preparation
-          if (index + 1 < sequence.length) {
-            const nextItem = sequence[index + 1];
-            if (nextItem.type === 'audio') {
-              // Pre-load next audio
-              const nextAudio = new Audio(nextItem.url);
-              nextAudio.preload = 'auto';
-            } else if (nextItem.type === 'tts') {
-              // Prepare TTS (voices are already loaded)
-              // Nothing needed, TTS is instant
-            }
-          }
-        }
-      };
-      
-      audio.onplay = function() {
-        playbackStarted = true;
-        debugLog(`▶️ Recorded audio PLAYBACK STARTED: ${item.url}`);
-      };
-      
-      audio.onended = function() {
-        debugLog(`⏹️ Recorded audio ENDED: ${item.url}`);
-        completeCallback();
-      };
-      
-      audio.onerror = function(event) {
-        errorLog('❌ Recorded audio ERROR', { 
-          url: item.url, 
-          error: event,
-          code: audio.error ? audio.error.code : 'unknown',
-          message: audio.error ? audio.error.message : 'unknown'
-        });
-        
-        // Log specific error codes
-        if (audio.error) {
-          const errorMessages = {
-            1: 'MEDIA_ERR_ABORTED - The user aborted the audio',
-            2: 'MEDIA_ERR_NETWORK - A network error occurred',
-            3: 'MEDIA_ERR_DECODE - An error occurred while decoding the audio',
-            4: 'MEDIA_ERR_SRC_NOT_SUPPORTED - The audio source is not supported'
-          };
-          debugLog(`Error details: ${errorMessages[audio.error.code] || 'Unknown error'}`);
-        }
-        
-        completeCallback();
-      };
-      
-      audio.onstalled = function() {
-        debugLog('⚠️ Audio playback stalled:', item.url);
-      };
-      
-      audio.onabort = function() {
-        debugLog('⚠️ Audio playback aborted:', item.url);
-        completeCallback();
-      };
-      
-      // Play with promise handling for autoplay policy
-      const playPromise = audio.play();
-      
-      if (playPromise !== undefined) {
-        playPromise.then(() => {
-          playbackStarted = true;
-          debugLog(`✅ Recorded audio play() promise resolved: ${item.url}`);
-        }).catch((error) => {
-          errorLog('❌ Failed to play recorded audio', { 
-            url: item.url, 
-            error: error,
-            name: error.name,
-            message: error.message
-          });
-          
-          // If autoplay was blocked, try to enable and show message
-          if (error.name === 'NotAllowedError' || error.name === 'NotSupportedError') {
-            debugLog('⚠️ Autoplay blocked - user interaction required');
-            audioEnabled = false;
-            // Show banner again
-            const banner = document.getElementById('audio-enable-banner');
-            if (banner) {
-              banner.style.display = 'block';
-            }
-          }
-          
-          // Continue anyway to not block the sequence
-          completeCallback();
-        });
-      } else {
-        // Older browser - play() doesn't return a promise
-        debugLog('📞 Recorded audio play() called (no promise, older browser)');
-        // Set a timeout to check if it started
-        setTimeout(function() {
-          if (!playbackStarted && !completed) {
-            debugLog('⚠️ Audio did not start, continuing anyway');
-            completeCallback();
-          }
-        }, 1000);
-      }
-      
-    } else if (item.type === 'tts') {
-      // Use TTS
-      if (!speechEnabled) {
-        debugLog('Speech not enabled yet, skipping TTS');
-        // Try to enable
-        enableSpeech();
-        // Skip to next item
-        setTimeout(() => playAudioSequence(sequence, index + 1), 100);
-        return;
-      }
-      
-      debugLog(`Playing TTS item ${index + 1}/${sequence.length}:`, item.text);
-      speakSwahiliChunk(item.text, function() {
-        debugLog(`TTS item ${index + 1} completed, moving to next`);
-        // Play next in sequence immediately (no delay for seamless transition)
-        playAudioSequence(sequence, index + 1);
-      });
-    } else {
-      debugLog('Unknown item type, skipping:', item);
-      // Skip unknown types and continue
-      setTimeout(() => playAudioSequence(sequence, index + 1), 100);
-    }
-  }
-
-  /**
-   * Speak Swahili text using Google Translate TTS (free, no API key needed)
-   * This ensures proper Swahili pronunciation even without system voices
-   */
-  function speakSwahili(text) {
-    if (!speechEnabled) {
-      debugLog('Speech not enabled yet, attempting to enable...');
-      enableSpeech();
-      // Try again after a short delay
-      setTimeout(() => speakSwahili(text), 100);
-      return;
-    }
-
-    try {
-      // Google Translate TTS has a 200 character limit, so we may need to split
-      // But for order announcements, they should be short enough
-      if (text.length > 200) {
-        debugLog('Text too long for Google TTS, splitting...');
-        // Split into sentences and play sequentially
-        const sentences = text.match(/[^\.!\?]+[\.!\?]+/g) || [text];
-        let currentIndex = 0;
-        
-        function playNext() {
-          if (currentIndex < sentences.length) {
-            speakSwahiliChunk(sentences[currentIndex].trim(), function() {
-              currentIndex++;
-              if (currentIndex < sentences.length) {
-                setTimeout(playNext, 500); // Small delay between chunks
-              }
-            });
-          }
-        }
-        
-        playNext();
-        return;
-      }
-      
-      speakSwahiliChunk(text);
-      
-    } catch (error) {
-      errorLog('Error in speakSwahili', error);
-      // Fallback to browser TTS
-      speakSwahiliBrowser(text);
-    }
-  }
-
-  /**
-   * Speak a chunk of Swahili text using browser TTS (primary method)
-   * Browser TTS is more reliable than Google TTS for dynamic content
-   */
-  function speakSwahiliChunk(text, onComplete) {
-    if (!text || text.trim() === '') {
-      debugLog('Empty text, skipping TTS');
-      if (onComplete) setTimeout(onComplete, 100);
-      return;
-    }
-
-    // Use browser TTS as primary method (more reliable)
-    debugLog('Using browser TTS (primary method):', text);
-    speakSwahiliBrowser(text, onComplete);
-  }
-
-  /**
-   * Try alternative TTS method if primary fails
-   */
-  function tryAlternativeTTS(text, onComplete) {
-    // Try using a proxy or alternative endpoint
-    // For now, fallback to browser TTS
-    debugLog('Using browser TTS as fallback for:', text);
-    speakSwahiliBrowser(text, onComplete);
-  }
-
-  /**
-   * Fallback: Use browser TTS (if Google TTS fails)
-   */
-  function speakSwahiliBrowser(text, onComplete) {
-    if (!text || text.trim() === '') {
-      debugLog('Empty text, skipping browser TTS');
-      if (onComplete) setTimeout(onComplete, 100);
-      return;
-    }
-
-    if (!speechSynthesis) {
-      errorLog('Cannot speak: Speech synthesis not available');
-      if (onComplete) setTimeout(onComplete, 100);
-      return;
-    }
-
-    try {
-      // Wait for any ongoing speech to finish (don't cancel, let it finish naturally)
-      // But if we're queuing multiple items, we need to wait
-      if (speechSynthesis.speaking) {
-        debugLog('Speech already in progress, waiting...');
-        // Wait a bit and retry
-        setTimeout(() => speakSwahiliBrowser(text, onComplete), 100);
-        return;
-      }
-
-      // Wait for voices to load if needed
-      let voices = speechSynthesis.getVoices();
-      if (voices.length === 0) {
-        debugLog('Voices not loaded yet, waiting...');
-        speechSynthesis.onvoiceschanged = function() {
-          speechSynthesis.onvoiceschanged = null; // Remove listener
-          speakSwahiliBrowser(text, onComplete); // Retry
-        };
-        return;
-      }
-
-      const utterance = new SpeechSynthesisUtterance(text);
-      
-      // Set Swahili language
-      utterance.lang = 'sw-TZ'; // Tanzania Swahili
-      
-      // Set voice properties for clear speech
-      utterance.rate = 0.9; // Slightly faster for numbers
-      utterance.pitch = 1.0;
-      utterance.volume = 1.0;
-
-      // Try to find Swahili voice
-      const swahiliVoice = getSwahiliVoice();
-      
-      if (swahiliVoice) {
-        utterance.voice = swahiliVoice;
-        utterance.lang = swahiliVoice.lang;
-        debugLog(`Using Swahili voice: ${swahiliVoice.name} (${swahiliVoice.lang})`);
-      } else {
-        debugLog('Swahili voice not found, using default voice with sw-TZ language');
-        // Try to use a female voice if available (often better for announcements)
-        const femaleVoice = voices.find(v => v.name.toLowerCase().includes('female') || v.name.toLowerCase().includes('zira'));
-        if (femaleVoice) {
-          utterance.voice = femaleVoice;
-          debugLog(`Using alternative voice: ${femaleVoice.name}`);
-        }
-      }
-
-      let completed = false;
-      let started = false;
-      const completeCallback = function() {
-        if (!completed) {
-          completed = true;
-          debugLog('Browser TTS completed:', text);
-          if (onComplete) {
-            // Call immediately for seamless transition
-            onComplete();
-          }
-        }
-      };
-
-      utterance.onstart = function() {
-        started = true;
-        debugLog('✅ Browser TTS STARTED speaking:', text);
-      };
-      
-      utterance.onend = function() {
-        debugLog('✅ Browser TTS ENDED:', text);
-        completeCallback();
-      };
-      
-      utterance.onerror = function(event) {
-        errorLog('❌ Browser TTS error', { text: text, error: event, type: event.type });
-        if (!started) {
-          debugLog('TTS never started, calling complete anyway');
-        }
-        completeCallback(); // Still call complete to continue sequence
-      };
-
-      debugLog('🎤 Queuing browser TTS:', text);
-      speechSynthesis.speak(utterance);
-      
-      // Safety timeout - if TTS doesn't start within 2 seconds, continue anyway
-      setTimeout(function() {
-        if (!started && !completed) {
-          debugLog('⚠️ TTS timeout - continuing anyway');
-          completeCallback();
-        }
-      }, 2000);
-      
-    } catch (error) {
-      errorLog('Error in speakSwahiliBrowser', { text: text, error: error });
-      if (onComplete) setTimeout(onComplete, 100);
-    }
-  }
-
-  /**
-   * Format Swahili message for order announcement
-   */
-  function formatSwahiliMessage(order) {
-    // Extract order number for TTS
-    // Format: "ORD-01" -> "1", "ORD-02" -> "2", "ORD-10" -> "10"
-    let orderNum = order.order_number;
-    // Extract number after "ORD-"
-    if (orderNum.includes('-')) {
-      orderNum = orderNum.split('-')[1]; // Get part after "ORD-"
-      // Remove leading zeros (e.g., "01" -> "1", "02" -> "2", "10" -> "10")
-      orderNum = parseInt(orderNum).toString();
-    } else {
-      // Fallback: extract all digits
-      orderNum = order.order_number.replace(/[^0-9]/g, '') || order.order_number;
-      // If it's a long number, take just the last 4 digits and remove leading zeros
-      if (orderNum.length > 4) {
-        orderNum = parseInt(orderNum.slice(-4)).toString();
-      }
-    }
-    
-    // Get waiter name
-    const waiterName = order.waiter_name || 'Mhudumu';
-    
-    // Format items list
-    const itemsList = order.items.map(item => {
-      const qty = item.quantity;
-      const name = item.name;
-      return `${qty} ${qty === 1 ? 'chupa' : 'chupa'} ya ${name}`;
-    }).join(', ');
-
-    // Format total amount in Tanzanian Shillings
-    const totalAmount = order.total_amount || 0;
-    const formattedAmount = Math.round(totalAmount).toLocaleString('en-US');
-
-    // Build message: "Oda nambari ... kutoka kwa mhudumu...ameagiza .... yenye thamani ya shilingi ... Asante"
-    const message = `Oda nambari ${orderNum} kutoka kwa mhudumu ${waiterName} ameagiza ${itemsList} yenye thamani ya shilingi ${formattedAmount}. Asante.`;
-    
-    return message;
-  }
-
-  /**
+   /**
    * Check for new orders
    */
   function checkForNewOrders() {
-    if (!isPolling) {
-      debugLog('Polling paused');
-      return;
-    }
+    if (!isPolling) return;
 
     pollCount++;
-    debugLog(`Polling for new orders (Poll #${pollCount}, Last ID: ${lastOrderId})`);
-    showDebugMessage(`Polling... (Last ID: ${lastOrderId})`, 'info');
-
-    // Get CSRF token from meta tag or fallback
     const csrfToken = $('meta[name="csrf-token"]').attr('content') || '{{ csrf_token() }}';
     
-    if (!csrfToken) {
-      errorLog('CSRF token not found!');
-      showDebugMessage('CSRF token missing!', 'error');
-      return;
-    }
-
     $.ajax({
       url: '{{ route("bar.counter.latest-orders") }}',
       method: 'GET',
@@ -1265,97 +476,37 @@
       data: {
         last_order_id: lastOrderId
       },
-      timeout: 10000, // 10 second timeout
+      timeout: 10000,
       success: function(response) {
-        errorCount = 0; // Reset error count on success
+        errorCount = 0;
         
-        if (!response) {
-          errorLog('Empty response from server');
-          showDebugMessage('Empty response', 'error');
-          return;
-        }
-        
-        debugLog('API response received', response);
-        
-        if (response.success) {
+        if (response && response.success) {
           if (response.new_orders && response.new_orders.length > 0) {
-            debugLog(`Found ${response.new_orders.length} new order(s)`);
-            showDebugMessage(`Found ${response.new_orders.length} new order(s)!`, 'success');
-            
-            // Process new orders
             response.new_orders.forEach(function(order) {
-              // Skip if already announced
-              if (announcedOrders.has(order.id)) {
-                debugLog(`Skipping order ${order.id} (already announced)`);
-                return;
-              }
-
-              // Mark as announced
+              if (announcedOrders.has(order.id)) return;
               announcedOrders.add(order.id);
 
-            // Format and speak the order
-            const message = formatSwahiliMessage(order);
-            debugLog('Announcing order', { id: order.id, message: message });
-            showDebugMessage(`New Order: ${order.order_number}`, 'success');
-            
-            // Try to use recorded audio clips first, fallback to full TTS
-            if (voiceClipsLoaded && Object.keys(voiceClips).length > 0) {
-              debugLog('Using recorded audio clips + TTS');
-              playAnnouncementWithAudio(order);
-            } else {
-              debugLog('Using full TTS (no recorded clips)');
-              speakSwahili(message);
-            }
-
-              // Show visual notification
               showOrderNotification(order);
 
-              // Update last order ID
               if (order.id > lastOrderId) {
                 lastOrderId = order.id;
-                debugLog(`Updated lastOrderId to ${lastOrderId}`);
               }
             });
 
-            // Refresh pending count
+            // Update pending count in UI
             updatePendingCount();
-          } else {
-            debugLog('No new orders');
           }
 
-          // Update last order ID from server
           if (response.latest_order_id && response.latest_order_id > lastOrderId) {
             lastOrderId = response.latest_order_id;
-            debugLog(`Updated lastOrderId from server: ${lastOrderId}`);
           }
-        } else {
-          errorLog('API returned success: false', response);
-          showDebugMessage('API error: ' + (response.error || 'Unknown error'), 'error');
         }
       },
-      error: function(xhr, status, error) {
-        errorLog('AJAX error', { status: status, error: error, xhr: xhr });
-        
-        let errorMsg = 'Error checking for orders';
-        if (xhr.status === 403) {
-          errorMsg = 'Permission denied (403)';
-        } else if (xhr.status === 404) {
-          errorMsg = 'API endpoint not found (404)';
-        } else if (xhr.status === 500) {
-          errorMsg = 'Server error (500)';
-        } else if (status === 'timeout') {
-          errorMsg = 'Request timeout';
-        } else if (xhr.responseJSON && xhr.responseJSON.error) {
-          errorMsg = xhr.responseJSON.error;
-        }
-        
-        showDebugMessage(errorMsg, 'error');
-        
-        // If too many errors, pause polling
+      error: function() {
+        errorCount++;
         if (errorCount > 10) {
           isPolling = false;
-          showDebugMessage('Too many errors. Polling paused.', 'error');
-          alert('Order polling stopped due to errors. Please refresh the page.');
+          console.error('Order polling stopped due to persistent errors.');
         }
       }
     });
@@ -1365,7 +516,6 @@
    * Show visual notification for new order
    */
   function showOrderNotification(order) {
-    // Create notification element
     const notification = $(`
       <div class="alert alert-success alert-dismissible fade show position-fixed" 
            style="top: 20px; right: 20px; z-index: 9999; min-width: 300px; box-shadow: 0 4px 12px rgba(0,0,0,0.3);">
@@ -1379,24 +529,19 @@
       </div>
     `);
 
-    // Add to page
     $('body').append(notification);
 
-    // Auto-remove after 10 seconds
     setTimeout(function() {
       notification.fadeOut(function() {
         $(this).remove();
       });
     }, 10000);
 
-    // Highlight the new order in the table if visible
     const orderRow = $(`tr[data-order-id="${order.id}"]`);
     if (orderRow.length) {
       orderRow.addClass('table-success');
-      orderRow.css('animation', 'pulse 2s');
       setTimeout(function() {
         orderRow.removeClass('table-success');
-        orderRow.css('animation', '');
       }, 5000);
     }
   }
@@ -1409,123 +554,41 @@
       url: '{{ route("bar.counter.orders-by-status") }}',
       method: 'GET',
       headers: {
-        'X-CSRF-TOKEN': '{{ csrf_token() }}',
         'Accept': 'application/json'
       },
-      data: {
-        status: 'pending'
-      },
       success: function(response) {
-        if (response.success) {
-          const pendingCount = response.orders.filter(o => o.status === 'pending').length;
-          $('.widget-small.primary .info p b').text(pendingCount);
+        if (response.success && response.counts) {
+          const pendingCount = response.counts.pending || 0;
+          $('#pending-orders-count').text(pendingCount);
+          const badge = $('#pending-orders-badge');
+          if (pendingCount > 0) {
+            badge.text(pendingCount).show();
+          } else {
+            badge.hide();
+          }
         }
       }
     });
   }
 
-  // Initialize: Load voices when available
-  if (speechSynthesis) {
-    // Some browsers load voices asynchronously
-    speechSynthesis.onvoiceschanged = function() {
-      const voices = speechSynthesis.getVoices();
-      debugLog(`Voices loaded: ${voices.length}`);
-      
-      // Log all available voices for debugging
-      if (DEBUG_MODE) {
-        debugLog('Available voices:', voices.map(v => `${v.name} (${v.lang})`).join(', '));
-      }
-      
-      // Check for Swahili voice
-      const swahiliVoice = getSwahiliVoice();
-      
-      if (swahiliVoice) {
-        debugLog(`Swahili voice found: ${swahiliVoice.name} (${swahiliVoice.lang})`);
-      } else {
-        debugLog('Swahili voice not found');
-        debugLog('Note: Browser will use default voice but will try to pronounce Swahili text');
-        debugLog('To install Swahili voice:');
-        debugLog('  Windows: Settings > Time & Language > Speech > Add voice');
-        debugLog('  Mac: System Preferences > Accessibility > Spoken Content > System Voice');
-      }
-    };
-    
-    // Get voices immediately if already loaded
-    const initialVoices = speechSynthesis.getVoices();
-    if (initialVoices.length > 0) {
-      debugLog(`Voices available immediately: ${initialVoices.length}`);
-      const swahiliVoice = getSwahiliVoice();
-      if (swahiliVoice) {
-        debugLog(`Swahili voice available: ${swahiliVoice.name}`);
-      }
-    }
-  }
-
-  // Wait for jQuery and DOM to be ready
+  // Initialize: Start polling
   $(document).ready(function() {
-    debugLog('Document ready, initializing polling...');
-    showDebugMessage('System initialized', 'success');
-    
-    // Load voice clips
-    loadVoiceClips();
-    
-    // Start polling for new orders every 3 seconds
-    pollInterval = setInterval(checkForNewOrders, 3000);
-    debugLog('Polling interval started (3 seconds)');
-    
-    // Check immediately on page load (after 1 second delay)
-    setTimeout(function() {
-      debugLog('Initial poll starting...');
-      checkForNewOrders();
-    }, 1000);
+    debugLog('System initialized, starting order polling...');
+    pollInterval = setInterval(checkForNewOrders, 5000);
+    setTimeout(checkForNewOrders, 1000);
   });
 
   // Pause polling when page is hidden (browser tab)
   document.addEventListener('visibilitychange', function() {
     if (document.hidden) {
       isPolling = false;
-      if (speechSynthesis) {
-        speechSynthesis.cancel(); // Stop any ongoing speech
-      }
       debugLog('Page hidden, polling paused');
-      showDebugMessage('Page hidden - polling paused', 'warning');
     } else {
       isPolling = true;
       debugLog('Page visible, resuming polling');
-      showDebugMessage('Page visible - polling resumed', 'success');
-      checkForNewOrders(); // Check immediately when page becomes visible
+      checkForNewOrders();
     }
   });
-  
-  // Manual test function (for debugging)
-  window.testOrderAnnouncement = function() {
-    debugLog('Manual test triggered');
-    const testOrder = {
-      id: 999,
-      order_number: 'TEST001',
-      waiter_name: 'Test Waiter',
-      items: [
-        { name: 'Coca Cola', quantity: 2 },
-        { name: 'Fanta', quantity: 1 }
-      ]
-    };
-    const message = formatSwahiliMessage(testOrder);
-    speakSwahili(message);
-    showOrderNotification(testOrder);
-  };
-  
-  // Expose debug info
-  window.getOrderPollingStatus = function() {
-    return {
-      isPolling: isPolling,
-      lastOrderId: lastOrderId,
-      announcedOrders: Array.from(announcedOrders),
-      pollCount: pollCount,
-      errorCount: errorCount,
-      speechEnabled: speechEnabled,
-      speechAvailable: !!speechSynthesis
-    };
-  };
 
   // Add CSS for pulse animation
   if (!$('#order-notification-styles').length) {
@@ -1538,22 +601,55 @@
         }
         .table-success {
           background-color: #d4edda !important;
+          animation: pulse 2s;
         }
       </style>
     `);
   }
-  // Filter orders by status
+  // Advanced Search and Filter Functionality
+  function applyFilters() {
+    const searchText = $('#orderSearch').val().toLowerCase();
+    const waiterFilter = $('#filterWaiter').val();
+    const statusFilter = $('#filterStatus').val();
+    const paymentFilter = $('#filterPayment').val();
+
+    $('#orders-table tbody tr').each(function() {
+      const row = $(this);
+      const orderNum = row.find('td:first').text().toLowerCase();
+      const waiterName = row.find('td:nth-child(2)').text().toLowerCase();
+      const status = row.data('status');
+      const paymentStatus = row.find('td:nth-child(7)').text().toLowerCase().includes('paid') ? 'paid' : 'unpaid';
+
+      const matchesSearch = orderNum.includes(searchText) || waiterName.includes(searchText);
+      const matchesWaiter = !waiterFilter || waiterName.includes(waiterFilter.toLowerCase());
+      const matchesStatus = !statusFilter || status === statusFilter;
+      const matchesPayment = !paymentFilter || paymentStatus === paymentFilter;
+
+      if (matchesSearch && matchesWaiter && matchesStatus && matchesPayment) {
+        row.show();
+      } else {
+        row.hide();
+      }
+    });
+
+    // Handle empty state
+    if ($('#orders-table tbody tr:visible').length === 0) {
+      if (!$('#no-results-row').length) {
+        $('#orders-table tbody').append('<tr id="no-results-row"><td colspan="9" class="text-center py-4 text-muted">No orders found matching your filters.</td></tr>');
+      }
+    } else {
+      $('#no-results-row').remove();
+    }
+  }
+
+  $('#orderSearch, #filterWaiter, #filterStatus, #filterPayment').on('change keyup', applyFilters);
+
+  // Filter orders by status (legacy buttons support if any left)
   $('.filter-btn').on('click', function() {
     const status = $(this).data('status');
+    $('#filterStatus').val(status === 'all' ? '' : status).trigger('change');
     $('.filter-btn').removeClass('btn-primary').addClass('btn-outline-primary');
     $(this).removeClass('btn-outline-primary').addClass('btn-primary');
-    
-    if (status === 'all') {
-      $('#orders-table tbody tr').show();
-    } else {
-      $('#orders-table tbody tr').hide();
-      $('#orders-table tbody tr[data-status="' + status + '"]').show();
-    }
   });
 
   // Update order status
@@ -1583,9 +679,12 @@
           success: function(response) {
             if (response.success) {
               Swal.fire({
+                toast: true,
+                position: 'top-end',
+                showConfirmButton: false,
+                timer: 1500,
                 icon: 'success',
-                title: 'Updated!',
-                text: 'Order status updated successfully'
+                title: 'Order status updated successfully'
               }).then(() => {
                 location.reload();
               });
@@ -1711,8 +810,9 @@
           if (order.items && order.items.length > 0) {
             content += '<ul class="list-unstyled">';
             order.items.forEach(function(item) {
+              const unitLabel = item.sell_type === 'tot' ? (item.portion_unit_name || 'Glass') : 'Btl';
               content += '<li class="mb-2">';
-              content += '<strong>' + item.quantity + 'x</strong> ' + item.product_name;
+              content += '<strong>' + item.quantity + 'x ' + unitLabel + '</strong> of ' + item.product_name;
               if (item.variant) {
                 content += ' <small class="text-muted">(' + item.variant + ')</small>';
               }
@@ -1803,9 +903,12 @@
           success: function(payResponse) {
               $('#checkoutModal').modal('hide');
               Swal.fire({
+                  toast: true,
+                  position: 'top-end',
+                  showConfirmButton: false,
+                  timer: 1500,
                   icon: 'success',
-                  title: 'Success!',
-                  text: 'Order payment recorded successfully.'
+                  title: 'Order payment recorded successfully'
               }).then(() => {
                   location.reload();
               });
@@ -1820,6 +923,56 @@
           }
       });
   });
+    // Cancel Order Handler
+    $(document).on('click', '.cancel-order-btn', function() {
+        const orderId = $(this).data('order-id');
+        const orderNum = $(this).data('order-num');
+        
+        Swal.fire({
+            title: 'Cancel Order?',
+            text: `Are you sure you want to cancel order ${orderNum}?`,
+            icon: 'warning',
+            showCancelButton: true,
+            confirmButtonColor: '#d33',
+            cancelButtonColor: '#3085d6',
+            confirmButtonText: 'Yes, Cancel it!',
+            input: 'text',
+            inputPlaceholder: 'Reason for cancellation (REQUIRED)',
+            inputValidator: (value) => {
+                if (!value) {
+                    return 'You need to write a reason!'
+                }
+            }
+        }).then((result) => {
+            if (result.isConfirmed) {
+                $.ajax({
+                    url: '{{ route("bar.counter.cancel-order", ":id") }}'.replace(':id', orderId),
+                    method: 'POST',
+                    data: {
+                        _token: '{{ csrf_token() }}',
+                        reason: result.value
+                    },
+                    success: function(response) {
+                        if (response.success) {
+                            Swal.fire({
+                                toast: true,
+                                position: 'top-end',
+                                showConfirmButton: false,
+                                timer: 1500,
+                                icon: 'success',
+                                title: response.message
+                            }).then(() => {
+                                location.reload();
+                            });
+                        }
+                    },
+                    error: function(xhr) {
+                        Swal.fire('Error', xhr.responseJSON ? xhr.responseJSON.error : "Failed to cancel order", 'error');
+                    }
+                });
+            }
+        });
+    });
 </script>
 @endpush
 

@@ -132,8 +132,10 @@ Route::middleware('allow.staff')->group(function () {
         Route::get('/staff/{staff}/edit', [\App\Http\Controllers\StaffController::class, 'edit'])->name('staff.edit');
         Route::put('/staff/{staff}', [\App\Http\Controllers\StaffController::class, 'update'])->name('staff.update');
         Route::delete('/staff/{staff}', [\App\Http\Controllers\StaffController::class, 'destroy'])->name('staff.destroy');
+        Route::post('/staff/{staff}/reset-password', [\App\Http\Controllers\StaffController::class, 'resetPassword'])->name('staff.reset-password');
     });
     
+    /*
     // HR Routes (Require Payment & Configuration)
     Route::middleware(['require.payment', 'require.configuration'])->prefix('hr')->name('hr.')->group(function () {
         Route::get('dashboard', [\App\Http\Controllers\HRController::class, 'dashboard'])->name('dashboard');
@@ -155,6 +157,7 @@ Route::middleware('allow.staff')->group(function () {
         Route::post('biometric-devices/sync-attendance', [\App\Http\Controllers\HR\BiometricDeviceController::class, 'syncAttendance'])->name('biometric-devices.sync-attendance');
         Route::post('biometric-devices/get-users', [\App\Http\Controllers\HR\BiometricDeviceController::class, 'getDeviceUsers'])->name('biometric-devices.get-users');
     });
+    */
     
     // Bar Operations Routes (Require Payment & Configuration)
     Route::middleware(['require.payment', 'require.configuration'])->prefix('bar')->name('bar.')->group(function () {
@@ -172,7 +175,7 @@ Route::middleware('allow.staff')->group(function () {
         Route::get('stock-transfers/history', [\App\Http\Controllers\Bar\StockTransferController::class, 'history'])->name('stock-transfers.history');
         Route::post('stock-transfers/real-time-profit', [\App\Http\Controllers\Bar\StockTransferController::class, 'getRealTimeProfit'])->name('stock-transfers.real-time-profit');
         Route::post('stock-transfers/batch-store', [\App\Http\Controllers\Bar\StockTransferController::class, 'batchStore'])->name('stock-transfers.batch-store');
-        Route::resource('stock-transfers', \App\Http\Controllers\Bar\StockTransferController::class)->only(['index', 'create', 'store', 'show']);
+        Route::resource('stock-transfers', \App\Http\Controllers\Bar\StockTransferController::class)->only(['create', 'store', 'show']);
         Route::post('stock-transfers/{stockTransfer}/approve', [\App\Http\Controllers\Bar\StockTransferController::class, 'approve'])->name('stock-transfers.approve');
         Route::post('stock-transfers/{stockTransfer}/reject', [\App\Http\Controllers\Bar\StockTransferController::class, 'reject'])->name('stock-transfers.reject');
         Route::post('stock-transfers/{stockTransfer}/reject-with-reason', [\App\Http\Controllers\Bar\StockTransferController::class, 'rejectWithReason'])->name('stock-transfers.reject-with-reason');
@@ -190,9 +193,7 @@ Route::middleware('allow.staff')->group(function () {
         // Beverage Inventory
         Route::get('beverage-inventory', [\App\Http\Controllers\Bar\BeverageInventoryController::class, 'index'])->name('beverage-inventory.index');
         Route::get('beverage-inventory/add', [\App\Http\Controllers\Bar\BeverageInventoryController::class, 'addBeverage'])->name('beverage-inventory.add');
-        Route::get('beverage-inventory/stock-levels', [\App\Http\Controllers\Bar\BeverageInventoryController::class, 'stockLevels'])->name('beverage-inventory.stock-levels');
-        Route::get('beverage-inventory/low-stock-alerts', [\App\Http\Controllers\Bar\BeverageInventoryController::class, 'lowStockAlerts'])->name('beverage-inventory.low-stock-alerts');
-        Route::get('beverage-inventory/warehouse-stock', [\App\Http\Controllers\Bar\BeverageInventoryController::class, 'warehouseStock'])->name('beverage-inventory.warehouse-stock');
+        // Route::get('beverage-inventory/low-stock-alerts', ...) -- REMOVED, use counter-stock instead
         // Tables
         Route::resource('tables', \App\Http\Controllers\Bar\TableController::class);
         // Waiter Routes
@@ -221,6 +222,10 @@ Route::middleware('allow.staff')->group(function () {
         Route::get('counter/customer-orders', [\App\Http\Controllers\Bar\CounterController::class, 'customerOrders'])->name('counter.customer-orders');
         Route::get('counter/warehouse-stock', [\App\Http\Controllers\Bar\CounterController::class, 'warehouseStock'])->name('counter.warehouse-stock');
         Route::get('counter/counter-stock', [\App\Http\Controllers\Bar\CounterController::class, 'counterStock'])->name('counter.counter-stock');
+        Route::get('counter/daily-stock-sheet', [\App\Http\Controllers\Bar\CounterController::class, 'dailyStockSheet'])->name('counter.daily-stock-sheet');
+        Route::delete('counter/counter-stock/{variantId}', [\App\Http\Controllers\Bar\CounterController::class, 'deleteCounterStock'])->name('counter.delete-counter-stock');
+        Route::post('counter/counter-stock/threshold/{variantId}', [\App\Http\Controllers\Bar\CounterController::class, 'updateLowStockThreshold'])->name('counter.update-threshold');
+
         Route::get('counter/analytics', [\App\Http\Controllers\Bar\CounterController::class, 'analytics'])->name('counter.analytics');
         Route::get('counter/stock-transfer-requests', [\App\Http\Controllers\Bar\CounterController::class, 'stockTransferRequests'])->name('counter.stock-transfer-requests');
         Route::get('counter/record-voice', [\App\Http\Controllers\Bar\CounterController::class, 'recordVoice'])->name('counter.record-voice');
@@ -245,6 +250,12 @@ Route::middleware('allow.staff')->group(function () {
         Route::post('counter/orders/{order}/mark-paid', [\App\Http\Controllers\Bar\CounterController::class, 'markAsPaid'])->name('counter.mark-paid');
         Route::get('counter/orders-by-status', [\App\Http\Controllers\Bar\CounterController::class, 'getOrdersByStatus'])->name('counter.orders-by-status');
         Route::get('counter/latest-orders', [\App\Http\Controllers\Bar\CounterController::class, 'getLatestOrders'])->name('counter.latest-orders');
+        Route::get('counter/shift/history', [\App\Http\Controllers\Bar\CounterController::class, 'shiftHistory'])->name('counter.shift.history');
+        Route::post('counter/shift/open', [\App\Http\Controllers\Bar\CounterController::class, 'storeShift'])->name('counter.shift.open');
+        Route::get('counter/shift/close', [\App\Http\Controllers\Bar\CounterController::class, 'closeShiftPage'])->name('counter.shift.close-page');
+        Route::post('counter/shift/close', [\App\Http\Controllers\Bar\CounterController::class, 'closeShift'])->name('counter.shift.close');
+        Route::get('counter/shift/print/{id}', [\App\Http\Controllers\Bar\CounterController::class, 'printShift'])->name('counter.shift.print');
+        Route::get('counter/print-receipt/{order}', [\App\Http\Controllers\Bar\CounterController::class, 'printReceipt'])->name('counter.print-receipt');
         // Chef Routes
         Route::get('chef/dashboard', [\App\Http\Controllers\Bar\ChefController::class, 'dashboard'])->name('chef.dashboard');
         Route::get('chef/kds', [\App\Http\Controllers\Bar\ChefController::class, 'kds'])->name('chef.kds');
@@ -302,6 +313,17 @@ Route::middleware('allow.staff')->group(function () {
         Route::get('stock-keeper/ingredient-batches', [\App\Http\Controllers\Bar\ChefController::class, 'ingredientBatches'])->name('stock-keeper.ingredient-batches');
     });
     
+    // Manager Reconciliation Routes
+    Route::middleware(['require.payment', 'require.configuration'])->prefix('bar/manager')->name('bar.manager.')->group(function () {
+        Route::get('dashboard', [\App\Http\Controllers\Bar\ManagerReconciliationController::class, 'dashboard'])->name('dashboard');
+        Route::get('reconciliations', [\App\Http\Controllers\Bar\ManagerReconciliationController::class, 'reconciliations'])->name('reconciliations');
+        Route::get('reconciliations/orders', [\App\Http\Controllers\Bar\ManagerReconciliationController::class, 'getDepartmentOrders'])->name('reconciliations.orders');
+        Route::post('reconciliations/pay-shortage', [\App\Http\Controllers\Bar\ManagerReconciliationController::class, 'payShortage'])->name('reconciliations.pay-shortage');
+        Route::get('reconciliations/{id}', [\App\Http\Controllers\Bar\ManagerReconciliationController::class, 'reconciliationDetails'])->name('reconciliation-details');
+        Route::post('reconciliations/finalize', [\App\Http\Controllers\Bar\ManagerReconciliationController::class, 'finalizeDepartmentReconciliation'])->name('reconciliations.finalize');
+        Route::post('reconciliations/reset-handover', [\App\Http\Controllers\Bar\ManagerReconciliationController::class, 'resetHandover'])->name('reconciliations.reset-handover');
+    });
+
     // Accountant Routes (Require Payment & Configuration)
         Route::middleware(['require.payment', 'require.configuration'])->prefix('accountant')->name('accountant.')->group(function () {
             Route::get('dashboard', [\App\Http\Controllers\Accountant\AccountantController::class, 'dashboard'])->name('dashboard');
@@ -314,6 +336,7 @@ Route::middleware('allow.staff')->group(function () {
             Route::post('financial/reconciliation/{id}/verify', [\App\Http\Controllers\Accountant\AccountantController::class, 'verifyFinancialReconciliation'])->name('financial.verify');
             Route::post('reconciliations/finalize', [\App\Http\Controllers\Accountant\AccountantController::class, 'finalizeDepartmentReconciliation'])->name('reconciliations.finalize');
             Route::post('reconciliations/reopen', [\App\Http\Controllers\Accountant\AccountantController::class, 'reopenDepartmentShift'])->name('reconciliations.reopen');
+            Route::post('reconciliations/reset-handover', [\App\Http\Controllers\Accountant\AccountantController::class, 'resetHandover'])->name('reconciliations.reset-handover');
             
             // Petty Cash / Fund Issuance
             Route::get('fund-issuance', [\App\Http\Controllers\Accountant\AccountantController::class, 'fundIssuance'])->name('fund-issuance');
@@ -355,7 +378,12 @@ Route::middleware('allow.staff')->group(function () {
         // Target Management
         Route::get('targets', [\App\Http\Controllers\Manager\TargetController::class, 'index'])->name('targets.index');
         Route::post('targets/monthly', [\App\Http\Controllers\Manager\TargetController::class, 'storeMonthly'])->name('targets.monthly.store');
+        Route::post('targets/monthly/reset', [\App\Http\Controllers\Manager\TargetController::class, 'resetMonthly'])->name('targets.monthly.reset');
         Route::post('targets/staff', [\App\Http\Controllers\Manager\TargetController::class, 'storeStaff'])->name('staff-targets.store');
+        Route::post('targets/staff/reset', [\App\Http\Controllers\Manager\TargetController::class, 'resetDaily'])->name('targets.staff.reset');
+
+        // Business Trends Report
+        Route::get('reports/trends', [\App\Http\Controllers\Manager\TrendReportController::class, 'index'])->name('reports.trends');
     });
     
     // Marketing Routes (Require Payment & Configuration)
@@ -415,10 +443,12 @@ Route::middleware('allow.staff')->group(function () {
     });
 
     // Purchase Requests Workflow
+/*
     Route::prefix('purchase-requests')->name('purchase-requests.')->group(function () {
         Route::get('/', [\App\Http\Controllers\PurchaseRequestController::class, 'index'])->name('index');
         Route::post('/store', [\App\Http\Controllers\PurchaseRequestController::class, 'store'])->name('store');
         Route::post('/{id}/update', [\App\Http\Controllers\PurchaseRequestController::class, 'update'])->name('update');
         Route::post('/{id}/process', [\App\Http\Controllers\PurchaseRequestController::class, 'process'])->name('process');
     });
+*/
 });

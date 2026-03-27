@@ -53,7 +53,7 @@ class ProductController extends Controller
         }
 
         if ($category) {
-            $query->where('products.category', $category);
+            $query->whereRaw('LOWER(products.category) = ?', [strtolower($category)]);
         }
 
         $variants = $query->orderBy('products.category')
@@ -231,7 +231,7 @@ class ProductController extends Controller
 
             DB::commit();
 
-            return redirect()->route('bar.products.index')
+            return redirect()->route('bar.products.index', ['category' => $validated['category'] ?? null])
                 ->with('alert_success', 'Product registered successfully. You can set prices and stock during stock reception.');
         } catch (\Exception $e) {
             DB::rollBack();
@@ -470,7 +470,7 @@ class ProductController extends Controller
 
             DB::commit();
 
-            return redirect()->route('bar.products.index')
+            return redirect()->route('bar.products.index', ['category' => $validated['category'] ?? null])
                 ->with('alert_success', 'Product updated successfully.');
         } catch (\Exception $e) {
             DB::rollBack();
@@ -534,7 +534,7 @@ class ProductController extends Controller
             ->when($category, function($q) use ($category) {
                 // Smart check: matches Category OR Brand (Distributor)
                 return $q->where(function($qq) use ($category) {
-                    $qq->where('category', $category)
+                    $qq->whereRaw('LOWER(category) = ?', [strtolower($category)])
                        ->orWhere('brand', 'LIKE', "%{$category}%");
                 });
             })
@@ -552,14 +552,25 @@ class ProductController extends Controller
 
         $variantsData = $products->flatMap(function($product) use ($ownerId) {
             return $product->variants->map(function($variant) use ($product, $ownerId) {
-                $warehouseStock = \App\Models\StockLocation::where('user_id', $ownerId)
+                $counterStock = \App\Models\StockLocation::where('user_id', $ownerId)
                     ->where('product_variant_id', $variant->id)
-                    ->where('location', 'warehouse')
+                    ->where('location', 'counter')
                     ->first();
                 
-                $existingQuantity = $warehouseStock ? $warehouseStock->quantity : 0;
+                $fullQuantity = $counterStock ? (float)$counterStock->quantity : 0.0;
+                
+                // Add open bottle contents if applicable
+                if ($variant->can_sell_in_tots && $variant->total_tots > 0) {
+                    $openBottle = \App\Models\OpenBottle::where('user_id', $ownerId)
+                        ->where('product_variant_id', $variant->id)
+                        ->first();
+                    if ($openBottle) {
+                        $fullQuantity += ($openBottle->tots_remaining / (float)$variant->total_tots);
+                    }
+                }
+
                 $itemsPerPackage = $variant->items_per_package ?? 1;
-                $existingPackages = $itemsPerPackage > 0 ? floor($existingQuantity / $itemsPerPackage) : 0;
+                $existingPackages = $itemsPerPackage > 0 ? floor($fullQuantity / $itemsPerPackage) : 0;
                 
                 return [
                     'id' => $variant->id,
@@ -578,9 +589,10 @@ class ProductController extends Controller
                     'can_sell_in_tots' => $variant->can_sell_in_tots,
                     'total_tots' => $variant->total_tots,
                     'selling_price_per_tot' => $variant->selling_price_per_tot ? (float)$variant->selling_price_per_tot : null,
-                    'existing_quantity' => $existingQuantity,
+                    'existing_quantity' => $fullQuantity,
+                    'formatted_existing_quantity' => $variant->formatUnits($fullQuantity),
                     'existing_packages' => $existingPackages,
-                    'average_buying_price' => $warehouseStock ? (float)$warehouseStock->average_buying_price : ($variant->buying_price_per_unit ? (float)$variant->buying_price_per_unit : 0),
+                    'average_buying_price' => $counterStock ? (float)$counterStock->average_buying_price : ($variant->buying_price_per_unit ? (float)$variant->buying_price_per_unit : 0),
                     'conversion_qty' => $itemsPerPackage,
                 ];
             });

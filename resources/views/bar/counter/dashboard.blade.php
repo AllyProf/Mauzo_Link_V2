@@ -40,12 +40,14 @@
         font-size: 0.7rem;
     }
     .cart-tile {
-        height: calc(100vh - 150px);
+        height: calc(100vh - 90px);
+        min-height: 550px;
         display: flex;
         flex-direction: column;
     }
     #cart-items-container {
         flex-grow: 1;
+        min-height: 200px;
         overflow-y: auto;
     }
     .sell-type-btn.active {
@@ -60,8 +62,10 @@
 
     /* Animation for POS transition */
     #pos-section, #dashboard-content {
-        transition: opacity 0.3s ease;
+        transition: opacity 0.4s ease-in-out;
     }
+    #pos-section { opacity: 0; display: none; }
+    #dashboard-content { opacity: 1; }
 
     /* Category pills — brand colour when active */
     .category-pill {
@@ -115,7 +119,79 @@
     /* Complete Payment button */
     #btn-place-order-final { background-color: var(--brand) !important; border-color: var(--brand) !important; }
     #btn-place-order-final:hover { background-color: var(--brand-dark) !important; }
+
+    /* Professional Loading Overlay */
+    #pos-loader-overlay {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: #fff;
+        z-index: 9999;
+        display: none;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        transition: opacity 0.4s ease;
+    }
+    .pos-loader-spinner {
+        width: 60px;
+        height: 60px;
+        border: 5px solid #f3f3f3;
+        border-top: 5px solid var(--brand);
+        border-radius: 50%;
+        animation: spin 1s linear infinite;
+        margin-bottom: 15px;
+    }
+    @keyframes spin {
+        0% { transform: rotate(0deg); }
+        100% { transform: rotate(360deg); }
+    }
+    /* Print Styling for Verification Sheet */
+    @media print {
+        @page { size: auto; margin: 10mm; }
+        /* Hide everything by default for surgical precision */
+        .app-sidebar, .app-header, .app-breadcrumb, .app-title, 
+        .d-print-none, .mt-4.pt-3.border-top, .tile-title-w-btn .text-right, 
+        button, .app-footer, .view-toggle-btn,
+        #verifyStockGrid, #pos-loader-overlay, #pos-section { 
+            display: none !important; 
+        }
+        
+        .app-content { margin: 0 !important; padding: 0 !important; }
+        .tile.shadow-lg.border-primary {
+            border: none !important;
+            box-shadow: none !important;
+            margin: 0 !important;
+            padding: 0 !important;
+        }
+
+        /* FORCE Table View on Print */
+        #verifyStockList { 
+            display: block !important; 
+            max-height: none !important; 
+            overflow: visible !important; 
+            height: auto !important;
+        }
+        
+        .d-print-block { display: block !important; }
+        .d-print-table-cell { display: table-cell !important; }
+        
+        table { width: 100% !important; border-collapse: collapse !important; border: 1px solid #000 !important; }
+        th, td { border: 1px solid #000 !important; padding: 10px !important; color: #000 !important; vertical-align: middle; }
+        thead th { background-color: #f1f1f1 !important; -webkit-print-color-adjust: exact; font-weight: bold !important; text-transform: uppercase; font-size: 12px; }
+        
+        .text-success { color: #000 !important; } /* Print in black for contrast */
+        .text-info { color: #555 !important; }
+        .badge.badge-light { border: none !important; padding: 0; }
+    }
 </style>
+
+<div id="pos-loader-overlay">
+    <div class="pos-loader-spinner"></div>
+    <h5 class="text-muted font-weight-bold">Loading POS Mode...</h5>
+</div>
 
 <div class="app-title">
   <div>
@@ -131,51 +207,211 @@
 
 <!-- DASHBOARD MAIN CONTENT -->
 <div id="dashboard-content">
-    <!-- Statistics Cards -->
+    @if(isset($needs_shift) && $needs_shift)
+        <!-- Full Stock Verification View (Like Counter Stock Page) -->
+        <div class="row mt-4">
+            <div class="col-md-12">
+                <div class="tile shadow-lg border-primary" style="border-radius: 20px !important;">
+                    <div class="tile-title-w-btn border-bottom pb-3 mb-4">
+                        <h3 class="title"><i class="fa fa-clock-o text-primary"></i> <span class="d-print-none">Physical Stock Verification & Open Shift</span><span class="d-none d-print-block">Shift Opening Stock Sheet</span></h3>
+                        
+                        <div class="d-none d-print-block text-right mb-2">
+                            <h5 class="mb-0">Date: {{ date('d M, Y') }}  |  Staff: {{ session('staff_name') }}</h5>
+                        </div>
+
+                        <div class="text-right d-none d-md-flex align-items-center">
+                            <div class="btn-group mr-3 shadow-sm d-print-none">
+                                <button type="button" class="btn btn-light btn-sm view-toggle-btn active" data-view="grid" title="Grid View">
+                                    <i class="fa fa-th"></i>
+                                </button>
+                                <button type="button" class="btn btn-light btn-sm view-toggle-btn" data-view="list" title="List View">
+                                    <i class="fa fa-list"></i>
+                                </button>
+                            </div>
+                            <button type="button" class="btn btn-outline-secondary btn-sm mr-3 shadow-sm d-print-none" onclick="window.print();">
+                                <i class="fa fa-print"></i> Print Stock Sheet
+                            </button>
+                            <span class="badge badge-light border text-muted px-3 py-2" style="border-radius: 20px;">
+                                <i class="fa fa-info-circle"></i> Verification required to start shift
+                            </span>
+                        </div>
+                    </div>
+
+                    <!-- SEARCH & FILTERS (Identical to Counter Stock) -->
+                    <div class="row mb-4 d-print-none">
+                        <div class="col-md-3">
+                            <div class="form-group border-right pr-3">
+                                <label class="smallest font-weight-bold text-uppercase text-muted">Search Products</label>
+                                <div class="input-group input-group-sm shadow-xs">
+                                    <div class="input-group-prepend"><span class="input-group-text"><i class="fa fa-search"></i></span></div>
+                                    <input type="text" id="verifySearch" class="form-control" placeholder="Type to search...">
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-9">
+                            <label class="smallest font-weight-bold text-uppercase text-muted">Quick Filters</label>
+                            <div class="d-flex align-items-center overflow-auto no-scrollbar py-1" id="verifyFilterContainer">
+                                <button class="btn btn-xs btn-outline-primary active verify-filter-pill mr-2 mb-1" data-filter="all">ALL ITEMS</button>
+                                @foreach($categories as $cat)
+                                    <button class="btn btn-xs btn-outline-primary verify-filter-pill mr-2 mb-1 text-uppercase" data-filter="{{ Str::slug($cat) }}">{{ $cat }}</button>
+                                @endforeach
+                            </div>
+                        </div>
+                    </div>
+
+                    <form id="openShiftForm" action="{{ route('bar.counter.shift.open') }}" method="POST">
+                        @csrf
+                        <div class="tile-body">
+                            <!-- 1. GRID VIEW (Current) -->
+                            <div id="verifyStockGrid" class="row" style="max-height: 450px; overflow-y: auto; padding-bottom: 20px;">
+                                @forelse($variants as $variant)
+                                    <div class="col-md-3 mb-3 verify-item-wrapper" 
+                                         data-category="{{ Str::slug($variant['category']) }}"
+                                         data-name="{{ strtolower($variant['product_name'] . ' ' . $variant['variant_name']) }}">
+                                        
+                                        <div class="p-3 bg-light rounded border-left border-primary shadow-xs h-100 transition-all hover-grow" 
+                                             style="border-left-width: 4px !important; border-radius: 12px; background: #fbfbfb;">
+                                            <div class="d-flex justify-content-between align-items-start mb-2">
+                                                <div class="overflow-hidden">
+                                                    <h6 class="smallest font-weight-bold text-dark mb-0 text-truncate" title="{{ $variant['variant_name'] }}">{{ $variant['variant_name'] }}</h6>
+                                                    <span class="smallest text-muted text-uppercase" style="font-size: 9px;">Ref: {{ $variant['category'] }}</span>
+                                                </div>
+                                                <span class="badge badge-secondary smallest">{{ $variant['measurement'] }}{{ $variant['unit'] }}</span>
+                                            </div>
+
+                                            <div class="bg-white border rounded p-2 text-center shadow-xs mt-2">
+                                                <div class="smallest text-muted text-uppercase mb-1">In Counter</div>
+                                                <h4 class="mb-0 font-weight-bold text-success">{{ $variant['formatted_quantity'] }}</h4>
+                                                
+                                                @if(isset($variant['can_sell_in_tots']) && $variant['can_sell_in_tots'] && $variant['quantity_in_tots'] > 0 && !str_contains($variant['formatted_quantity'], $variant['portion_unit_name']))
+                                                    <div class="smallest font-weight-bold text-info border-top mt-1 pt-1">
+                                                        {{ number_format($variant['quantity_in_tots']) }} {{ $variant['portion_unit_name'] }}{{ $variant['portion_unit_name'] === 'Glass' ? 'es' : 's' }}
+                                                    </div>
+                                                @endif
+                                            </div>
+                                        </div>
+                                    </div>
+                                @empty
+                                    <div class="col-12 text-center py-5">
+                                        <i class="fa fa-cubes fa-3x text-muted opacity-25 mb-3"></i>
+                                        <p class="h5 text-muted">No stock items found in counter location.</p>
+                                    </div>
+                                @endforelse
+                            </div>
+
+                            <!-- 2. LIST VIEW (Table) -->
+                            <div id="verifyStockList" class="table-responsive d-none" style="max-height: 450px; overflow-y: auto;">
+                                <table class="table table-hover table-bordered table-sm bg-white">
+                                    <thead class="bg-light">
+                                        <tr>
+                                            <th>Product Item</th>
+                                            <th>Category</th>
+                                            <th>Size</th>
+                                            <th class="text-center">System Stock</th>
+                                            <th class="text-center d-none d-print-table-cell" style="width: 150px;">Physical Count</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        @foreach($variants as $variant)
+                                            <tr class="verify-item-wrapper" 
+                                                data-category="{{ Str::slug($variant['category']) }}"
+                                                data-name="{{ strtolower($variant['product_name'] . ' ' . $variant['variant_name']) }}">
+                                                <td class="font-weight-bold">{{ $variant['variant_name'] }}</td>
+                                                <td><span class="badge badge-light border">{{ $variant['category'] }}</span></td>
+                                                <td>{{ $variant['measurement'] }}{{ $variant['unit'] }}</td>
+                                                <td class="text-center">
+                                                    <span class="h6 mb-0 text-success font-weight-bold">{{ $variant['formatted_quantity'] }}</span>
+                                                    @if(isset($variant['can_sell_in_tots']) && $variant['can_sell_in_tots'] && $variant['quantity_in_tots'] > 0 && !str_contains($variant['formatted_quantity'], $variant['portion_unit_name']))
+                                                        <br><small class="text-info font-weight-bold">{{ number_format($variant['quantity_in_tots']) }} {{ $variant['portion_unit_name'] }}{{ $variant['portion_unit_name'] === 'Glass' ? 'es' : 's' }}</small>
+                                                    @endif
+                                                </td>
+                                                <td class="d-none d-print-table-cell" style="border-bottom: 1px solid #000 !important;"></td>
+                                            </tr>
+                                        @endforeach
+                                    </tbody>
+                                </table>
+                            </div>
+
+                            <div class="row mt-4 pt-3 border-top no-gutters">
+                                <div class="col-md-9 pr-md-3">
+                                    <div class="form-group mb-0">
+                                        <label class="smallest font-weight-bold text-uppercase text-muted"><i class="fa fa-sticky-note-o"></i> Handover/Discrepancy Notes</label>
+                                        <textarea name="notes" class="form-control form-control-sm" rows="2" placeholder="Note any missing items or stock variances here..."></textarea>
+                                    </div>
+                                </div>
+                                <div class="col-md-3 text-md-right mt-3 mt-md-0">
+                                    <button type="button" id="btn-confirm-open-shift" class="btn btn-primary px-4 py-2 shadow-sm w-100 w-md-auto" style="border-radius: 10px; font-size: 1rem; border: none; background: var(--brand); font-weight: 600;">
+                                        <i class="fa fa-play mr-2"></i> VERIFY & OPEN SHIFT
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    @else
+        <!-- Welcome Banner with Shift Info -->
+        <div class="row">
+            <div class="col-md-12">
+                <div class="tile p-3 mb-4 bg-light border-left border-primary d-flex justify-content-between align-items-center shadow-sm">
+                    <div>
+                        <h5 class="mb-0 text-dark"><i class="fa fa-user-circle text-primary"></i> Working as: <span class="font-weight-bold">{{ $staff->full_name }}</span></h5>
+                        <small class="text-muted"><i class="fa fa-terminal"></i> Current Shift: <span class="text-info font-weight-bold">{{ $activeShift->shift_number }}</span> (Opened at {{ $activeShift->opened_at->format('H:i') }})</small>
+                    </div>
+                    <div>
+                        <a href="{{ route('bar.counter.reconciliation') }}" class="btn btn-outline-danger font-weight-bold shadow-sm">
+                            <i class="fa fa-power-off"></i> CLOSE SHIFT
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Statistics Cards -->
     <div class="row">
       <div class="col-md-3">
-        <a href="{{ route('bar.counter.warehouse-stock') }}" style="text-decoration: none;">
-            <div class="widget-small primary coloured-icon">
-              <i class="icon fa fa-archive fa-3x"></i>
+        <div class="widget-small primary coloured-icon">
+          <i class="icon fa fa-shopping-bag fa-3x"></i>
+          <div class="info">
+            <h4>Shift Orders</h4>
+            <p><b>{{ number_format($shiftOrderCount ?? 0) }}</b></p>
+          </div>
+        </div>
+      </div>
+      <div class="col-md-3">
+        <a href="{{ route('bar.counter.counter-stock') }}" style="text-decoration: none;">
+            <div class="widget-small info coloured-icon">
+              <i class="icon fa fa-money fa-3x"></i>
               <div class="info">
-                <h4>Warehouse Stock</h4>
-                <p><b>{{ $warehouseStockItems ?? 0 }} items</b></p>
+                <h4>Shift Revenue</h4>
+                <p><b>TSh {{ number_format($shiftRevenue ?? 0) }}</b></p>
               </div>
             </div>
         </a>
       </div>
       <div class="col-md-3">
         <a href="{{ route('bar.counter.counter-stock') }}" style="text-decoration: none;">
-            <div class="widget-small info coloured-icon">
+            <div class="widget-small info coloured-icon" style="background-color: #17a2b8 !important;">
               <i class="icon fa fa-cubes fa-3x"></i>
               <div class="info">
-                <h4>Counter Stock Items</h4>
+                <h4>Counter Inventory</h4>
                 <p><b>{{ $counterStockItems }}</b></p>
-                @if($lowStockItems > 0)
-                  <small class="text-warning">{{ $lowStockItems }} low stock</small>
-                @endif
               </div>
             </div>
         </a>
       </div>
       <div class="col-md-3">
-        <div class="widget-small warning coloured-icon">
-          <i class="icon fa fa-exchange fa-3x"></i>
-          <div class="info">
-            <h4>Pending Transfers</h4>
-            <p><b>{{ $pendingTransfers }}</b></p>
-          </div>
-        </div>
-      </div>
-      <div class="col-md-3">
-        <div class="widget-small danger coloured-icon">
-          <i class="icon fa fa-exclamation-triangle fa-3x"></i>
-          <div class="info">
-            <h4>Low Stock Items</h4>
-            <p><b>{{ $lowStockItems }}</b></p>
-            <small>Need attention</small>
-          </div>
-        </div>
+        <a href="{{ route('bar.counter.waiter-orders') }}" style="text-decoration: none;">
+            <div class="widget-small warning coloured-icon">
+              <i class="icon fa fa-bell fa-3x"></i>
+              <div class="info">
+                <h4>Pending Orders</h4>
+                <p><b>{{ $pendingOrders }}</b></p>
+                <small>Requires action</small>
+              </div>
+            </div>
+        </a>
       </div>
     </div>
 
@@ -195,7 +431,7 @@
               <div class="col-md-3 mb-3">
                 <a href="{{ route('bar.counter.waiter-orders') }}" class="btn btn-info btn-block btn-lg">
                   <i class="fa fa-list-alt fa-2x"></i><br>
-                  Waiter Orders
+                  My Orders
                   @if($pendingOrders > 0)
                     <span class="badge badge-danger">{{ $pendingOrders }}</span>
                   @endif
@@ -213,34 +449,19 @@
                   Counter Stock
                 </a>
               </div>
-              <div class="col-md-3 mb-3">
-                <a href="{{ route('bar.counter.warehouse-stock') }}" class="btn btn-secondary btn-block btn-lg">
-                  <i class="fa fa-archive fa-2x"></i><br>
-                  Warehouse Stock
-                </a>
-              </div>
-              <div class="col-md-3 mb-3">
-                <a href="{{ route('bar.stock-transfers.available') }}" class="btn btn-info btn-block btn-lg">
-                  <i class="fa fa-plus-circle fa-2x"></i><br>
-                  Request Stock
-                </a>
-              </div>
-              <div class="col-md-3 mb-3">
-                <a href="{{ route('bar.counter.record-voice') }}" class="btn btn-warning btn-block btn-lg">
-                  <i class="fa fa-microphone fa-2x"></i><br>
-                  Voice Announcement
-                </a>
-              </div>
+
+
               <div class="col-md-3 mb-3">
                 <a href="{{ route('bar.counter-settings.index') }}" class="btn btn-secondary btn-block btn-lg">
                   <i class="fa fa-cog fa-2x"></i><br>
                   Settings
                 </a>
               </div>
+
               <div class="col-md-3 mb-3">
-                <a href="{{ route('bar.counter.analytics') }}" class="btn btn-secondary btn-block btn-lg">
-                  <i class="fa fa-line-chart fa-2x"></i><br>
-                  Analytics
+                <a href="{{ route('bar.counter.shift.history') }}" class="btn btn-dark btn-block btn-lg">
+                  <i class="fa fa-history fa-2x"></i><br>
+                  Shift Tracking
                 </a>
               </div>
             </div>
@@ -256,7 +477,7 @@
             <div class="tile">
                 <h3 class="tile-title">Recent Orders</h3>
                 <div class="table-responsive">
-                    <table class="table table-hover table-sm">
+                    <table class="table table-hover table-sm" id="orders-table-recent">
                         <thead>
                             <tr>
                                 <th>Order #</th>
@@ -268,13 +489,13 @@
                         </thead>
                         <tbody>
                             @foreach($recentOrders as $order)
-                            <tr>
+                            <tr class="{{ $order->payment_status === 'paid' ? 'table-success' : ($order->status === 'cancelled' ? 'table-danger opacity-75' : '') }}">
                                 <td>{{ $order->order_number }}</td>
                                 <td>
                                     @if($order->order_source === 'counter')
-                                        <span class="text-info font-weight-bold">Counter:</span> {{ $order->waiter->full_name ?? 'Staff' }}
+                                        <span class="text-info font-weight-bold">Counter:</span> {{ $order->waiter ? $order->waiter->full_name : 'Staff' }}
                                     @else
-                                        {{ $order->waiter->full_name ?? 'Counter' }}
+                                        {{ $order->waiter ? $order->waiter->full_name : 'Counter' }}
                                     @endif
                                 </td>
                                 <td>TSh {{ number_format($order->total_amount) }}</td>
@@ -296,7 +517,7 @@
                                         </button>
 
                                         @if($order->status === 'pending' && $order->payment_status !== 'paid')
-                                            {{-- PENDING: can add items, mark served, or cancel --}}
+                                            {{-- PENDING: Add, Print, Cancel --}}
                                             <button class="btn btn-sm btn-primary btn-add-items mr-1 mb-1"
                                                 data-table-id="{{ $order->table_id }}"
                                                 data-order-id="{{ $order->id }}"
@@ -304,11 +525,9 @@
                                                 title="Add More Items">
                                                 <i class="fa fa-plus"></i>
                                             </button>
-                                            <button class="btn btn-sm btn-info btn-mark-served mr-1 mb-1"
-                                                data-order-id="{{ $order->id }}"
-                                                title="Mark as Served (deducts stock)">
-                                                <i class="fa fa-check"></i> Serve
-                                            </button>
+                                            <a href="{{ route('bar.counter.print-receipt', $order->id) }}" target="_blank" class="btn btn-sm btn-dark mr-1 mb-1" title="Print Docket">
+                                                <i class="fa fa-print"></i>
+                                            </a>
                                             <button class="btn btn-sm btn-danger btn-cancel-order mr-1 mb-1"
                                                 data-order-id="{{ $order->id }}"
                                                 data-order-number="{{ $order->order_number }}"
@@ -317,7 +536,7 @@
                                             </button>
 
                                         @elseif($order->status === 'served' && $order->payment_status !== 'paid')
-                                            {{-- SERVED & UNPAID: Pay button + Add Items --}}
+                                            {{-- SERVED & UNPAID: Pay, Add, Print, Cancel --}}
                                             <button class="btn btn-sm btn-primary btn-add-items mr-1 mb-1"
                                                 data-table-id="{{ $order->table_id }}"
                                                 data-order-id="{{ $order->id }}"
@@ -331,15 +550,27 @@
                                                 title="Collect Payment">
                                                 <i class="fa fa-money"></i> PAY
                                             </button>
-
-                                        @elseif($order->payment_status === 'paid')
-                                            {{-- PAID: show paid label, no actions --}}
-                                            <button class="btn btn-sm btn-success" disabled style="opacity: 1;">
-                                                <i class="fa fa-check-circle"></i> Paid
+                                            <a href="{{ route('bar.counter.print-receipt', $order->id) }}" target="_blank" class="btn btn-sm btn-dark mr-1 mb-1" title="Print Docket">
+                                                <i class="fa fa-print"></i>
+                                            </a>
+                                            <button class="btn btn-sm btn-danger btn-cancel-order mr-1 mb-1"
+                                                data-order-id="{{ $order->id }}"
+                                                data-order-number="{{ $order->order_number }}"
+                                                title="Cancel Order">
+                                                <i class="fa fa-times"></i>
                                             </button>
 
+                                        @elseif($order->payment_status === 'paid')
+                                            {{-- PAID: label + Print --}}
+                                            <button class="btn btn-sm btn-success mr-1 mb-1" disabled style="opacity: 1;">
+                                                <i class="fa fa-check-circle"></i> Paid
+                                            </button>
+                                            <a href="{{ route('bar.counter.print-receipt', $order->id) }}" target="_blank" class="btn btn-sm btn-dark mr-1 mb-1" title="Print Docket">
+                                                <i class="fa fa-print"></i>
+                                            </a>
+
                                         @elseif($order->status === 'cancelled')
-                                            {{-- CANCELLED: show label, no actions --}}
+                                            {{-- CANCELLED: label --}}
                                             <button class="btn btn-sm btn-secondary" disabled style="opacity: 1;">
                                                 <i class="fa fa-ban"></i> Cancelled
                                             </button>
@@ -351,40 +582,58 @@
                         </tbody>
                     </table>
                 </div>
+                <!-- Pagination for Recent Orders -->
+                <div id="recent-orders-pagination" class="d-flex justify-content-between align-items-center mt-3 border-top pt-3">
+                    <button class="btn btn-sm btn-outline-primary" id="prev-recent-orders"><i class="fa fa-chevron-left"></i> Previous</button>
+                    <span class="small text-muted" id="recent-orders-page-info">Page 1 of 1</span>
+                    <button class="btn btn-sm btn-outline-primary" id="next-recent-orders">Next <i class="fa fa-chevron-right"></i></button>
+                </div>
             </div>
         </div>
 
         <!-- Low Stock -->
         <div class="col-md-6">
             <div class="tile">
+            <div class="tile-title-w-btn">
                 <h3 class="tile-title">Low Stock Alerts</h3>
-                <div class="table-responsive">
-                    <table class="table table-hover table-sm">
-                        <thead>
-                            <tr>
-                                <th>Product</th>
-                                <th>Qty</th>
-                                <th>Warehouse</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            @foreach($lowStockItemsList as $item)
-                            <tr>
-                                <td>{{ $item['product_name'] }} ({{ $item['variant'] }})</td>
-                                <td class="text-danger font-weight-bold">{{ $item['counter_qty'] }}</td>
-                                <td>{{ $item['warehouse_qty'] }}</td>
-                            </tr>
-                            @endforeach
-                        </tbody>
-                    </table>
-                </div>
+                <p>
+                    <a href="{{ route('bar.products.create') }}" class="btn btn-sm btn-primary">
+                        <i class="fa fa-plus-circle"></i> Register Products (Add Item)
+                    </a>
+                </p>
+            </div>
+            <div class="table-responsive">
+                <table class="table table-hover table-sm">
+                    <thead>
+                        <tr>
+                            <th>Product Details</th>
+                            <th>Stock Count</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach($lowStockItemsList as $item)
+                        <tr>
+                            <td class="font-weight-bold">{{ $item['product_name'] }} ({{ $item['variant'] }})</td>
+                            <td class="text-danger font-weight-bold text-center">
+                                <span class="badge badge-danger px-2">{{ $item['counter_qty'] }}</span>
+                            </td>
+                        </tr>
+                        @endforeach
+                    </tbody>
+                </table>
             </div>
         </div>
+        </div>
     </div>
+        </div>
+    @endif
 </div>
 
+<!-- Legacy Close Shift Modal (Moved to Dedicated Page) -->
+
+
 <!-- POS SECTION (Hidden by default) -->
-<div id="pos-section" style="display: none;">
+<div id="pos-section" style="display: none; opacity: 0;">
   <div class="row mb-3">
     <div class="col-md-12">
       <div class="tile py-2">
@@ -427,29 +676,38 @@
                 @foreach($uniqueCats as $cat)
                     <span class="badge badge-secondary p-2 category-pill" data-category="cat-{{ \Illuminate\Support\Str::slug($cat) }}">{{ $cat }}</span>
                 @endforeach
-                @if(count($foodItems) > 0)
-                    <span class="badge badge-secondary p-2 category-pill" data-category="cat-food">Kitchen Items</span>
-                @endif
             </div>
           </div>
         </div>
 
         <!-- Product Grid -->
-        <div class="row overflow-auto" id="pos-items-grid" style="max-height: 60vh;">
+        <div id="pos-items-grid-container" style="max-height: 65vh; overflow-y: auto; overflow-x: hidden; padding-right: 5px;">
+            <div class="row" id="pos-items-grid">
             <!-- Drinks -->
             @foreach($variants as $v)
             @php 
                 $vFullName = $v['variant_name'] ?: $v['product_name'];
             @endphp
-            <div class="col-md-3 col-sm-4 col-6 mb-3 pos-item cat-drinks cat-{{ \Illuminate\Support\Str::slug($v['category']) }}" 
+            <div class="col-md-4 col-sm-6 mb-4 pos-item cat-drinks cat-{{ \Illuminate\Support\Str::slug($v['category']) }}" 
                  data-id="{{ $v['id'] }}" 
                  data-name="{{ $vFullName }}" 
                  data-variant="{{ $v['variant'] }}"
                  data-price="{{ $v['selling_price'] }}"
                  data-price-tot="{{ $v['selling_price_per_tot'] }}"
                  data-can-tot="{{ $v['can_sell_in_tots'] ? 'true' : 'false' }}"
+                 data-unit="{{ $v['unit'] }}"
+                 data-portion-unit="{{ $v['portion_unit_name'] }}"
+                 data-pkg="{{ $v['packaging_type'] ?: 'Bottle' }}"
+                 data-stock-qty="{{ $v['quantity'] }}"
+                 data-stock-tots="{{ $v['quantity_in_tots'] }}"
+                 data-total-tots="{{ $v['total_tots'] ?: 1 }}"
                  data-type="drink">
-                <div class="card product-card h-100">
+                <div class="card product-card h-100 {{ $v['is_low_stock'] ? 'border-warning shadow-sm' : '' }}" 
+                     style="{{ $v['is_low_stock'] ? 'background-color: #fff9e6 !important; position: relative;' : '' }}">
+                    @if($v['is_low_stock'])
+                        <div class="badge badge-warning position-absolute" style="top: 10px; right: 10px; z-index: 10;">LOW STOCK</div>
+                    @endif
+
                     @if($v['product_image'])
                         <img src="{{ asset('storage/' . $v['product_image']) }}" class="card-img-top" style="height: 100px; object-fit: cover;">
                     @else
@@ -462,58 +720,58 @@
                         
                         <div class="d-flex justify-content-between mb-1 mt-1">
                             <span class="text-secondary small">Available:</span>
-                            <span class="font-weight-bold text-dark text-right">
-                                {{ $v['quantity'] }} btl
-                                @if(($v['packaging_type'] ?? '') == 'Crate' && ($v['items_per_package'] ?? 0) > 0)
-                                    <br><small class="text-info">{{ floor($v['quantity'] / $v['items_per_package']) }} Crates</small>
-                                @endif
+                            <span class="font-weight-bold text-{{ $v['quantity'] < 1 ? 'danger' : 'dark' }} text-right">
+                                {{ $v['formatted_quantity'] }}
                             </span>
                         </div>
                         
-                        <div class="d-flex justify-content-between mb-2">
-                            <span class="text-secondary small">Price:</span>
+                        <div class="d-flex justify-content-between mb-1">
+                            <span class="text-secondary small">Bottle Price:</span>
                             <span class="text-primary font-weight-bold">TSh {{ number_format($v['selling_price']) }}</span>
                         </div>
-
-                        <div class="mt-auto pt-2 border-top text-center text-primary font-weight-bold">
-                            <i class="fa fa-plus-circle"></i> Add to Order
-                        </div>
-                    </div>
-                </div>
-            </div>
-            @endforeach
-
-            <!-- Food Items -->
-            @foreach($foodItems as $f)
-            <div class="col-md-3 col-sm-4 col-6 mb-3 pos-item cat-food" 
-                 data-id="{{ $f->id }}" 
-                 data-name="{{ $f->name }}" 
-                 data-variant="{{ $f->variant_name }}"
-                 data-price="{{ $f->price }}"
-                 data-type="food">
-                <div class="card product-card h-100 border-info">
-                    @if($f->image)
-                        <img src="{{ asset('storage/' . $f->image) }}" class="card-img-top" style="height: 100px; object-fit: cover;">
-                    @else
-                        <div class="bg-info text-white text-center py-4"><i class="fa fa-cutlery fa-2x"></i></div>
-                    @endif
-                    <div class="card-body p-2 d-flex flex-column" style="font-size: 0.85rem;">
-                        <div class="product-title font-weight-bold text-dark mb-1" style="font-size: 0.95rem; line-height: 1.2; height: auto; min-height: 44px;">
-                            {{ $f->name }} @if($f->variant_name)<small class="text-muted d-block small mt-1">({{ $f->variant_name }})</small>@endif
-                        </div>
                         
-                        <div class="d-flex justify-content-between mb-2 mt-2">
-                            <span class="text-secondary small">Price:</span>
-                            <span class="text-primary font-weight-bold">TSh {{ number_format($f->price) }}</span>
+                        @if($v['can_sell_in_tots'])
+                        <div class="d-flex justify-content-between mb-2">
+                            <span class="text-secondary smallest font-weight-bold">{{ $v['portion_unit_name'] }} Price:</span>
+                            <span class="text-info font-weight-bold">TSh {{ number_format($v['selling_price_per_tot']) }}</span>
                         </div>
+                        @endif
 
-                        <div class="mt-auto pt-2 border-top text-center text-info font-weight-bold">
-                            <i class="fa fa-plus-circle"></i> Add Food
+                        <div class="mt-auto pt-2 border-top d-flex align-items-center">
+                            @if($v['can_sell_in_tots'])
+                                @php 
+                                   $canSellBtl = $v['quantity'] >= 1;
+                                   $canSellTot = $v['quantity_in_tots'] >= 1;
+                                   $totLabel = ($v['portion_unit_name'] == 'Glass' ? 'Glasses' : $v['portion_unit_name'] . 's');
+                                @endphp
+                                <button class="btn btn-xs btn-primary font-weight-bold flex-fill mr-1 py-1 px-0 btn-pos-modal" 
+                                    data-sell-type="unit" title="Add Bottle(s)" {{ !$canSellBtl ? 'disabled style=opacity:0.5;filter:grayscale(1);' : '' }}>
+                                    <i class="fa fa-plus"></i> Bottles
+                                </button>
+                                <button class="btn btn-xs btn-info font-weight-bold flex-fill py-1 px-0 btn-pos-modal" 
+                                    data-sell-type="tot" title="Add {{ $totLabel }}" {{ !$canSellTot ? 'disabled style=opacity:0.5;filter:grayscale(1);' : '' }}>
+                                    <i class="fa fa-plus"></i> {{ $totLabel }}
+                                </button>
+                            @else
+                                @php $canSell = $v['quantity'] >= 1; @endphp
+                                @if($canSell)
+                                    <div class="text-primary font-weight-bold flex-grow-1 text-center">
+                                        <i class="fa fa-plus-circle"></i> Add to Order
+                                    </div>
+                                @else
+                                    <div class="text-danger font-weight-bold flex-grow-1 text-center smallest">
+                                        <i class="fa fa-ban"></i> OUT OF STOCK
+                                    </div>
+                                @endif
+                            @endif
                         </div>
                     </div>
                 </div>
             </div>
             @endforeach
+
+
+            </div>
         </div>
       </div>
     </div>
@@ -544,21 +802,31 @@
           </table>
         </div>
         
-        <div class="cart-bottom-fixed border-top pt-3">
-          <div class="d-flex justify-content-between mb-2">
-            <span class="text-muted">Subtotal</span>
-            <span id="cart-subtotal" class="font-weight-bold">TSh 0</span>
+        <div class="cart-bottom-fixed border-top pt-1">
+          <div class="d-flex justify-content-between mb-1">
+            <span class="text-muted small">Subtotal</span>
+            <span id="cart-subtotal" class="font-weight-bold smallest">TSh 0</span>
           </div>
-          <div class="d-flex justify-content-between mb-3">
-            <h4 class="mb-0">Payable Amount</h4>
-            <h4 id="cart-total" class="text-primary mb-0 font-weight-bold">TSh 0</h4>
+          <div class="d-flex justify-content-between mb-1">
+            <h5 class="mb-0 font-weight-bold">Payable Amount</h5>
+            <h5 id="cart-total" class="text-primary mb-0 font-weight-bold">TSh 0</h5>
           </div>
           
-          <div class="bg-light p-2 rounded mb-3 border">
-              <div class="form-group mb-2">
-                <label class="small font-weight-bold text-muted mb-1 text-uppercase">Table Selection</label>
-                <select class="form-control select2" id="order-table" style="width: 100%;">
-                  <option value="">-- Walk-in / Generic --</option>
+          <div class="bg-light p-1 rounded mb-2 border shadow-xs">
+              <div class="form-group mb-1">
+                <label class="small font-weight-bold text-muted mb-0 text-uppercase" style="font-size: 10px;">Waiter Selection <span class="text-danger">*</span></label>
+                <select class="form-control select2 form-control-sm" id="order-waiter" style="width: 100%;">
+                  <option value="">-- Counter/Walk-in (Self) --</option>
+                  @foreach($waiters as $waiter)
+                    <option value="{{ $waiter->id }}">{{ $waiter->full_name }}</option>
+                  @endforeach
+                </select>
+              </div>
+
+              <div class="form-group mb-1">
+                <label class="small font-weight-bold text-muted mb-0 text-uppercase" style="font-size: 10px;">Table Selection</label>
+                <select class="form-control select2 form-control-sm" id="order-table" style="width: 100%;">
+                  <option value="">-- No Table --</option>
                   @foreach($tables as $table)
                     <option value="{{ $table['id'] }}">Table {{ $table['table_number'] }} ({{ $table['location'] }}) - {{ $table['status'] }}</option>
                   @endforeach
@@ -582,10 +850,10 @@
           </div>
           <input type="hidden" id="pos-existing-order-id" value="">
           
-          <div class="row mt-3">
+          <div class="row mt-2">
               <div class="col-10 pr-1">
-                  <button class="btn btn-primary btn-block btn-lg font-weight-bold shadow-sm" id="btn-place-only" disabled>
-                    <i class="fa fa-save"></i> <span class="text-uppercase">Place Order (Store)</span>
+                  <button class="btn btn-primary btn-block btn-lg font-weight-bold shadow-sm py-2" id="btn-place-only" disabled>
+                    <i class="fa fa-save"></i> <span class="text-uppercase">Place Order</span>
                   </button>
               </div>
               <div class="col-2 pl-1">
@@ -615,6 +883,9 @@
         <input type="hidden" id="modal-item-price-tot">
         <input type="hidden" id="modal-item-name">
         <input type="hidden" id="modal-item-variant">
+        <input type="hidden" id="modal-item-stock-qty">
+        <input type="hidden" id="modal-item-stock-tots">
+        <input type="hidden" id="modal-item-total-tots">
 
         <div class="text-center mb-4">
           <h3 id="modal-display-name" class="font-weight-bold text-dark"></h3>
@@ -626,11 +897,11 @@
           <div class="btn-group btn-group-toggle d-flex" data-toggle="buttons">
             <label class="btn btn-outline-info flex-fill p-3 active">
               <input type="radio" name="sell_type" value="unit" checked> 
-              <i class="fa fa-square-o fa-2x mb-2 d-block"></i> Bottle/Unit
+              <i class="fa fa-square-o fa-2x mb-2 d-block"></i> <span id="modal-unit-label">Unit</span>
             </label>
             <label class="btn btn-outline-info flex-fill p-3" id="label-sell-tot">
               <input type="radio" name="sell_type" value="tot"> 
-              <i class="fa fa-glass fa-2x mb-2 d-block"></i> Shots/Tots
+              <i class="fa fa-glass fa-2x mb-2 d-block"></i> <span id="modal-portion-label">Shots/Tots</span>
             </label>
           </div>
         </div>
@@ -703,11 +974,11 @@
           <div class="form-group">
             <label class="font-weight-bold small">MM Provider</label>
             <select class="form-control" id="mobile-money-provider">
-              <option value="Tigo Pesa">Tigo Pesa</option>
+              <option value="Halopesa">Halopesa</option>
+              <option value="Mixx By Yas">Mixx By Yas</option>
               <option value="M-Pesa">M-Pesa</option>
               <option value="Airtel Money">Airtel Money</option>
-              <option value="HaloPesa">HaloPesa</option>
-              <option value="MIXX BY YAS">MIXX BY YAS</option>
+              <option value="T-Pesa">T-Pesa</option>
             </select>
           </div>
           <div class="form-group mb-0">
@@ -793,21 +1064,93 @@
 @endsection
 
 @push('scripts')
+<link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
+<script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
 <script>
 $(document).ready(function() {
     let cart = [];
     
-    // --- UI NAVIGATION ---
-    $('#btn-pos-mode').on('click', function() {
-        $('#dashboard-content').fadeOut(300, function() {
-            $('#pos-section').fadeIn(300);
-            renderCart();
+    // Initialize Select2
+    $('.select2').select2({
+        width: '100%',
+        placeholder: "Search...",
+        allowClear: true
+    });
+
+    // --- VERIFY STOCK SEARCH & FILTER ---
+    $('#verifySearch').on('keyup', function() {
+        let val = $(this).val().toLowerCase();
+        $('.verify-item-wrapper').each(function() {
+            let name = $(this).data('name').toLowerCase();
+            $(this).toggle(name.includes(val));
         });
     });
 
+    $('.verify-filter-pill').on('click', function() {
+        $('.verify-filter-pill').removeClass('active');
+        $(this).addClass('active');
+        let filter = $(this).data('filter');
+        
+        $('.verify-item-wrapper').each(function() {
+            if (filter === 'all') {
+                $(this).show();
+            } else {
+                $(this).toggle($(this).data('category') === filter);
+            }
+        });
+    });
+
+    $('.view-toggle-btn').on('click', function() {
+        $('.view-toggle-btn').removeClass('active btn-primary text-white').addClass('btn-light');
+        $(this).addClass('active btn-primary text-white').removeClass('btn-light');
+        
+        let view = $(this).data('view');
+        if (view === 'grid') {
+            $('#verifyStockGrid').removeClass('d-none');
+            $('#verifyStockList').addClass('d-none');
+        } else {
+            $('#verifyStockGrid').addClass('d-none');
+            $('#verifyStockList').removeClass('d-none');
+        }
+    });
+    
+    $('#btn-confirm-open-shift').on('click', function() {
+        Swal.fire({
+            title: "Confirm Stock Verification?",
+            text: "By opening the shift, you confirm that you have physically verified the counter stock and it matches the numbers shown above.",
+            icon: "warning",
+            showCancelButton: true,
+            confirmButtonText: "Yes, Start My Shift",
+            cancelButtonText: "No, Check Again",
+            confirmButtonColor: '#940000',
+            cancelButtonColor: '#6c757d'
+        }).then((result) => {
+            if (result.isConfirmed) {
+                // Show sleek toast notification on the right
+                showToast('success', 'Opening shift... Please wait.', 'Verified!');
+                
+                // Submit form after a tiny delay to let toast be seen
+                setTimeout(() => {
+                    $('#openShiftForm').submit();
+                }, 800);
+            }
+        });
+    });
+
+    $('#btn-pos-mode').on('click', function() {
+        $('#dashboard-content').css('opacity', '0');
+        setTimeout(() => {
+            $('#dashboard-content').hide();
+            $('#pos-section').show().css('opacity', '1');
+            renderCart();
+        }, 400);
+    });
+
     $('#btn-back-to-dashboard').on('click', function() {
-        $('#pos-section').fadeOut(300, function() {
-            $('#dashboard-content').fadeIn(300);
+        $('#pos-section').css('opacity', '0');
+        setTimeout(() => {
+            $('#pos-section').hide();
+            $('#dashboard-content').show().css('opacity', '1');
             // Reset POS state
             $('#pos-existing-order-id').val('');
             $('#pos-mode-indicator').hide();
@@ -816,7 +1159,7 @@ $(document).ready(function() {
             $('#pos-customer-phone').val('');
             cart = [];
             renderCart();
-        });
+        }, 400);
     });
 
     // --- PRODUCT SEARCH & FILTER ---
@@ -847,17 +1190,54 @@ $(document).ready(function() {
     });
 
     // --- CART ACTIONS ---
-    $('.pos-item').on('click', function() {
-        const item = $(this).data();
+    // Handle Modal Trigger Buttons (New logic: both Bottle and Glass buttons open the quantity modal)
+    $(document).on('click', '.btn-pos-modal', function(e) {
+        e.stopPropagation();
+        const card = $(this).closest('.pos-item');
+        const sellType = $(this).data('sell-type');
+        
+        openAddItemModal(card, sellType);
+    });
+
+    $(document).on('click', '.pos-item', function() {
+        openAddItemModal(this, 'unit'); // Default to unit (bottle) when clicking card body
+    });
+
+    function openAddItemModal(input, defaultSellType) {
+        // Handle both raw data object OR jQuery/DOM element
+        const isEl = input instanceof jQuery || input instanceof HTMLElement;
+        const el = isEl ? $(input) : null;
+        const item = isEl ? el.data() : input;
+
+        // Force refresh core attributes directly from attributes to beat caching
+        if (isEl) {
+            item.pkg = el.attr('data-pkg');
+            item.portionUnit = el.attr('data-portion-unit');
+            item.canTot = el.attr('data-can-tot');
+        }
+
+        const isPortionItem = (item.canTot == 'true' || item.canTot === true);
+
         $('#modal-item-id').val(item.id);
         $('#modal-item-type').val(item.type);
         $('#modal-item-price').val(item.price);
-        $('#modal-item-price-tot').val(item.canTot == 'true' ? item.priceTot : '');
+        $('#modal-item-price-tot').val(isPortionItem ? item.priceTot : '');
         $('#modal-item-name').val(item.name);
         $('#modal-item-variant').val(item.variant || '');
+        $('#modal-item-stock-qty').val(item.stockQty || 0);
+        $('#modal-item-stock-tots').val(item.stockTots || 0);
+        $('#modal-item-total-tots').val(item.totalTots || 1);
         
         $('#modal-display-name').text(item.name + (item.variant ? ' (' + item.variant + ')' : ''));
-        $('#modal-display-price').text('TSh ' + parseInt(item.price).toLocaleString());
+        $('#modal-display-price').text('TSh ' + parseInt(item.price || 0).toLocaleString());
+        
+        if (item.type === 'drink') {
+            const stockText = (item.stockQty > 0) ? `Available: ${parseFloat(item.stockQty).toFixed(2)} Bottles` : 'OUT OF STOCK';
+            $('#modal-stock-info').remove();
+            $('#modal-display-name').after(`<div class="text-muted small text-center mb-2" id="modal-stock-info">${stockText}</div>`);
+        } else {
+            $('#modal-stock-info').remove();
+        }
         
         // Sync Guest info from sidebar if not already set in checkout
         $('#checkout-customer-name').val($('#pos-customer-name').val());
@@ -866,13 +1246,30 @@ $(document).ready(function() {
         $('#modal-quantity').val(1);
         $('#modal-notes').val('');
         
-        if (item.type === 'drink' && item.canTot == 'true') {
+        if (item.type === 'drink') {
+            const packaging = item.pkg || item.packagingType || 'Bottle';
+            $('#modal-unit-label').text(packaging);
+            
             $('#sell-type-group').show();
-            $('#label-sell-tot').show();
-        } else if (item.type === 'drink') {
-            $('#sell-type-group').show();
-            $('#label-sell-tot').hide();
-            $('input[name="sell_type"][value="unit"]').prop('checked', true).parent().addClass('active').siblings().removeClass('active');
+            
+            if (isPortionItem) {
+                $('#label-sell-tot').show();
+                // Pluralize portion label
+                const portionUnit = item.portionUnit || 'Portion';
+                const pluralUnit = portionUnit === 'Glass' ? 'Glasses' : (portionUnit + 's');
+                $('#modal-portion-label').text(pluralUnit);
+                
+                // Select the sell type based on which button was clicked
+                const activeType = defaultSellType || 'unit';
+                $(`input[name="sell_type"][value="${activeType}"]`).prop('checked', true).parent().addClass('active').siblings().removeClass('active');
+                
+                // Update display price immediately to match selected type
+                const price = activeType === 'tot' ? item.priceTot : item.price;
+                $('#modal-display-price').text('TSh ' + parseInt(price || 0).toLocaleString());
+            } else {
+                $('#label-sell-tot').hide();
+                $(`input[name="sell_type"][value="unit"]`).prop('checked', true).parent().addClass('active').siblings().removeClass('active');
+            }
         } else {
             $('#sell-type-group').hide();
         }
@@ -884,7 +1281,7 @@ $(document).ready(function() {
         }
         
         $('#addItemModal').modal('show');
-    });
+    }
 
     // Quantity buttons in modal
     $('#btn-qty-minus').on('click', function() {
@@ -903,7 +1300,40 @@ $(document).ready(function() {
         $('#modal-display-price').text('TSh ' + parseInt(price).toLocaleString());
     });
 
-    // Add to Cart Confirm
+    // Refactored Add to Cart logic to support both Quick Add and Modal
+    function addToCart(data) {
+        // Check if item already in cart with same sell type
+        const existingIndex = cart.findIndex(i => 
+            (data.type === 'food' ? i.food_item_id == data.id : i.variant_id == data.id) && i.sell_type === data.sell_type && i.notes === data.notes
+        );
+        
+        if (existingIndex > -1) {
+            cart[existingIndex].quantity += data.quantity;
+        } else {
+            const cartItem = {
+                product_name: data.name,
+                variant_name: data.variant,
+                quantity: data.quantity,
+                price: data.price,
+                sell_type: data.sell_type,
+                portion_unit: data.portion_unit,
+                notes: data.notes
+            };
+            
+            if (data.type === 'food') {
+                cartItem.food_item_id = data.id;
+            } else {
+                cartItem.variant_id = data.id;
+            }
+            
+            cart.push(cartItem);
+        }
+        
+        renderCart();
+        showToast('success', data.name + ' added to order', 'Order Updated');
+    }
+
+    // Add to Cart Confirm (from Modal)
     $('#btn-add-to-cart-confirm').on('click', function() {
         const id = $('#modal-item-id').val();
         const type = $('#modal-item-type').val();
@@ -914,35 +1344,56 @@ $(document).ready(function() {
         const qty = parseInt($('#modal-quantity').val());
         const notes = $('#modal-notes').val();
         
-        // Check if item already in cart with same sell type
-        const existingIndex = cart.findIndex(i => 
-            (type === 'food' ? i.food_item_id == id : i.variant_id == id) && i.sell_type === sellType && i.notes === notes
-        );
+        const stockQty = parseFloat($('#modal-item-stock-qty').val());
+        const stockTots = parseInt($('#modal-item-stock-tots').val());
+        const totPerBottle = parseInt($('#modal-item-total-tots').val());
         
-        if (existingIndex > -1) {
-            cart[existingIndex].quantity += qty;
-        } else {
-            const cartItem = {
-                product_name: name,
-                variant_name: variant,
-                quantity: qty,
-                price: parseFloat(price),
-                sell_type: sellType,
-                notes: notes
-            };
+        // Stock Validation
+        if (type === 'drink') {
+            // Find ALL items in the current cart with the SAME variant ID to calculate total equivalent bottles
+            const inCartItems = cart.filter(i => i.variant_id == id);
+            let totalTotsNeeded = 0;
             
-            if (type === 'food') {
-                cartItem.food_item_id = id;
-            } else {
-                cartItem.variant_id = id;
+            inCartItems.forEach(i => {
+                if (i.sell_type === 'unit') {
+                    totalTotsNeeded += i.quantity * totPerBottle;
+                } else if (i.sell_type === 'tot') {
+                    totalTotsNeeded += i.quantity;
+                }
+            });
+            
+            // Add what we're trying to add now
+            if (sellType === 'unit') {
+                totalTotsNeeded += qty * totPerBottle;
+            } else if (sellType === 'tot') {
+                totalTotsNeeded += qty;
             }
             
-            cart.push(cartItem);
+            if (totalTotsNeeded > stockTots) {
+                const bottlesLeft = (stockTots / totPerBottle).toFixed(2);
+                Swal.fire({
+                    icon: 'error',
+                    title: 'Insufficient Stock',
+                    text: `You only have ${bottlesLeft} bottles (${stockTots} portions) left. Please reduce the quantity.`,
+                    confirmButtonColor: '#007bff'
+                });
+                return;
+            }
         }
         
-        renderCart();
+        addToCart({
+            id: id,
+            type: type,
+            name: name,
+            variant: variant,
+            price: parseFloat(price),
+            quantity: qty,
+            sell_type: sellType,
+            portion_unit: $('#modal-portion-label').text(), // Get the dynamic name from modal label
+            notes: notes
+        });
+        
         $('#addItemModal').modal('hide');
-        showToast('success', name + ' added successfully', 'Cart Updated');
     });
 
     function renderCart() {
@@ -967,18 +1418,23 @@ $(document).ready(function() {
             const itemTotal = item.price * item.quantity;
             total += itemTotal;
             
-            let row = `<tr>
-                <td>
-                    <div class="font-weight-bold">${item.product_name}</div>
-                    <small class="text-muted">${item.variant_name} ${item.sell_type === 'tot' ? '(Shot)' : ''}</small>
-                    ${item.notes ? '<br><small class="text-info"><i>' + item.notes + '</i></small>' : ''}
-                </td>
-                <td class="align-middle">
-                    <div class="input-group input-group-sm">
-                        <input type="text" class="form-control text-center cart-qty-input" value="${item.quantity}" data-index="${index}" readonly>
+            let row = `<tr class="border-bottom">
+                <td class="py-2">
+                    <div class="font-weight-bold text-dark">${item.product_name}</div>
+                    <div class="small text-muted line-height-1">
+                        ${item.variant_name} 
+                        ${item.sell_type === 'tot' ? `<span class="badge badge-info ml-1 px-1">${item.portion_unit || 'Portion'}</span>` : ''}
                     </div>
+                    ${item.notes ? `<div class="smallest text-info mt-1"><i><i class="fa fa-sticky-note-o"></i> ${item.notes}</i></div>` : ''}
                 </td>
-                <td class="text-right align-middle">TSh ${itemTotal.toLocaleString()}</td>
+                <td class="align-middle text-center py-2" style="width: 70px;">
+                    <span class="smallest text-muted d-block">Qty</span>
+                    <span class="font-weight-bold h6 mb-0">${item.quantity}</span>
+                </td>
+                <td class="text-right align-middle py-2">
+                    <span class="smallest text-muted d-block">${item.quantity} @ TSh ${item.price.toLocaleString()}</span>
+                    <span class="font-weight-bold text-primary">TSh ${itemTotal.toLocaleString()}</span>
+                </td>
                 <td class="text-right align-middle">
                     <button class="btn btn-sm btn-link text-danger btn-remove-cart" data-index="${index}"><i class="fa fa-times"></i></button>
                 </td>
@@ -1028,6 +1484,7 @@ $(document).ready(function() {
         const orderData = {
             items: cart,
             table_id: $('#order-table').val(),
+            waiter_id: $('#order-waiter').val(),
             customer_name: $('#pos-customer-name').val(),
             customer_phone: $('#pos-customer-phone').val(),
             order_notes: $('#checkout-notes').val(), // Added missing notes field
@@ -1041,15 +1498,8 @@ $(document).ready(function() {
             data: orderData,
             success: function(response) {
                 if (response.success) {
-                    const savedOrderId = response.order.id;
-                    // Store order id so PAY NOW pays against this order
-                    $('#pos-existing-order-id').val(savedOrderId);
-                    $('#checkout-order-id').val(savedOrderId);
-                    $('#checkout-total-display').text(btn.closest('.col-md-4').find('#cart-total').text());
-                    btn.prop('disabled', false).html(originalBtnText);
-                    // Highlight PAY NOW to guide the counter staff
-                    $('#btn-checkout').removeClass('btn-outline-success').addClass('btn-success').html('<i class="fa fa-money"></i> PAY NOW');
-                    showToast('success', 'Order stored! Click PAY NOW to collect payment.', 'Saved');
+                    showToast('success', 'Order stored successfully.', 'Saved');
+                    setTimeout(() => { window.location.href = "{{ route('bar.counter.waiter-orders') }}"; }, 800);
                 }
             },
             error: function(err) {
@@ -1132,7 +1582,8 @@ $(document).ready(function() {
                 success: function(payResponse) {
                     $('#checkoutModal').modal('hide');
                     showToast('success', 'Order payment recorded.', 'Success!');
-                    setTimeout(() => { location.reload(); }, 1000);
+                    window.open('{{ url("bar/counter/print-receipt") }}/' + existingOrderId, '_blank');
+                    setTimeout(() => { window.location.href = "{{ route('bar.counter.waiter-orders') }}"; }, 1000);
                 },
                 error: function(err) {
                     btn.prop('disabled', false).html(originalBtnText);
@@ -1148,6 +1599,7 @@ $(document).ready(function() {
             const orderData = {
                 items: cart,
                 table_id: $('#order-table').val(),
+                waiter_id: $('#order-waiter').val(),
                 customer_name: $('#checkout-customer-name').val() || $('#pos-customer-name').val(),
                 customer_phone: $('#checkout-customer-phone').val() || $('#pos-customer-phone').val(),
                 _token: '{{ csrf_token() }}'
@@ -1166,7 +1618,8 @@ $(document).ready(function() {
                             cart = [];
                             renderCart();
                             showToast('success', 'Order placed successfully.', 'Success!');
-                            setTimeout(() => { location.reload(); }, 1000);
+                            window.open('{{ url("bar/counter/print-receipt") }}/' + orderId, '_blank');
+                            setTimeout(() => { window.location.href = "{{ route('bar.counter.waiter-orders') }}"; }, 1000);
                             return;
                         }
 
@@ -1191,7 +1644,8 @@ $(document).ready(function() {
                                 cart = [];
                                 renderCart();
                                 showToast('success', 'Order completed successfully.', 'Success!');
-                                setTimeout(() => { location.reload(); }, 1000);
+                                window.open('{{ url("bar/counter/print-receipt") }}/' + orderId, '_blank');
+                                setTimeout(() => { window.location.href = "{{ route('bar.counter.waiter-orders') }}"; }, 1000);
                             },
                             error: function(err) {
                                 btn.prop('disabled', false).html(originalBtnText);
@@ -1261,7 +1715,12 @@ $(document).ready(function() {
             cancelButtonColor: '#3085d6',
             confirmButtonText: 'Yes, Cancel it!',
             input: 'text',
-            inputPlaceholder: 'Reason for cancellation (optional)',
+            inputPlaceholder: 'Reason for cancellation (REQUIRED)',
+            inputValidator: (value) => {
+                if (!value) {
+                    return 'You need to write a reason!'
+                }
+            }
         }).then((result) => {
             if (result.isConfirmed) {
                 $.ajax({
@@ -1290,20 +1749,32 @@ $(document).ready(function() {
         const orderId = $(this).data('order-id');
         const orderNum = $(this).data('order-num');
         
-        if (tableId) {
-            $('#order-table').val(tableId).trigger('change');
-        }
-        
-        $('#pos-existing-order-id').val(orderId || '');
-        if (orderId) {
-            $('#pos-appending-order-num').text(orderNum);
-            $('#pos-mode-indicator').show();
-        } else {
-            $('#pos-mode-indicator').hide();
-        }
-        
-        $('#btn-pos-mode').trigger('click');
-        showToast('info', 'Add items to order #' + orderNum, 'POS Mode');
+        // High-end Professional Transition
+        $('#pos-loader-overlay').css('display', 'flex').hide().fadeIn(300);
+        $('#dashboard-content').css('opacity', '0');
+
+        setTimeout(() => {
+            $('#dashboard-content').hide();
+            if (tableId) {
+                $('#order-table').val(tableId).trigger('change');
+            }
+            
+            $('#pos-existing-order-id').val(orderId || '');
+            if (orderId) {
+                $('#pos-appending-order-num').text(orderNum);
+                $('#pos-mode-indicator').show();
+            } else {
+                $('#pos-mode-indicator').hide();
+            }
+            
+            $('#pos-section').show().css('opacity', '1');
+            renderCart();
+
+            // Fade out the professional loader
+            $('#pos-loader-overlay').fadeOut(400, function() {
+                showToast('success', 'POS ready for Order #' + orderNum, 'Direct Mode');
+            });
+        }, 600);
     });
 
     $(document).on('click', '.view-order-details', function() {
@@ -1387,6 +1858,69 @@ $(document).ready(function() {
             }
         });
     });
+    // Check for "Add Items" redirect from Orders page
+    const urlParams = new URLSearchParams(window.location.search);
+    const orderToAdd = urlParams.get('add_item_to_order');
+    if (orderToAdd) {
+        // High-end Professional Transition
+        $('#pos-loader-overlay').css('display', 'flex'); 
+        $('#dashboard-content').css('opacity', '0');
+        
+        setTimeout(() => {
+            $('#dashboard-content').hide();
+            $('#pos-existing-order-id').val(orderToAdd);
+            $('#pos-appending-order-num').text('ORDER #' + orderToAdd); 
+            $('#pos-mode-indicator').show();
+            
+            $('#pos-section').show().css('opacity', '1');
+            renderCart();
+            
+            // Fade out the professional loader
+            $('#pos-loader-overlay').css('opacity', '0');
+            setTimeout(() => {
+                $('#pos-loader-overlay').hide();
+                showToast('success', 'POS ready for Order #' + orderToAdd, 'Redirected');
+            }, 400);
+        }, 800);
+        
+        // Clear param from URL without reload
+        const newUrl = window.location.protocol + "//" + window.location.host + window.location.pathname;
+        window.history.pushState({path:newUrl},'',newUrl);
+    }
+    // Pagination Logic for Recent Orders
+    let currentRecentPage = 1;
+    const itemsPerPage = 5;
+    const $recentRows = $('#orders-table-recent tbody tr');
+    const totalRecentPages = Math.ceil($recentRows.length / itemsPerPage);
+
+    function showRecentPage(page) {
+        $recentRows.hide();
+        $recentRows.slice((page - 1) * itemsPerPage, page * itemsPerPage).show();
+        $('#recent-orders-page-info').text(`Page ${page} of ${totalRecentPages}`);
+        $('#prev-recent-orders').prop('disabled', page === 1);
+        $('#next-recent-orders').prop('disabled', page === totalRecentPages);
+    }
+
+    $('#prev-recent-orders').on('click', function() {
+        if (currentRecentPage > 1) {
+            currentRecentPage--;
+            showRecentPage(currentRecentPage);
+        }
+    });
+
+    $('#next-recent-orders').on('click', function() {
+        if (currentRecentPage < totalRecentPages) {
+            currentRecentPage++;
+            showRecentPage(currentRecentPage);
+        }
+    });
+
+    // Initialize pagination
+    if (totalRecentPages > 0) {
+        showRecentPage(1);
+    } else {
+        $('#recent-orders-pagination').hide();
+    }
 });
 </script>
 @endpush

@@ -3,185 +3,238 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Receipt - {{ $order->order_number }}</title>
+    <title>Docket - {{ $order->order_number }}</title>
     <style>
+        @page {
+            margin: 0;
+            size: 80mm auto; /* Standard Thermal Paper Width */
+        }
         @media print {
-            body { margin: 0; padding: 20px; }
+            body { 
+                width: 72mm; /* Printable area */
+                margin: 0 auto;
+                padding: 5mm;
+            }
             .no-print { display: none !important; }
-            @page { margin: 0.5cm; }
         }
         body {
-            font-family: Arial, sans-serif;
-            max-width: 300px;
+            font-family: 'Courier New', Courier, monospace; /* Classic Receipt Font */
+            font-size: 12px;
+            line-height: 1.4;
+            color: #000;
+            background: #fff;
+            width: 72mm;
             margin: 0 auto;
-            padding: 20px;
+            padding: 10px;
         }
+        .text-center { text-align: center; }
+        .text-right { text-align: right; }
+        .font-bold { font-weight: bold; }
+        
         .header {
-            text-align: center;
-            border-bottom: 2px solid #000;
-            padding-bottom: 10px;
-            margin-bottom: 15px;
+            margin-bottom: 10px;
+            padding-bottom: 5px;
+            border-bottom: 1px dashed #000;
         }
         .header h1 {
             margin: 0;
-            font-size: 20px;
+            font-size: 18px;
+            text-transform: uppercase;
         }
-        .header p {
-            margin: 5px 0;
-            font-size: 12px;
+        .business-info {
+            font-size: 11px;
+            margin-top: 2px;
         }
-        .order-info {
-            margin-bottom: 15px;
-        }
-        .order-info p {
-            margin: 5px 0;
-            font-size: 12px;
-        }
-        .items {
+        
+        .divider {
             border-top: 1px dashed #000;
-            border-bottom: 1px dashed #000;
-            padding: 10px 0;
-            margin: 15px 0;
+            margin: 5px 0;
         }
+        
+        .order-meta {
+            margin: 8px 0;
+            font-size: 11px;
+        }
+        .order-meta div {
+            display: flex;
+            justify-content: space-between;
+        }
+
+        .items-header {
+            display: flex;
+            justify-content: space-between;
+            font-weight: bold;
+            border-bottom: 1px solid #000;
+            padding-bottom: 2px;
+            margin-bottom: 5px;
+            text-transform: uppercase;
+            font-size: 10px;
+        }
+        
         .item {
             display: flex;
             justify-content: space-between;
-            margin-bottom: 8px;
-            font-size: 12px;
+            margin-bottom: 4px;
         }
-        .item-name {
+        .item-details {
             flex: 1;
+            padding-right: 5px;
         }
         .item-qty {
-            margin: 0 10px;
+            width: 30px;
+            text-align: center;
         }
-        .item-price {
+        .item-total {
+            width: 70px;
             text-align: right;
         }
-        .total {
-            margin-top: 15px;
-            text-align: right;
+        
+        .totals {
+            margin-top: 10px;
+            padding-top: 5px;
+            border-top: 1px solid #000;
         }
-        .total-line {
+        .total-row {
             display: flex;
             justify-content: space-between;
-            margin: 5px 0;
-            font-size: 14px;
+            margin-bottom: 2px;
         }
-        .total-amount {
-            font-size: 18px;
+        .grand-total {
+            font-size: 16px;
             font-weight: bold;
             border-top: 2px solid #000;
-            padding-top: 5px;
+            margin-top: 5px;
+            padding-top: 3px;
         }
+        
         .footer {
-            text-align: center;
             margin-top: 20px;
-            font-size: 11px;
-            color: #666;
+            font-size: 10px;
+            text-transform: uppercase;
         }
-        .notes {
-            margin-top: 10px;
-            font-size: 11px;
-            color: #666;
-            font-style: italic;
+        .qr-placeholder {
+            margin: 15px 0;
+            display: inline-block;
+            border: 1px solid #000;
+            padding: 5px;
+            font-size: 8px;
         }
-        .no-print {
+        
+        .btn-container {
+            position: fixed;
+            bottom: 20px;
+            left: 0;
+            right: 0;
             text-align: center;
-            margin-top: 20px;
         }
         .btn {
-            padding: 10px 20px;
-            background: #007bff;
+            padding: 8px 15px;
+            background: #333;
             color: white;
             border: none;
             cursor: pointer;
-            border-radius: 5px;
-            margin: 5px;
-        }
-        .btn:hover {
-            background: #0056b3;
+            border-radius: 3px;
+            font-family: sans-serif;
+            font-size: 11px;
+            margin: 0 5px;
         }
     </style>
 </head>
 <body>
-    <div class="header">
-        <h1>ORDER RECEIPT</h1>
-        <p>{{ $order->user->business_name ?? 'Restaurant' }}</p>
-        <p>{{ $order->created_at->format('M d, Y H:i') }}</p>
+    <div class="header text-center">
+        <h1>{{ $order->user->business_name ?? 'RECEIPT' }}</h1>
+        <div class="business-info">
+            {{ $order->user->email ?? '' }}<br>
+            {{ $order->user->phone ?? '' }}
+        </div>
     </div>
 
-    <div class="order-info">
-        <p><strong>Order #:</strong> {{ $order->order_number }}</p>
+    <div class="order-meta">
+        <div><span>NO:</span> <span class="font-bold">{{ $order->order_number }}</span></div>
+        <div><span>DATE:</span> <span>{{ $order->created_at->format('d/m/Y H:i') }}</span></div>
         @if($order->table)
-            <p><strong>Table:</strong> {{ $order->table->table_number }}</p>
+            <div><span>TABLE:</span> <span class="font-bold">#{{ $order->table->table_number }}</span></div>
         @endif
-        @if($order->customer_name)
-            <p><strong>Customer:</strong> {{ $order->customer_name }}</p>
-        @endif
-        @if($order->customer_phone)
-            <p><strong>Phone:</strong> {{ $order->customer_phone }}</p>
-        @endif
-        <p><strong>Status:</strong> {{ ucfirst($order->status) }}</p>
-        <p><strong>Payment:</strong> {{ ucfirst($order->payment_status) }}</p>
+        <div><span>STAFF:</span> <span>{{ $order->waiter->full_name ?? 'COUNTER' }}</span></div>
     </div>
 
-    <div class="items">
+    <div class="divider"></div>
+
+    <div class="items-header">
+        <span>Description</span>
+        <div style="display:flex;">
+            <span style="width:30px;text-align:center;">Qty</span>
+            <span style="width:70px;text-align:right;">Sub</span>
+        </div>
+    </div>
+
+    <div class="items-list">
         @foreach($order->items as $item)
             <div class="item">
-                <div class="item-name">
-                    {{ $item->productVariant->product->name ?? 'N/A' }}
-                    @if($item->productVariant)
-                        <br><small>{{ $item->productVariant->measurement ?? '' }}</small>
+                <div class="item-details">
+                    <div class="font-bold">{{ $displayName = $item->productVariant->display_name ?? ($item->productVariant->product->name ?? 'ITEM') }}</div>
+                    @if($item->sell_type === 'tot')
+                      <div style="font-size: 9px; color: #333;">({{ $item->productVariant->portion_unit_name }})</div>
+                    @elseif($item->productVariant->name && stripos($displayName, $item->productVariant->name) === false)
+                      <div style="font-size: 9px; color: #333;">{{ $item->productVariant->name }}</div>
                     @endif
                 </div>
-                <div class="item-qty">{{ $item->quantity }}x</div>
-                <div class="item-price">TSh {{ number_format($item->total_price, 2) }}</div>
+                <div style="display:flex;">
+                    <div class="item-qty">{{ (int)$item->quantity }}</div>
+                    <div class="item-total">{{ number_format($item->total_price) }}</div>
+                </div>
             </div>
         @endforeach
     </div>
 
-    <div class="total">
-        <div class="total-line">
+    <div class="totals">
+        <div class="total-row">
             <span>Subtotal:</span>
-            <span>TSh {{ number_format($order->total_amount, 2) }}</span>
+            <span>{{ number_format($order->total_amount) }}</span>
         </div>
-        <div class="total-line total-amount">
+        <div class="total-row grand-total">
             <span>TOTAL:</span>
-            <span>TSh {{ number_format($order->total_amount, 2) }}</span>
+            <span>TSh {{ number_format($order->total_amount) }}</span>
         </div>
+        
+        <div class="total-row" style="margin-top: 5px; font-size: 11px;">
+            <span>PAID VIA:</span>
+            <span class="font-bold">{{ strtoupper(str_replace('_', ' ', $order->payment_method ?? 'PENDING')) }}</span>
+        </div>
+        @if($order->transaction_reference)
+        <div class="total-row" style="font-size: 10px;">
+            <span>REF:</span>
+            <span>{{ $order->transaction_reference }}</span>
+        </div>
+        @endif
     </div>
 
     @if($order->notes)
-        <div class="notes">
-            <strong>Notes:</strong> {{ $order->notes }}
+        <div class="divider"></div>
+        <div style="font-size: 9px; font-style: italic;">
+            NOTE: {{ $order->notes }}
         </div>
     @endif
 
-    <div class="footer">
-        <p>Thank you for your order!</p>
-        <p>{{ $order->created_at->format('Y-m-d H:i:s') }}</p>
+    <div class="footer text-center">
+        <div class="divider"></div>
+        <p>*** THANK YOU - WELCOME AGAIN ***</p>
+        <div class="qr-placeholder">
+            [ QR CODE READY ]<br>
+            VERIFIED BY MLINK
+        </div>
+        <p style="font-size: 8px;">{{ $order->created_at->format('Y-m-d H:i:s') }}</p>
     </div>
 
-    <div class="no-print">
-        <button class="btn" onclick="window.print()">Print Receipt</button>
-        <button class="btn" onclick="window.close()">Close</button>
+    <div class="btn-container no-print">
+        <button class="btn" onclick="window.print()">PRINT DOCKET</button>
+        <button class="btn" onclick="window.close()" style="background:#cc0000;">CLOSE</button>
     </div>
 
     <script>
-        // Auto print when opened
         window.onload = function() {
-            setTimeout(function() {
-                window.print();
-            }, 500);
+            setTimeout(() => { window.print(); }, 500);
         };
     </script>
 </body>
 </html>
-
-
-
-
-
-
-

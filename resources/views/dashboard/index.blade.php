@@ -60,7 +60,7 @@
   <div class="col-md-12">
     <div class="alert alert-danger" style="border-left: 5px solid #dc3545; background-color: #f8d7da; padding: 20px;">
       <h4 style="margin-top: 0; color: #721c24;"><i class="fa fa-exclamation-circle"></i> Your Free Trial Has Expired</h4>
-      <p class="mb-3" style="font-size: 16px; color: #721c24;">Your 30-day free trial has ended. Please upgrade to continue using MauzoLink. <strong>You cannot access any features until you upgrade.</strong></p>
+      <p class="mb-3" style="font-size: 16px; color: #721c24;">Your 30-day free trial has ended. Please upgrade to continue using MIGLOP. <strong>You cannot access any features until you upgrade.</strong></p>
       <a href="{{ route('upgrade.index') }}" class="btn btn-primary btn-lg">
         <i class="fa fa-arrow-up"></i> Upgrade Now
       </a>
@@ -171,7 +171,7 @@
       <div class="card-body text-center" style="padding: 40px;">
         <i class="fa fa-lock fa-4x text-danger mb-3"></i>
         <h3 class="text-danger">Access Restricted</h3>
-        <p class="lead">Please complete your payment to unlock all features of MauzoLink.</p>
+        <p class="lead">Please complete your payment to unlock all features of MIGLOP.</p>
         <p>You can still access:</p>
         <ul class="list-unstyled">
           <li><i class="fa fa-check text-success"></i> Dashboard</li>

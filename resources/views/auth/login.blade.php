@@ -8,13 +8,17 @@
     <link rel="stylesheet" type="text/css" href="{{ asset('css/admin.css') }}">
     <!-- Font-icon css-->
     <link rel="stylesheet" type="text/css" href="https://maxcdn.bootstrapcdn.com/font-awesome/4.7.0/css/font-awesome.min.css">
-    <title>Login - MauzoLink</title>
+    <title>Login - MIGLOP</title>
     <!-- SweetAlert2 -->
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
     <style>
       :root {
         --primary: #940000;
         --secondary: #000000;
+      }
+      /* Protect Icons from Font Overrides */
+      *:not(i):not([class*="fa-"]):not([class*="fa"]):not([class*="bi-"]) {
+        font-family: "Century Gothic", -apple-system, sans-serif !important;
       }
       body {
         font-family: "Century Gothic", sans-serif;
@@ -28,10 +32,51 @@
         border-color: #7a0000;
       }
       .logo h1 {
-        color: #940000;
+        color: #ffffff;
+        font-family: "Century Gothic", sans-serif !important;
+        letter-spacing: 5px;
+        font-weight: 800;
+        text-shadow: 0 2px 4px rgba(0,0,0,0.2);
+        text-transform: uppercase;
       }
       .material-half-bg .cover {
         background: linear-gradient(135deg, #940000 0%, #7a0000 100%);
+      }
+      /* Password toggle */
+      .password-wrapper {
+        position: relative;
+      }
+      .password-wrapper .toggle-password {
+        position: absolute;
+        right: 12px;
+        top: 50%;
+        transform: translateY(-50%);
+        background: none;
+        border: none;
+        padding: 0;
+        cursor: pointer;
+        color: #888;
+        font-size: 15px;
+        line-height: 1;
+        outline: none;
+      }
+      .password-wrapper .toggle-password:hover {
+        color: #940000;
+      }
+      /* Spinner on sign in btn */
+      .btn-spinner {
+        display: none;
+        width: 15px;
+        height: 15px;
+        border: 2px solid rgba(255,255,255,0.4);
+        border-top-color: #fff;
+        border-radius: 50%;
+        animation: spin 0.7s linear infinite;
+        margin-right: 6px;
+        vertical-align: middle;
+      }
+      @keyframes spin {
+        to { transform: rotate(360deg); }
       }
     </style>
   </head>
@@ -41,7 +86,7 @@
     </section>
     <section class="login-content">
       <div class="logo">
-        <h1>MauzoLink</h1>
+        <h1>MIGLOP INVESTMENT</h1>
       </div>
       <div class="login-box">
         <form class="login-form" method="POST" action="{{ route('login') }}">
@@ -60,7 +105,12 @@
           </div>
           <div class="form-group">
             <label class="control-label">PASSWORD</label>
-            <input class="form-control @error('password') is-invalid @enderror" type="password" name="password" placeholder="Password" required>
+            <div class="password-wrapper">
+              <input id="password-input" class="form-control @error('password') is-invalid @enderror" type="password" name="password" placeholder="Password" required style="padding-right: 40px;">
+              <button type="button" class="toggle-password" id="toggle-password-btn" tabindex="-1">
+                <i class="fa fa-eye" id="toggle-password-icon"></i>
+              </button>
+            </div>
             @error('password')
               <span class="invalid-feedback" role="alert">
                 <strong>{{ $message }}</strong>
@@ -78,7 +128,11 @@
             </div>
           </div>
           <div class="form-group btn-container">
-            <button type="submit" class="btn btn-primary btn-block"><i class="fa fa-sign-in fa-lg fa-fw"></i>SIGN IN</button>
+            <button type="submit" id="login-btn" class="btn btn-primary btn-block">
+              <span class="btn-spinner" id="login-spinner"></span>
+              <i class="fa fa-sign-in fa-lg fa-fw" id="login-icon"></i>
+              <span id="login-text">SIGN IN</span>
+            </button>
           </div>
         </form>
         <form class="forget-form" action="#" method="POST">
@@ -138,8 +192,30 @@
       
       // Login Page Flipbox control
       $('.login-content [data-toggle="flip"]').click(function() {
-      	$('.login-box').toggleClass('flipped');
-      	return false;
+        $('.login-box').toggleClass('flipped');
+        return false;
+      });
+
+      // Password toggle
+      $('#toggle-password-btn').on('click', function() {
+        var input = $('#password-input');
+        var icon  = $('#toggle-password-icon');
+        if (input.attr('type') === 'password') {
+          input.attr('type', 'text');
+          icon.removeClass('fa-eye').addClass('fa-eye-slash');
+        } else {
+          input.attr('type', 'password');
+          icon.removeClass('fa-eye-slash').addClass('fa-eye');
+        }
+      });
+
+      // Loading spinner on submit
+      $('.login-form').on('submit', function() {
+        var btn = $('#login-btn');
+        btn.prop('disabled', true);
+        $('#login-spinner').show();
+        $('#login-icon').hide();
+        $('#login-text').text('Signing in...');
       });
     </script>
   </body>

@@ -65,8 +65,8 @@
 
 <!-- Financial Pulse Summary -->
 <div class="row mb-4">
-    <div class="col-md-3">
-        <div class="report-card tile bg-primary text-white mb-0" style="background: linear-gradient(135deg, #2c3e50 0%, #000000 100%);">
+    <div class="col-md-4">
+        <div class="report-card tile bg-primary text-white mb-0" style="background: linear-gradient(135deg, #2c3e50 0%, #000000 100%); min-height: 110px;">
             <div class="d-flex align-items-center">
                 <div class="icon mr-3"><i class="fa fa-line-chart"></i></div>
                 <div>
@@ -76,19 +76,8 @@
             </div>
         </div>
     </div>
-    <div class="col-md-3">
-        <div class="report-card tile bg-info text-white mb-0" style="background: linear-gradient(135deg, #17a2b8 0%, #0d6efd 100%);">
-            <div class="d-flex align-items-center">
-                <div class="icon mr-3"><i class="fa fa-money"></i></div>
-                <div>
-                    <h6 class="text-white-50 mb-0 small">Expected Profit</h6>
-                    <h4 class="font-weight-bold mb-0">TSh {{ number_format($totals['expected_profit']) }}</h4>
-                </div>
-            </div>
-        </div>
-    </div>
-    <div class="col-md-3">
-        <div class="report-card tile bg-warning text-white mb-0" style="background: linear-gradient(135deg, #f39c12 0%, #d35400 100%);">
+    <div class="col-md-4">
+        <div class="report-card tile bg-warning text-white mb-0" style="background: linear-gradient(135deg, #f39c12 0%, #d35400 100%); min-height: 110px;">
             <div class="d-flex align-items-center">
                 <div class="icon mr-3"><i class="fa fa-clock-o"></i></div>
                 <div>
@@ -101,8 +90,8 @@
             </div>
         </div>
     </div>
-    <div class="col-md-3">
-        <div class="report-card tile bg-success text-white mb-0" style="background: linear-gradient(135deg, #2ecc71 0%, #27ae60 100%);">
+    <div class="col-md-4">
+        <div class="report-card tile bg-success text-white mb-0" style="background: linear-gradient(135deg, #2ecc71 0%, #27ae60 100%); min-height: 110px;">
             <div class="d-flex align-items-center">
                 <div class="icon mr-3"><i class="fa fa-check-circle"></i></div>
                 <div>
@@ -211,9 +200,17 @@
                                 </td>
                                 <td class="text-right font-weight-bold text-dark">
                                     TSh {{ number_format($transfer->real_time_revenue) }}
+                                    @if(isset($expRev) && $expRev > 0 && $transfer->real_time_revenue > $expRev)
+                                        <span class="badge badge-pill badge-warning border shadow-sm ml-1" style="font-size: 0.6rem; vertical-align: top;">
+                                            <i class="fa fa-rocket text-dark"></i> <span class="text-dark">GAIN</span>
+                                        </span>
+                                    @endif
                                 </td>
                                 <td class="text-center vert-align">
-                                    @php $percent = ($transfer->total_units > 0) ? ($transfer->real_time_units_sold / $transfer->total_units) * 100 : 0; @endphp
+                                    @php 
+                                        $expRev = ($transfer->productVariant->can_sell_in_tots ?? false) ? $transfer->expected_revenue_glass : $transfer->expected_revenue_bottle;
+                                        $percent = ($expRev > 0) ? ($transfer->real_time_revenue / $expRev) * 100 : (($transfer->total_units > 0) ? ($transfer->real_time_units_sold / $transfer->total_units) * 100 : 0);
+                                    @endphp
                                     <div class="small font-weight-bold mb-1 {{ $percent >= 100 ? 'text-success' : 'text-primary' }}">{{ number_format($percent, 0) }}%</div>
                                     <div class="progress progress-sm">
                                         <div class="progress-bar {{ $percent >= 100 ? 'bg-success' : 'bg-primary' }}" style="width: {{ min(100, $percent) }}%"></div>

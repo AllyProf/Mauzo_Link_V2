@@ -124,7 +124,20 @@
                   </td>
                   <td>
                     @if($member->role)
-                      <span class="badge badge-info badge-pill px-3 py-1">{{ $member->role->name }}</span>
+                      @php
+                          $roleSlug = strtolower(str_replace(' ', '-', $member->role->name ?? ''));
+                          $badgeClass = match($roleSlug) {
+                              'super-admin'   => 'badge-dark',
+                              'manager'       => 'badge-primary',
+                              'counter'       => 'badge-info',
+                              'stock-keeper'  => 'badge-warning',
+                              'accountant'    => 'badge-success',
+                              'marketer'      => 'badge-secondary',
+                              'waiter'        => 'badge-danger',
+                              default         => 'badge-light'
+                          };
+                      @endphp
+                      <span class="badge {{ $badgeClass }} badge-pill px-3 py-1">{{ $member->role->name }}</span>
                     @else
                       <span class="badge badge-secondary badge-pill px-3 py-1">No Role</span>
                     @endif

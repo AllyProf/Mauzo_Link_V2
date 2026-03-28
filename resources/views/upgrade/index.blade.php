@@ -23,7 +23,7 @@
       @if($trialDaysRemaining > 0)
         <p class="mb-0">You have <strong>{{ $trialDaysRemaining }} day(s)</strong> remaining in your free trial. Upgrade now to continue enjoying all features after your trial ends.</p>
       @else
-        <p class="mb-0">Your free trial has ended. Please upgrade to continue using MauzoLink.</p>
+        <p class="mb-0">Your free trial has ended. Please upgrade to continue using MIGLOP.</p>
       @endif
     </div>
   </div>

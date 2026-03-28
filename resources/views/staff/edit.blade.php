@@ -147,6 +147,7 @@
               </small>
             </div>
           </div>
+        </div>
 
         <div class="row">
           <div class="col-md-6">
@@ -321,22 +322,8 @@
     var roleSelect = document.getElementById('role_id');
     
     if (businessTypeSelect && roleSelect) {
-      var currentRoleId = {{ $staff->role_id ?? 'null' }};
-      
-      // Store initial roles HTML as fallback
-      var initialRolesHTML = roleSelect.innerHTML;
-      
-      businessTypeSelect.addEventListener('change', function() {
-        var businessTypeId = this.value;
-        
-        if (!businessTypeId) {
-          // Restore initial roles if business type is cleared
-          roleSelect.innerHTML = initialRolesHTML;
-          roleSelect.disabled = false;
-          return;
-        }
-        
-    // Business type filtering logic removed as it is now fixed to Restaurant
+      // Logic for dynamic filtering is disabled as business type is fixed
+    }
   });
 </script>
 @endpush

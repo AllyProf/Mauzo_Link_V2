@@ -144,6 +144,7 @@ class DashboardController extends Controller
                     ->whereMonth('orders.created_at', now()->month)
                     ->whereYear('orders.created_at', now()->year)
                     ->select(
+                        'product_variants.id as v_id',
                         'products.name as p_name',
                         'product_variants.name as v_name',
                         'product_variants.measurement',
@@ -157,9 +158,17 @@ class DashboardController extends Controller
                         return \App\Helpers\ProductHelper::generateDisplayName($item->p_name, $item->measurement . ' - ' . $item->packaging, $item->v_name);
                     })
                     ->map(function($group, $displayName) {
+                        $first = $group->first();
+                        $soldCount = $group->sum('total_sold');
+                        
+                        // Use the model's smart formatting logic
+                        $variant = \App\Models\ProductVariant::find($first->v_id);
+                        $formattedUnits = $variant ? $variant->formatUnits($soldCount) : $soldCount;
+
                         return (object)[
                             'display_name' => $displayName,
-                            'total_sold'   => $group->sum('total_sold'),
+                            'total_sold'   => $soldCount,
+                            'total_sold_formatted' => $formattedUnits
                         ];
                     })
                     ->sortByDesc('total_sold')

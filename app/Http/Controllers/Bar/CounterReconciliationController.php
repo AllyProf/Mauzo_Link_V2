@@ -257,8 +257,8 @@ class CounterReconciliationController extends Controller
                 'food_sales' => $foodSales,
                 'total_orders' => $barOrders->count(),
                 'has_unpaid_orders' => $hasUnpaidOrders,
-                'cash_collected' => $reconciliation ? $reconciliation->cash_collected : $cashCollected,
-                'mobile_money_collected' => $reconciliation ? $reconciliation->mobile_money_collected : $mobileMoneyCollected,
+                'cash_collected'          => $cashCollected,
+                'mobile_money_collected'  => $mobileMoneyCollected,
                 'recorded_cash' => $cashCollected,
                 'recorded_digital' => $mobileMoneyCollected,
                 'expected_amount' => $totalSales,
@@ -300,17 +300,33 @@ class CounterReconciliationController extends Controller
         $todayHandover = null;
         if ($activeShift) {
             $todayHandover = FinancialHandover::where('staff_shift_id', $activeShift->id)
+                ->latest()
                 ->first();
         } 
         
-        // If we are NOT in an active shift context and checking by date, check the date fallback
-        if (!$activeShift && !$todayHandover) {
+        // Alternative date-based lookup (if no shift or multiple shifts on date)
+        if (!$todayHandover) {
             $todayHandover = FinancialHandover::where('user_id', $ownerId)
-                ->where('accountant_id', $currentStaff->id)
+                ->where(function($q) use ($currentStaff) {
+                    $q->where('accountant_id', $currentStaff->id)
+                      ->orWhere('recipient_id', $currentStaff->id);
+                })
                 ->whereDate('handover_date', $date)
                 ->where('department', 'bar')
-                ->orderBy('created_at', 'desc')
+                ->latest()
                 ->first();
+        }
+
+        // PROACTIVE SYNC: If all waiters in this view are verified, make sure the handover record matches
+        if ($todayHandover && $todayHandover->status === 'pending' && $waiters->isNotEmpty()) {
+            $unverifiedCount = $waiters->filter(fn($w) => $w['status'] !== 'verified')->count();
+            if ($unverifiedCount === 0) {
+                // All visible waiters are verified — sync the master handover record
+                $todayHandover->update([
+                    'status' => 'verified',
+                    'confirmed_at' => now()
+                ]);
+            }
         }
 
         // Determine which shift is most relevant for the 'Print Report' button
@@ -333,8 +349,18 @@ class CounterReconciliationController extends Controller
             'airtel_money_amount' => 0,
             'nmb_amount' => 0,
             'crdb_amount' => 0,
+            'nbc_amount' => 0,
             'kcb_amount' => 0,
+            'azania_amount' => 0,
+            'equity_amount' => 0,
+            'absa_amount' => 0,
+            'dtb_amount' => 0,
+            'exim_amount' => 0,
+            'stanbic_amount' => 0,
             'bank_card_amount' => 0,
+            'bank_transfer_amount' => 0,
+            'visa_card_amount' => 0,
+            'mastercard_amount' => 0,
         ];
 
         // When calculating shift totals, only count orders paid by the person WHO OWNED THIS SHIFT
@@ -342,27 +368,14 @@ class CounterReconciliationController extends Controller
 
         foreach ($waiters as $data) {
             foreach (data_get($data, 'orders', []) as $order) {
-                // Determine payments to iterate over
                 // Ensure we only count orders where payment was collected by the shifts' counter person
                 if ($order->payment_status !== 'paid' || $order->paid_by_waiter_id != $shiftStaffId) {
                     continue;
                 }
 
-                // Determine payments to iterate over
-                if ($order->orderPayments && $order->orderPayments->count() > 0) {
-                    $payments = $order->orderPayments;
-                } else {
-                    // mock orderPayment interface using order itself
-                    if ($order->payment_status === 'paid' && $order->paid_amount > 0) {
-                        $payments = [ (object)[
-                            'payment_method' => $order->payment_method,
-                            'mobile_money_number' => $order->mobile_money_number,
-                            'amount' => $order->paid_amount
-                        ]];
-                    } else {
-                        $payments = [];
-                    }
-                }
+                $payments = ($order->orderPayments && $order->orderPayments->count() > 0) 
+                    ? $order->orderPayments 
+                    : [(object)['payment_method' => $order->payment_method, 'mobile_money_number' => $order->mobile_money_number, 'amount' => $order->paid_amount]];
 
                 foreach ($payments as $payment) {
                     $amount = $payment->amount;
@@ -370,45 +383,116 @@ class CounterReconciliationController extends Controller
                         $expectedBreakdowns['cash_amount'] += $amount;
                     } else {
                         $provider = strtolower(trim($payment->mobile_money_number ?? ''));
-                        if (str_contains($provider, 'm-pesa') || str_contains($provider, 'mpesa')) {
-                            $expectedBreakdowns['mpesa_amount'] += $amount;
-                        } elseif (str_contains($provider, 'mixx')) {
-                            $expectedBreakdowns['mixx_amount'] += $amount;
-                        } elseif (str_contains($provider, 't-pesa') || str_contains($provider, 'tpesa')) {
-                            $expectedBreakdowns['tigo_pesa_amount'] += $amount; // Mapping T-Pesa to tigo_pesa key for now or add new
-                        } elseif (str_contains($provider, 'halo')) {
-                            $expectedBreakdowns['halopesa_amount'] += $amount;
-                        } elseif (str_contains($provider, 'tigo')) {
-                            $expectedBreakdowns['tigo_pesa_amount'] += $amount;
-                        } elseif (str_contains($provider, 'airtel')) {
-                            $expectedBreakdowns['airtel_money_amount'] += $amount;
-                        } elseif (str_contains($provider, 'nmb')) {
-                            $expectedBreakdowns['nmb_amount'] += $amount;
-                        } elseif (str_contains($provider, 'crdb')) {
-                            $expectedBreakdowns['crdb_amount'] += $amount;
-                        } elseif (str_contains($provider, 'kcb')) {
-                            $expectedBreakdowns['kcb_amount'] += $amount;
-                        } elseif (str_contains($provider, 'nbc')) {
-                            $expectedBreakdowns['nmb_amount'] += $amount; // Map NBC to nmb for simplicity or add new
-                        } elseif ($payment->payment_method === 'card') {
-                            $expectedBreakdowns['bank_card_amount'] += $amount;
-                        } else {
-                            // If somehow generic mobile money or bank without explicit provider
-                            if (str_contains($payment->payment_method, 'bank')) {
-                                $expectedBreakdowns['nmb_amount'] += $amount;
-                            } elseif ($payment->payment_method === 'card') {
-                                $expectedBreakdowns['bank_card_amount'] += $amount;
-                            } else {
-                                // default generic M-PESA
-                                $expectedBreakdowns['mpesa_amount'] += $amount;
-                            }
+                        if (str_contains($provider, 'm-pesa') || str_contains($provider, 'mpesa')) $expectedBreakdowns['mpesa_amount'] += $amount;
+                        elseif (str_contains($provider, 'mixx')) $expectedBreakdowns['mixx_amount'] += $amount;
+                        elseif (str_contains($provider, 't-pesa') || str_contains($provider, 'tpesa') || str_contains($provider, 'tigo')) $expectedBreakdowns['tigo_pesa_amount'] += $amount;
+                        elseif (str_contains($provider, 'halo')) $expectedBreakdowns['halopesa_amount'] += $amount;
+                        elseif (str_contains($provider, 'airtel')) $expectedBreakdowns['airtel_money_amount'] += $amount;
+                        elseif (str_contains($provider, 'nbc')) $expectedBreakdowns['nbc_amount'] += $amount;
+                        elseif (str_contains($provider, 'nmb')) $expectedBreakdowns['nmb_amount'] += $amount;
+                        elseif (str_contains($provider, 'crdb')) $expectedBreakdowns['crdb_amount'] += $amount;
+                        elseif (str_contains($provider, 'kcb')) $expectedBreakdowns['kcb_amount'] += $amount;
+                        elseif (str_contains($provider, 'azania')) $expectedBreakdowns['azania_amount'] += $amount;
+                        elseif (str_contains($provider, 'equity')) $expectedBreakdowns['equity_amount'] += $amount;
+                        elseif (str_contains($provider, 'absa')) $expectedBreakdowns['absa_amount'] += $amount;
+                        elseif (str_contains($provider, 'dtb')) $expectedBreakdowns['dtb_amount'] += $amount;
+                        elseif (str_contains($provider, 'exim')) $expectedBreakdowns['exim_amount'] += $amount;
+                        elseif (str_contains($provider, 'stanbic')) $expectedBreakdowns['stanbic_amount'] += $amount;
+                        elseif (str_contains($provider, 'visa')) $expectedBreakdowns['visa_card_amount'] += $amount;
+                        elseif (str_contains($provider, 'master')) $expectedBreakdowns['mastercard_amount'] += $amount;
+                        elseif ($payment->payment_method === 'card') $expectedBreakdowns['bank_card_amount'] += $amount;
+                        elseif (str_contains($provider, 'bank') || str_contains($payment->payment_method, 'bank') || str_contains($payment->payment_method, 'transfer')) {
+                            $expectedBreakdowns['bank_transfer_amount'] += $amount;
                         }
+                        else $expectedBreakdowns['mpesa_amount'] += $amount; // Default
                     }
                 }
             }
         }
 
-        return view('bar.counter.reconciliation', compact('waiters', 'week', 'displayDate', 'date', 'manager', 'todayHandover', 'expectedBreakdowns', 'latestClosedShift', 'shiftId'));
+        // --- EXPENSES LOGIC ---
+        $shiftExpenses = \App\Models\CounterExpense::where('user_id', $ownerId)
+            ->when($activeShift, fn($q) => $q->where('staff_shift_id', $activeShift->id))
+            ->when(!$activeShift, fn($q) => $q->whereBetween('expense_date', [$startDate, $endDate]))
+            ->get();
+            
+        $expensesByDate = $shiftExpenses->groupBy(fn($e) => $e->expense_date->format('Y-m-d'));
+        
+        foreach ($shiftExpenses as $expense) {
+            $method = $expense->payment_method ?: 'cash';
+            $amount = $expense->amount;
+            if ($method === 'cash') $expectedBreakdowns['cash_amount'] -= $amount;
+            else {
+                $key = $method . '_amount';
+                if (isset($expectedBreakdowns[$key])) $expectedBreakdowns[$key] -= $amount;
+                else {
+                    if (str_contains($method, 'mpesa')) $expectedBreakdowns['mpesa_amount'] -= $amount;
+                    elseif (str_contains($method, 'tigo')) $expectedBreakdowns['tigo_pesa_amount'] -= $amount;
+                    elseif (str_contains($method, 'airtel')) $expectedBreakdowns['airtel_money_amount'] -= $amount;
+                    elseif (str_contains($method, 'halo')) $expectedBreakdowns['halopesa_amount'] -= $amount;
+                    elseif (str_contains($method, 'nmb')) $expectedBreakdowns['nmb_amount'] -= $amount;
+                    elseif (str_contains($method, 'crdb')) $expectedBreakdowns['crdb_amount'] -= $amount;
+                }
+            }
+        }
+
+        return view('bar.counter.reconciliation', compact(
+            'waiters', 'week', 'displayDate', 'date', 'manager', 
+            'todayHandover', 'expectedBreakdowns', 'latestClosedShift', 
+            'shiftId', 'expensesByDate', 'shiftExpenses'
+        ));
+    }
+
+    /**
+     * Store a daily counter expense
+     */
+    public function storeExpense(Request $request)
+    {
+        $staff = $this->getCurrentStaff();
+        $ownerId = $this->getOwnerId();
+        
+        $validated = $request->validate([
+            'amount' => 'required|numeric|min:0.01',
+            'description' => 'required|string|max:255',
+            'expense_date' => 'required|date',
+            'payment_method' => 'required|string',
+            'shift_id' => 'nullable|exists:staff_shifts,id'
+        ]);
+
+        \App\Models\CounterExpense::create([
+            'user_id' => $ownerId,
+            'staff_id' => $staff->id,
+            'staff_shift_id' => $validated['shift_id'],
+            'amount' => $validated['amount'],
+            'description' => $validated['description'],
+            'expense_date' => $validated['expense_date'],
+            'payment_method' => $validated['payment_method']
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Expense recorded successfully.'
+        ]);
+    }
+
+    /**
+     * Delete an expense
+     */
+    public function destroyExpense($id)
+    {
+        $staff = $this->getCurrentStaff();
+        $ownerId = $this->getOwnerId();
+        
+        $expense = \App\Models\CounterExpense::where('id', $id)
+            ->where('user_id', $ownerId)
+            ->firstOrFail();
+            
+        $expense->delete();
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Expense deleted successfully.'
+        ]);
     }
 
     /**
@@ -908,6 +992,13 @@ class CounterReconciliationController extends Controller
             $smsService->sendHandoverSubmissionSms($handover, $ownerId);
         } catch (\Exception $e) {
             \Log::error('SMS notification failed for handover: ' . $e->getMessage());
+        }
+
+        if ($request->ajax()) {
+            return response()->json([
+                'success' => true,
+                'message' => 'Handover mapped and sent to Manager successfully! Awaiting confirmation.'
+            ]);
         }
 
         return back()->with('success', 'Handover mapped and sent to Manager successfully! Awaiting confirmation.');

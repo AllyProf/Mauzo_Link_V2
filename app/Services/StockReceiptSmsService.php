@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use Illuminate\Support\Facades\Log;
 use App\Models\StockReceipt;
 use App\Models\Staff;
 use App\Models\SystemSetting;
@@ -24,7 +25,7 @@ class StockReceiptSmsService
         $enableNotifications = SystemSetting::get('enable_stock_receipt_sms_' . $ownerId, true);
         
         if (!$enableNotifications) {
-            \Log::info('Stock receipt SMS notifications are disabled', [
+            Log::info('Stock receipt SMS notifications are disabled', [
                 'receipt_id' => $stockReceipt->id,
                 'owner_id' => $ownerId
             ]);
@@ -35,25 +36,20 @@ class StockReceiptSmsService
         $variant = $stockReceipt->productVariant;
         $supplier = $stockReceipt->supplier;
 
-        // Build message for stock keeper
-        $stockKeeperMessage = "STOCK RECEIPT NOTIFICATION\n\n";
-        $stockKeeperMessage .= "Receipt #: {$stockReceipt->receipt_number}\n";
-        $stockKeeperMessage .= "Product: {$product->name}\n";
-        $stockKeeperMessage .= "Variant: {$variant->measurement} - {$variant->packaging}\n";
-        $stockKeeperMessage .= "Supplier: {$supplier->company_name}\n";
-        $stockKeeperMessage .= "Quantity: {$stockReceipt->quantity_received} {$variant->packaging}\n";
-        $stockKeeperMessage .= "Total Btls/Pcs: " . number_format($stockReceipt->total_units) . "\n";
-        $stockKeeperMessage .= "Date: " . $stockReceipt->received_date->format('M d, Y') . "\n";
-        $stockKeeperMessage .= "\nStock has been added to warehouse.";
+        // Build simple message for admin / Manager
+        $stockMessage = "STOCK RECEIVED!\n\n";
+        $stockMessage .= "{$product->name} ({$variant->measurement})\n";
+        $stockMessage .= "Qty: {$stockReceipt->quantity_received} {$variant->packaging}\n";
+        $stockMessage .= "Total: " . number_format($stockReceipt->total_units) . " Btls\n";
+        $stockMessage .= "Supplier: {$supplier->company_name}\n";
+        $stockMessage .= "\nLogin to your account for full receipt details.";
 
-        // Build message for counter staff
-        $counterMessage = "NEW STOCK AVAILABLE FOR REQUEST\n\n";
-        $counterMessage .= "Product: {$product->name}\n";
-        $counterMessage .= "Variant: {$variant->measurement} - {$variant->packaging}\n";
-        $counterMessage .= "Available: {$stockReceipt->quantity_received} {$variant->packaging}\n";
-        $counterMessage .= "Total Btls/Pcs: " . number_format($stockReceipt->total_units) . "\n";
-        $counterMessage .= "Receipt #: {$stockReceipt->receipt_number}\n";
-        $counterMessage .= "\nYou can now request stock transfer from warehouse to counter.";
+        // Build simple message for counter
+        $counterMessage = "NEW STOCK ADDED!\n\n";
+        $counterMessage .= "{$product->name} ({$variant->measurement})\n";
+        $counterMessage .= "Added: {$stockReceipt->quantity_received} {$variant->packaging}\n";
+        $counterMessage .= "Total: " . number_format($stockReceipt->total_units) . " Btls\n";
+        $counterMessage .= "\nCheck your counter stock list for details.";
 
         $sentCount = 0;
         $failedCount = 0;
@@ -68,18 +64,18 @@ class StockReceiptSmsService
 
         foreach ($stockKeepers as $stockKeeper) {
             if ($stockKeeper->phone_number) {
-                $result = $this->smsService->sendSms($stockKeeper->phone_number, $stockKeeperMessage);
+                $result = $this->smsService->sendSms($stockKeeper->phone_number, $stockMessage);
                 
                 if ($result['success']) {
                     $sentCount++;
-                    \Log::info('Stock receipt SMS sent to stock keeper', [
+                    Log::info('Stock receipt SMS sent to stock keeper', [
                         'stock_keeper_id' => $stockKeeper->id,
                         'receipt_id' => $stockReceipt->id,
                         'phone' => $stockKeeper->phone_number
                     ]);
                 } else {
                     $failedCount++;
-                    \Log::error('Failed to send stock receipt SMS to stock keeper', [
+                    Log::error('Failed to send stock receipt SMS to stock keeper', [
                         'stock_keeper_id' => $stockKeeper->id,
                         'receipt_id' => $stockReceipt->id,
                         'error' => $result['error'] ?? 'Unknown error'
@@ -103,18 +99,23 @@ class StockReceiptSmsService
             }
         }
 
-        // Send SMS to Managers
-        $managers = Staff::where('user_id', $ownerId)
+        // Send SMS to Managers & Super Admins
+        $admins = Staff::where('user_id', $ownerId)
             ->where('is_active', true)
             ->whereHas('role', function($query) {
-                $query->where('slug', 'manager');
+                $query->whereIn('slug', ['manager', 'super-admin', 'superadmin']);
             })
             ->get();
 
-        foreach ($managers as $manager) {
-            if ($manager->phone_number) {
-                $this->smsService->sendSms($manager->phone_number, $stockKeeperMessage);
+        foreach ($admins as $admin) {
+            if ($admin->phone_number) {
+                $this->smsService->sendSms($admin->phone_number, $stockMessage);
                 $sentCount++;
+                Log::info('Stock receipt SMS sent to admin/manager', [
+                    'staff_id' => $admin->id,
+                    'role' => $admin->role->name,
+                    'phone' => $admin->phone_number
+                ]);
             }
         }
 
@@ -124,7 +125,7 @@ class StockReceiptSmsService
             $phones = array_map('trim', explode(',', $additionalPhones));
             foreach ($phones as $phone) {
                 if (!empty($phone)) {
-                    $result = $this->smsService->sendSms($phone, $stockKeeperMessage);
+                    $result = $this->smsService->sendSms($phone, $stockMessage);
                     
                     if ($result['success']) {
                         $sentCount++;
@@ -135,7 +136,7 @@ class StockReceiptSmsService
             }
         }
 
-        \Log::info('Stock receipt SMS notifications completed', [
+        Log::info('Stock receipt SMS notifications completed', [
             'receipt_id' => $stockReceipt->id,
             'sent' => $sentCount,
             'failed' => $failedCount

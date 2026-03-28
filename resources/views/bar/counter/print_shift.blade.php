@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Shift Report #{{ $shift->shift_number }} - Mauzo Link POS</title>
+    <title>Shift Report #{{ $shift->shift_number }} - MIGLOP INVESTMENT</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.7.0/css/font-awesome.min.css">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>
@@ -18,7 +18,7 @@
         }
 
         body {
-            font-family: 'Inter', system-ui, -apple-system, sans-serif;
+            font-family: 'Century Gothic', 'Inter', system-ui, sans-serif;
             background-color: #f4f4f4;
             margin: 0;
             padding: 0;
@@ -227,7 +227,7 @@
 
     <div class="app-bar">
         <div>
-            <span style="font-weight: 800; font-size: 16px; letter-spacing: 1px;">MAUZO<span style="color: var(--primary);">LINK</span> POS</span>
+            <span style="font-weight: 800; font-size: 16px; letter-spacing: 1px;">MIGLOP <span style="color: var(--primary);">INVESTMENT</span></span>
         </div>
         <div>
             <button onclick="window.print()" class="btn">
@@ -243,10 +243,10 @@
         <div class="report-content">
             <div class="report-header">
                 <div class="company-info">
-                    <h1>MAUZO LINK POS</h1>
-                    <p>Mauzo Link Arusha Branch</p>
+                    <h1>MIGLOP INVESTMENT</h1>
+                    <p>Miglop Investment Arusha Branch</p>
                     <p>Plot No. 123, Opposite Main Market, Tanzania</p>
-                    <p>Tel: +255 677 155 155 | Info@mauzolink.com</p>
+                    <p>Tel: +255 677 155 155 | info@miglop.com</p>
                 </div>
                 <div class="shift-meta">
                     <span class="badge">Official Shift Report</span>
@@ -358,25 +358,86 @@
                             @endif
                         @endforeach
                     @else
-                        <!-- Fallback if handover not yet submitted -->
+                        <!-- Live aggregation from orders if handover hasn't been submitted yet -->
+                        @php
+                            $digitalBreakdown = [];
+                            foreach($orders as $order) {
+                                foreach($order->orderPayments as $payment) {
+                                    if ($payment->payment_method === 'cash') continue;
+                                    
+                                    $provider = strtolower(trim($payment->mobile_money_number ?? ''));
+                                    $method = strtolower($payment->payment_method ?? '');
+                                    $label = 'DIGITAL PAYMENT';
+                                    
+                                    if (str_contains($provider, 'nmb') || str_contains($method, 'nmb')) $label = 'NMB BANK';
+                                    elseif (str_contains($provider, 'crdb') || str_contains($method, 'crdb')) $label = 'CRDB BANK';
+                                    elseif (str_contains($provider, 'kcb') || str_contains($method, 'kcb')) $label = 'KCB BANK';
+                                    elseif (str_contains($provider, 'nbc') || str_contains($method, 'nbc')) $label = 'NBC BANK';
+                                    elseif (str_contains($provider, 'mpesa') || str_contains($provider, 'm-pesa')) $label = 'M-PESA';
+                                    elseif (str_contains($provider, 'mixx')) $label = 'MIXX BY YAS';
+                                    elseif (str_contains($provider, 'airtel')) $label = 'AIRTEL MONEY';
+                                    elseif (str_contains($provider, 'tigo')) $label = 'TIGO PESA';
+                                    elseif (str_contains($provider, 'halo')) $label = 'HALOPESA';
+                                    elseif (str_contains($provider, 'visa')) $label = 'VISA CARD';
+                                    elseif (str_contains($provider, 'mastercard')) $label = 'MASTERCARD';
+                                    
+                                    $digitalBreakdown[$label] = ($digitalBreakdown[$label] ?? 0) + $payment->amount;
+                                }
+                            }
+                        @endphp
+                        
+                        @forelse($digitalBreakdown as $label => $amount)
+                            <tr>
+                                <td style="padding-left: 25px;">{{ $label }} Collections</td>
+                                <td class="text-right">{{ number_format($amount) }}</td>
+                                <td class="text-right">{{ number_format($amount) }}</td>
+                                <td class="text-right">0</td>
+                            </tr>
+                        @empty
+                            <tr>
+                                <td colspan="4" style="text-align: center; color: #999; padding: 20px;">
+                                    No digital collections recorded yet.
+                                </td>
+                            </tr>
+                        @endforelse
+                    @endif
+
+                    <!-- Operational Expenses -->
+                    <tr class="category-row">
+                        <td colspan="4">Operational Expenses / Deductions</td>
+                    </tr>
+                    @php $totalExpVal = 0; @endphp
+                    @forelse($expenses as $exp)
+                        @php $totalExpVal += $exp->amount; @endphp
                         <tr>
-                            <td colspan="4" style="text-align: center; color: #999; padding: 20px;">
-                                Handover pending. Specific platform totals will appear here once submitted.
+                            <td style="padding-left: 25px;">{{ $exp->description }} ({{ strtoupper($exp->payment_method) }})</td>
+                            <td class="text-right">-{{ number_format($exp->amount) }}</td>
+                            <td class="text-right">-{{ number_format($exp->amount) }}</td>
+                            <td class="text-right">0</td>
+                        </tr>
+                    @empty
+                        <tr>
+                            <td colspan="4" style="text-align: center; color: #999; padding: 15px;">
+                                No operational expenses recorded for this shift.
                             </td>
                         </tr>
-                    @endif
+                    @endforelse
 
                     <!-- Grand Total -->
                     @php 
-                        $actualTotal = $handover ? $handover->amount : ($cashHandover + $totalSalesDigital);
-                        $expectedTotal = $totalSalesCash + $totalSalesDigital;
+                        // Logic: Grand Total should use the waiter reconciliation sums which are globally linked
+                        $wdrExpected = \App\Models\WaiterDailyReconciliation::where('staff_shift_id', $shift->id)->sum('expected_amount');
+                        $expectedGross = $wdrExpected > 0 ? $wdrExpected : ($totalSalesCash + $totalSalesDigital);
+                        $expectedTotal = $expectedGross - $totalExpVal;
+                        $actualTotal = $handover ? $handover->amount : (($totalSalesCash + $totalSalesDigital) - $totalExpVal);
+                        $netVariance = $actualTotal - $expectedTotal;
                     @endphp
                     <tr class="grand-total-row">
                         <td>GRAND TOTAL SHIFT REVENUE</td>
                         <td class="text-right">TSh {{ number_format($expectedTotal) }}</td>
                         <td class="text-right">TSh {{ number_format($actualTotal) }}</td>
-                        <td class="text-right {{ $actualTotal < $expectedTotal ? 'diff-neg' : ($actualTotal > $expectedTotal ? 'diff-pos' : '') }}">
-                            {{ $actualTotal > $expectedTotal ? '+' : '' }}{{ number_format($actualTotal - $expectedTotal) }}
+                        <td class="text-right {{ $netVariance < 0 ? 'diff-neg' : ($netVariance > 0 ? 'diff-pos' : '') }}">
+                            {{ $netVariance > 0 ? '+' : '' }}{{ number_format($netVariance) }}
                         </td>
                     </tr>
                 </tbody>
@@ -432,7 +493,7 @@
             @endif
 
             <div class="report-footer">
-                <p>Mauzo Link POS Arusha Branch — Shift Statement of Accounts</p>
+                <p>MIGLOP INVESTMENT Arusha Branch — Shift Statement of Accounts</p>
                 <p>Confidential Financial Report — {{ now()->format('H:i') }} | &copy; {{ date('Y') }}</p>
             </div>
         </div>

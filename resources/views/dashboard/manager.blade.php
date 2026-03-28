@@ -36,7 +36,7 @@
 ══════════════════════════════════════════--}}
 <div class="row">
   <div class="col-md-3">
-    <div class="widget-small primary coloured-icon"><i class="icon fa fa-money fa-3x"></i>
+    <div class="widget-small primary coloured-icon" style="min-height: 110px;"><i class="icon fa fa-money fa-3x"></i>
       <div class="info">
         <h4>Today Revenue</h4>
         <p><b>TSh {{ number_format($todayRevenue) }}</b></p>
@@ -44,7 +44,7 @@
     </div>
   </div>
   <div class="col-md-3">
-    <div class="widget-small info coloured-icon"><i class="icon fa fa-line-chart fa-3x"></i>
+    <div class="widget-small info coloured-icon" style="min-height: 110px;"><i class="icon fa fa-line-chart fa-3x"></i>
       <div class="info">
         <h4>Month {{ now()->format('M Y') }}</h4>
         <p><b>TSh {{ number_format($monthRevenue) }}</b></p>
@@ -53,7 +53,7 @@
   </div>
 
   <div class="col-md-3">
-    <div class="widget-small danger coloured-icon"><i class="icon fa fa-shopping-bag fa-3x"></i>
+    <div class="widget-small danger coloured-icon" style="min-height: 110px;"><i class="icon fa fa-shopping-bag fa-3x"></i>
       <div class="info">
         <h4>Month Purchases</h4>
         <p><b>TSh {{ number_format($monthlyPurchaseCost) }}</b></p>
@@ -61,7 +61,7 @@
     </div>
   </div>
   <div class="col-md-3">
-    <div class="widget-small success coloured-icon"><i class="icon fa fa-trophy fa-3x"></i>
+    <div class="widget-small success coloured-icon" style="min-height: 110px;"><i class="icon fa fa-trophy fa-3x"></i>
       <div class="info">
         <h4>Boss Profit (M)</h4>
         <p><b>TSh {{ number_format($monthProfit) }}</b></p>
@@ -150,7 +150,9 @@
               <div class="col-md-6 mb-3">
                 <div class="product-bar-label">
                   <span class="text-truncate pr-2">{{ $name }}</span>
-                  <span class="text-primary font-weight-bold">{{ number_format($tp->total_sold) }}</span>
+                  <span class="text-primary font-weight-bold">
+                    {{ $tp->total_sold_formatted }}
+                  </span>
                 </div>
                 <div class="product-bar-track">
                   <div class="product-bar-fill" style="width: {{ $pct }}%"></div>

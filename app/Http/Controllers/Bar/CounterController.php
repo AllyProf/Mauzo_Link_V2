@@ -41,16 +41,23 @@ class CounterController extends Controller
             ->orderBy('created_at', 'desc')
             ->paginate(10);
 
-        // Get order counts by status
+        // Get order counts by status - Consistent with Dashboard logic
+        // Pending = All orders that are either not served OR not paid yet
         $pendingCount = BarOrder::where('user_id', $ownerId)
             ->whereNotNull('waiter_id')
-            ->where('status', 'pending')
+            ->whereIn('status', ['pending', 'served'])
+            ->where('payment_status', '!=', 'paid')
             ->count();
 
         $servedCount = BarOrder::where('user_id', $ownerId)
             ->whereNotNull('waiter_id')
             ->where('status', 'served')
-            ->where('payment_status', 'pending')
+            ->where('payment_status', '!=', 'paid')
+            ->count();
+            
+        $paidCount = BarOrder::where('user_id', $ownerId)
+            ->whereNotNull('waiter_id')
+            ->where('payment_status', 'paid')
             ->count();
 
         // Get all waiters for payment tracking
@@ -61,7 +68,7 @@ class CounterController extends Controller
             })
             ->get();
 
-        return view('bar.counter.waiter-orders', compact('orders', 'pendingCount', 'servedCount', 'waiters'));
+        return view('bar.counter.waiter-orders', compact('orders', 'pendingCount', 'servedCount', 'paidCount', 'waiters'));
     }
 
     /**
@@ -911,6 +918,51 @@ class CounterController extends Controller
     /**
      * Print Shift Reconciliation
      */
+    /**
+     * Print Stock Verification Sheet (Shift Opening)
+     */
+    public function printStockSheet()
+    {
+        $ownerId = $this->getOwnerId();
+        
+        // Get all products with counter stock (Same logic as Dashboard)
+        $variants = ProductVariant::whereHas('product', function($query) use ($ownerId) {
+            $query->where('user_id', $ownerId);
+        })
+        ->with(['product', 'stockLocations' => function($query) use ($ownerId) {
+            $query->where('user_id', $ownerId)
+                  ->where('location', 'counter');
+        }])
+        ->get()
+        ->map(function($variant) use ($ownerId) {
+            $counterStock = $variant->stockLocations->where('location', 'counter')->first();
+            $fullBottles = $counterStock ? (float)$counterStock->quantity : 0.0;
+            
+            if ($variant->can_sell_in_tots && $variant->total_tots > 0) {
+                $openBottle = \App\Models\OpenBottle::where('user_id', $ownerId)
+                    ->where('product_variant_id', $variant->id)
+                    ->first();
+                if ($openBottle) {
+                    $fullBottles += ($openBottle->tots_remaining / (float)$variant->total_tots);
+                }
+            }
+            
+            return [
+                'product_name' => $variant->product->name,
+                'variant_name' => $variant->name,
+                'category' => $variant->product->category ?? 'General',
+                'measurement' => $variant->measurement . ($variant->unit ?? ''),
+                'quantity' => $fullBottles,
+                'formatted_quantity' => $variant->formatUnits($fullBottles),
+            ];
+        })
+        ->filter(fn($v) => $v['quantity'] > 0);
+
+        $staff = $this->getCurrentStaff();
+
+        return view('bar.counter.print_stock', compact('variants', 'staff'));
+    }
+
     public function printShift($id)
     {
         $ownerId = $this->getOwnerId();
@@ -941,7 +993,12 @@ class CounterController extends Controller
                 ->first();
         }
 
-        return view('bar.counter.print_shift', compact('shift', 'orders', 'handover'));
+        // Fetch shift expenses
+        $expenses = \App\Models\CounterExpense::where('staff_shift_id', $shift->id)
+            ->where('user_id', $ownerId)
+            ->get();
+
+        return view('bar.counter.print_shift', compact('shift', 'orders', 'handover', 'expenses'));
     }
 
 
@@ -988,30 +1045,44 @@ class CounterController extends Controller
             ->get()
             ->keyBy('staff_shift_id');
 
+        // Load operational expenses per shift
+        $expensesByShift = \App\Models\CounterExpense::where('user_id', $ownerId)
+            ->whereIn('staff_shift_id', $shiftIds)
+            ->get()
+            ->groupBy('staff_shift_id')
+            ->map(fn($g) => $g->sum('amount'));
+
         // Load manager reconciliation status per shift
         $reconciliationsByShift = \App\Models\WaiterDailyReconciliation::where('user_id', $ownerId)
             ->whereIn('staff_shift_id', $shiftIds)
             ->get()
             ->groupBy('staff_shift_id')
-            ->map(function($group) use ($handoversByShift) {
+            ->map(function($group) use ($handoversByShift, $expensesByShift) {
                 $shiftId = $group->first()->staff_shift_id;
                 $handover = $handoversByShift[$shiftId] ?? null;
+                $expenses = $expensesByShift[$shiftId] ?? 0;
 
                 // Priority: Manager's finished audit
                 if ($handover && $handover->status === 'verified') {
                     $status = 'verified';
                 } else {
-                    // MIN(status) check
                     $status = $group->every(fn($r) => $r->status === 'verified') ? 'verified' : $group->first()->status;
                 }
 
                 $totalExpected = $group->sum('expected_amount');
-                $totalSubmitted = $group->sum('submitted_amount');
+                // Use handover amount if verified, else fall back to waiter submissions
+                $handoverTotal = $handover ? $handover->amount : $group->sum('submitted_amount');
+                
+                // Final audit: Expected vs Handover + Expenses
+                $totalAccounted = $handoverTotal + $expenses;
+                $shortage = $totalExpected - $totalAccounted;
+
                 return [
                     'status'    => $status,
                     'expected'  => $totalExpected,
-                    'submitted' => $totalSubmitted,
-                    'shortage'  => $totalExpected - $totalSubmitted,
+                    'submitted' => $handoverTotal,
+                    'expenses'  => $expenses,
+                    'shortage'  => $shortage,
                 ];
             });
 

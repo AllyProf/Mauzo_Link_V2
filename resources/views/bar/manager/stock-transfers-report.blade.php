@@ -17,24 +17,16 @@
 
 <!-- Financial Summary -->
 <div class="row">
-    <div class="col-md-3">
-        <div class="widget-small primary coloured-icon"><i class="icon fa fa-line-chart fa-3x"></i>
+    <div class="col-md-4">
+        <div class="widget-small primary coloured-icon" style="min-height: 110px;"><i class="icon fa fa-line-chart fa-3x"></i>
             <div class="info">
                 <h4>Expected Revenue</h4>
                 <p><b>TSh {{ number_format($totals['expected_revenue']) }}</b></p>
             </div>
         </div>
     </div>
-    <div class="col-md-3">
-        <div class="widget-small info coloured-icon"><i class="icon fa fa-money fa-3x"></i>
-            <div class="info">
-                <h4>Expected Profit</h4>
-                <p><b>TSh {{ number_format($totals['expected_profit']) }}</b></p>
-            </div>
-        </div>
-    </div>
-    <div class="col-md-3">
-        <div class="widget-small warning coloured-icon"><i class="icon fa fa-clock-o fa-3x"></i>
+    <div class="col-md-4">
+        <div class="widget-small warning coloured-icon" style="min-height: 110px;"><i class="icon fa fa-clock-o fa-3x"></i>
             <div class="info">
                 <h4>Real-time Revenue</h4>
                 <p><b>TSh {{ number_format($totals['real_time_revenue']) }}</b></p>
@@ -44,8 +36,8 @@
             </div>
         </div>
     </div>
-    <div class="col-md-3">
-        <div class="widget-small success coloured-icon"><i class="icon fa fa-check-circle fa-3x"></i>
+    <div class="col-md-4">
+        <div class="widget-small success coloured-icon" style="min-height: 110px;"><i class="icon fa fa-check-circle fa-3x"></i>
             <div class="info">
                 <h4>Real-time Profit</h4>
                 <p><b>TSh {{ number_format($totals['real_time_profit']) }}</b></p>
@@ -82,16 +74,16 @@
           <table class="table table-hover table-bordered">
             <thead class="thead-light">
               <tr>
-                <th>Date</th>
-                <th>Receipt #</th>
+                <th>Date / Batch</th>
                 <th>Product Variant</th>
-                <th class="text-center">Total In</th>
-                <th class="text-center">Sold (Bt / Gl)</th>
-                <th class="text-center font-weight-bold">Remaining</th>
-                <th>Strategy Exp. (Bt / Gl)</th>
-                <th class="bg-light">Total Rev (Bt / Gl)</th>
-                <th>% Done</th>
-                <th class="bg-light font-weight-bold">Total Profit (Bt / Gl)</th>
+                <th class="text-center">Stock In</th>
+                <th class="text-center">Sold</th>
+                <th class="text-center">Remaining</th>
+                <th class="bg-light">Exp. Revenue</th>
+                <th class="bg-info text-white">Actual Revenue</th>
+                <th class="bg-light">Exp. Profit</th>
+                <th class="bg-success text-white">Actual Profit</th>
+                <th class="text-center">% Progress</th>
               </tr>
             </thead>
             <tbody>
@@ -117,81 +109,63 @@
                   @php $lastTransferNumber = $transfer->transfer_number; @endphp
                 @endif
                 <tr>
-                  <td class="text-center text-muted small"><i class="fa fa-level-up fa-rotate-90"></i></td>
-                  <td class="text-center text-muted small">-</td>
+                  <td>
+                      <small class="text-muted">{{ $transfer->created_at->format('d M') }}</small><br>
+                      <strong>#{{ $transfer->transfer_number }}</strong>
+                  </td>
                   <td>
                       <strong>{{ $transfer->productVariant->name ?? 'N/A' }}</strong><br>
                       <small class="text-muted">{{ $transfer->productVariant->product->name ?? '' }}</small>
                   </td>
-                  <td class="text-center font-weight-bold">{{ $transfer->productVariant->formatUnits($transfer->total_units) }}</td>
-                  <td class="text-center">
+                  <td class="text-center">{{ $transfer->productVariant->formatUnits($transfer->total_units) }}</td>
+                  <td class="text-center font-weight-bold">
                     @if($transfer->productVariant->can_sell_in_tots)
-                      <div class="d-flex justify-content-between">
-                        <span class="badge badge-light border">{{ number_format($transfer->real_time_unit_sales) }} Bt</span>
-                        <span class="badge badge-info">{{ number_format($transfer->real_time_portion_sales) }} Gl</span>
-                      </div>
+                      <span class="badge badge-light border">{{ number_format($transfer->real_time_unit_sales) }} Bt</span><br>
+                      <span class="badge badge-info">{{ number_format($transfer->real_time_portion_sales) }} Gl</span>
                     @else
-                      <div class="badge badge-light border px-3">{{ number_format($transfer->real_time_units_sold) }} btl{{ $transfer->real_time_units_sold != 1 ? 's' : '' }}</div>
+                      <div class="badge badge-light border">{{ number_format($transfer->real_time_units_sold) }} btls</div>
                     @endif
                   </td>
-                  <td class="text-center font-weight-bold text-danger">
+                  <td class="text-center text-danger font-weight-bold">
                       @php 
                         $remaining = $transfer->total_units - ($transfer->real_time_units_sold ?? 0); 
                       @endphp
                       {{ $transfer->productVariant->formatUnits($remaining) }}
                   </td>
-                  <td>
-                    @if($transfer->productVariant->can_sell_in_tots)
-                      <div class="small text-muted">Bt: TSh {{ number_format($transfer->expected_revenue_bottle) }}</div>
-                      <div class="small font-weight-bold text-info">Gl: TSh {{ number_format($transfer->expected_revenue_glass) }}</div>
-                    @else
-                      <div class="font-weight-bold">TSh {{ number_format($transfer->expected_revenue_bottle) }}</div>
-                      <small class="text-muted italic">(Bottle Strategy)</small>
+                  <td class="bg-light">
+                    @php 
+                        $expRev = ($transfer->productVariant->can_sell_in_tots ?? false) ? $transfer->expected_revenue_glass : $transfer->expected_revenue_bottle;
+                    @endphp
+                    <strong>TSh {{ number_format($expRev) }}</strong><br>
+                    <small class="text-muted">Target</small>
+                  </td>
+                  <td class="bg-info text-white font-weight-bold">
+                    TSh {{ number_format($transfer->real_time_revenue) }}
+                    @if(isset($expRev) && $expRev > 0 && $transfer->real_time_revenue > $expRev)
+                        <span class="badge badge-pill badge-warning border shadow-sm ml-1" style="font-size: 0.6rem; vertical-align: middle;">
+                          <i class="fa fa-rocket text-dark"></i> <span class="text-dark">GAIN</span>
+                        </span>
                     @endif
+                    <br>
+                    <small class="text-white-50">Real-time</small>
                   </td>
                   <td class="bg-light">
-                    @if($transfer->productVariant->can_sell_in_tots)
-                      <div class="d-flex justify-content-between small">
-                          <span>Bt:</span> <strong>{{ number_format($transfer->real_time_unit_revenue) }}</strong>
-                      </div>
-                      <div class="d-flex justify-content-between small text-info">
-                          <span>Gl:</span> <strong>{{ number_format($transfer->real_time_portion_revenue) }}</strong>
-                      </div>
-                      <div class="border-top mt-1 pt-1 font-weight-bold">
-                          TSh {{ number_format($transfer->real_time_revenue) }}
-                      </div>
-                    @else
-                      <div class="font-weight-bold">TSh {{ number_format($transfer->real_time_revenue) }}</div>
-                      <small class="text-muted">(All Bottle Sales)</small>
-                    @endif
+                    <strong>TSh {{ number_format($transfer->expected_profit) }}</strong><br>
+                    <small class="text-muted">Target</small>
+                  </td>
+                  <td class="bg-success text-white font-weight-bold">
+                    TSh {{ number_format($transfer->real_time_profit) }}<br>
+                    <small class="text-white-50">Real-time</small>
                   </td>
                   <td class="text-center">
-                      @php 
-                          // Calculate progress based on physical volume sold vs total units received
-                          $percent = ($transfer->total_units > 0) ? ($transfer->real_time_units_sold / $transfer->total_units) * 100 : 0;
-                      @endphp
-                      <div class="font-weight-bold small text-{{ $percent >= 100 ? 'success' : ($percent > 80 ? 'info' : 'primary') }}">{{ number_format($percent, 1) }}%</div>
-                      <div class="progress" style="height: 5px;" title="Physical Inventory Progress: {{ number_format($percent, 1) }}%">
+                       @php 
+                           $expRev = ($transfer->productVariant->can_sell_in_tots ?? false) ? $transfer->expected_revenue_glass : $transfer->expected_revenue_bottle;
+                           $percent = ($expRev > 0) ? ($transfer->real_time_revenue / $expRev) * 100 : (($transfer->total_units > 0) ? ($transfer->real_time_units_sold / $transfer->total_units) * 100 : 0);
+                       @endphp
+                      <div class="font-weight-bold small">{{ number_format($percent, 1) }}%</div>
+                      <div class="progress" style="height: 5px;">
                           <div class="progress-bar bg-{{ $percent >= 100 ? 'success' : ($percent > 80 ? 'info' : 'primary') }}" role="progressbar" style="width: {{ min(100, $percent) }}%"></div>
                       </div>
-                  </td>
-                  <td class="bg-light">
-                    @if($transfer->productVariant->can_sell_in_tots)
-                      <div class="d-flex justify-content-between small">
-                          <span>Bt:</span> <strong class="{{ $transfer->real_time_unit_profit < 0 ? 'text-danger' : 'text-success' }}">{{ number_format($transfer->real_time_unit_profit) }}</strong>
-                      </div>
-                      <div class="d-flex justify-content-between small text-info">
-                          <span>Gl:</span> <strong class="{{ $transfer->real_time_portion_profit < 0 ? 'text-danger' : 'text-success' }}">{{ number_format($transfer->real_time_portion_profit) }}</strong>
-                      </div>
-                      <div class="border-top mt-1 pt-1 font-weight-bold {{ $transfer->real_time_profit < 0 ? 'text-danger' : 'text-success' }}">
-                          TSh {{ number_format($transfer->real_time_profit) }}
-                      </div>
-                    @else
-                      <div class="font-weight-bold {{ $transfer->real_time_profit < 0 ? 'text-danger' : 'text-success' }}">
-                        TSh {{ number_format($transfer->real_time_profit) }}
-                      </div>
-                      <small class="text-muted">(Total Profit)</small>
-                    @endif
                   </td>
                 </tr>
               @empty

@@ -31,18 +31,17 @@ class ProductHelper
         }
 
         // 2. Look for specific Flavor/Identity in variant fields
-        $identity = null;
-        $allText = strtolower(($variantSpecificName ?? '') . ' ' . ($variantDescription ?? ''));
-        foreach ($flavors as $flavor) {
-            if (str_contains($allText, $flavor)) {
-                // If found in variantSpecificName, use that exact string
-                if ($variantSpecificName && str_contains(strtolower($variantSpecificName), $flavor)) {
-                    $identity = $variantSpecificName;
-                } else {
-                    // Otherwise try to find the specific word in variantDescription
+        // 2. Prioritize Specific Identity (Flavor or Variant Name)
+        $identity = $variantSpecificName ?: null;
+        
+        // Only if no specific variant name is provided, look for common flavors in description
+        if (!$identity) {
+            $allText = strtolower(($variantDescription ?? ''));
+            foreach ($flavors as $flavor) {
+                if (str_contains($allText, $flavor)) {
                     $identity = $variantDescription;
+                    break;
                 }
-                break;
             }
         }
 
@@ -97,7 +96,12 @@ class ProductHelper
         }
 
         if (!empty($size)) {
-            $displayName .= ' (' . $size . ')';
+            // Smart append 'ml' if size is purely numeric
+            $cleanSize = $size;
+            if (is_numeric($size)) {
+                $cleanSize .= 'ml';
+            }
+            $displayName .= ' (' . $cleanSize . ')';
         }
 
         return trim($displayName);

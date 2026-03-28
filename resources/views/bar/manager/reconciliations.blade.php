@@ -187,14 +187,27 @@
                         <span class="badge badge-warning shadow-sm" style="border-radius: 4px;"><i class="fa fa-cutlery"></i> CHEF (FOOD)</span>
                       @endif
                     </td>
-                    <td><strong>TSh {{ number_format($fr->total_expected) }}</strong></td>
+                    <td>
+                        <strong>TSh {{ number_format($fr->total_expected) }}</strong>
+                        @if(($fr->total_expenses ?? 0) > 0)
+                            <div class="small text-muted" style="font-size: 11px; margin-top:2px;">
+                                Gross: TSh {{ number_format($fr->total_expected + $fr->total_expenses) }}
+                            </div>
+                            <div class="small text-danger" style="font-size: 11px;"><i class="fa fa-minus-circle"></i> TSh {{ number_format($fr->total_expenses) }} Exp</div>
+                        @endif
+                    </td>
                     <td><strong class="text-mauzo">TSh {{ number_format($fr->total_submitted_bag + $rowTotalPaid) }}</strong></td>
                     <td>
-                      @php $profitAmt = $fr->handover_id ? (\App\Models\FinancialHandover::find($fr->handover_id)?->profit_amount ?? 0) : 0; @endphp
-                      <span class="text-success font-weight-bold">TSh {{ number_format($profitAmt) }}</span>
+                      @php 
+                          $grossProfit = $fr->profit_amount ?? 0; 
+                      @endphp
+                      <span class="text-success font-weight-bold">TSh {{ number_format($grossProfit) }}</span>
                     </td>
                     <td class="text-muted">
-                        @php $circulationAmt = max(0, $fr->total_expected - $profitAmt); @endphp
+                        @php 
+                            // Since expenses were deducted from total_expected (340k), keeping Profit at 130k forces Circulation down to 210k.
+                            $circulationAmt = max(0, $fr->total_expected - $grossProfit); 
+                        @endphp
                         TSh {{ number_format($circulationAmt) }}
                     </td>
                     <td>TSh {{ number_format(($fr->submitted_cash ?? 0) + ($breakdown['cash'] ?? 0)) }}</td>
@@ -248,6 +261,7 @@
                                   data-date="{{ \Carbon\Carbon::parse($fr->reconciliation_date)->format('Y-m-d') }}" 
                                   data-type="{{ $fr->reconciliation_type }}"
                                   data-shortage="{{ $netDiff }}"
+                                  data-handover-id="{{ $fr->handover_id }}"
                                   title="Pay Shortage Discovered">
                               <i class="fa fa-money"></i>
                           </button>
@@ -255,6 +269,7 @@
 
                         @if($fr->status_indicator !== 'verified' && $fr->handover_id)
                           <button class="btn btn-sm btn-outline-secondary reset-handover-mgr-btn" 
+                                  data-handover-id="{{ $fr->handover_id }}"
                                   data-date="{{ \Carbon\Carbon::parse($fr->reconciliation_date)->format('Y-m-d') }}" 
                                   data-type="{{ $fr->reconciliation_type }}"
                                   title="Reset Handover For Staff Correction">
@@ -288,6 +303,7 @@
                                                $adjAmt = $breakdown[$channelKey] ?? 0;
                                                $amt = $origAmt + $adjAmt;
 
+                                               // Use POST-expense breakdown: shows what staff is expected to hand over per platform
                                                $recVal = $fr->recorded_platform_breakdown[$channelKey] ?? 0;
                                                $totalSubVisible += (float)$amt;
                                                $totalRecVisible += (float)$recVal;
@@ -360,7 +376,8 @@
                                             <button class="btn btn-sm {{ $netDiff > 0 ? 'btn-success' : 'btn-primary' }} pay-shortage-btn w-100 shadow-sm py-2" 
                                                     data-date="{{ \Carbon\Carbon::parse($fr->reconciliation_date)->format('Y-m-d') }}" 
                                                     data-type="{{ $fr->reconciliation_type }}"
-                                                    data-shortage="{{ $netDiff }}">
+                                                    data-shortage="{{ $netDiff }}"
+                                                    data-handover-id="{{ $fr->handover_id }}">
                                                 <i class="fa fa-money"></i> {{ $netDiff > 0 ? 'Pay Outstanding Shortage' : 'Balance Account' }}
                                             </button>
                                         @else
@@ -851,6 +868,7 @@
         @csrf
         <input type="hidden" name="date" id="shortage_date">
         <input type="hidden" name="type" id="shortage_type">
+        <input type="hidden" name="handover_id" id="shortage_handover_id">
         <div class="modal-body">
             <div class="alert alert-info shadow-sm">
                 <strong id="shortage_amount_label">Pending Shortage:</strong> TSh <span id="shortage_amount_display" class="font-weight-bold">0</span>
@@ -888,33 +906,36 @@ $(document).ready(function() {
   @if($isManagerView && $tab === 'financial' && !empty($chartData['dates']))
   // Performance Trend Chart
   try {
-      const perfCtx = document.getElementById('performanceChart').getContext('2d');
-      new Chart(perfCtx, {
-          type: 'line',
-          data: {
-              labels: {!! json_encode($chartData['dates']) !!},
-              datasets: [{
-                  label: 'Expected',
-                  data: {!! json_encode($chartData['expected']) !!},
-                  borderColor: '#940000',
-                  backgroundColor: 'rgba(148, 0, 0, 0.05)',
-                  fill: true,
-                  tension: 0.4
-              }, {
-                  label: 'Collected',
-                  data: {!! json_encode($chartData['collected']) !!},
-                  borderColor: '#28a745',
-                  backgroundColor: 'rgba(40, 167, 69, 0.05)',
-                  fill: true,
-                  tension: 0.4
-              }]
-          },
-          options: {
-              responsive: true,
-              plugins: { legend: { position: 'top' } },
-              scales: { y: { beginAtZero: true } }
-          }
-      });
+      const perfEl = document.getElementById('performanceChart');
+      if (perfEl) {
+          const perfCtx = perfEl.getContext('2d');
+          new Chart(perfCtx, {
+              type: 'line',
+              data: {
+                  labels: {!! json_encode($chartData['dates'] ?? []) !!},
+                  datasets: [{
+                      label: 'Expected',
+                      data: {!! json_encode($chartData['expected'] ?? []) !!},
+                      borderColor: '#940000',
+                      backgroundColor: 'rgba(148, 0, 0, 0.05)',
+                      fill: true,
+                      tension: 0.4
+                  }, {
+                      label: 'Collected',
+                      data: {!! json_encode($chartData['collected'] ?? []) !!},
+                      borderColor: '#28a745',
+                      backgroundColor: 'rgba(40, 167, 69, 0.05)',
+                      fill: true,
+                      tension: 0.4
+                  }]
+              },
+              options: {
+                  responsive: true,
+                  plugins: { legend: { position: 'top' } },
+                  scales: { y: { beginAtZero: true } }
+              }
+          });
+      }
   } catch(e) { console.error("Chart error:", e); }
   @endif
 
@@ -1032,6 +1053,7 @@ $(document).ready(function() {
 
   // Manager: Reset Handover Button
   $(document).on('click', '.reset-handover-mgr-btn', function() {
+    const handoverId = $(this).data('handover-id');
     const date = $(this).data('date');
     const type = $(this).data('type');
     Swal.fire({
@@ -1048,9 +1070,29 @@ $(document).ready(function() {
         const finalizeUrl = "{{ route('bar.manager.reconciliations.finalize') }}";
         const payShortageUrl = "{{ route('bar.manager.reconciliations.pay-shortage') }}";
         const resetHandoverUrl = "{{ route('bar.manager.reconciliations.reset-handover') }}";
-        $.post(resetHandoverUrl, { _token: '{{ csrf_token() }}', date: date, type: type }, function(resp) {
-            if (resp.success) location.reload();
-            else Swal.fire('Error', resp.error, 'error');
+        $.post(resetHandoverUrl, { _token: '{{ csrf_token() }}', handover_id: handoverId, date: date, type: type }, function(resp) {
+            if (resp.success) {
+                Swal.fire({
+                    toast: true,
+                    position: 'top-end',
+                    icon: 'success',
+                    title: resp.message || 'Handover reset successfully.',
+                    showConfirmButton: false,
+                    timer: 2000,
+                    timerProgressBar: true,
+                    didOpen: (toast) => {
+                        toast.addEventListener('mouseenter', Swal.stopTimer)
+                        toast.addEventListener('mouseleave', Swal.resumeTimer)
+                    }
+                }).then(() => {
+                    location.reload();
+                });
+            }
+            else Swal.fire('Error', resp.error || 'Server rejected request.', 'error');
+        }).fail(function(xhr) {
+            let msg = 'Failed to process request.';
+            if (xhr.responseJSON && xhr.responseJSON.error) msg = xhr.responseJSON.error;
+            Swal.fire('Error!', msg, 'error');
         });
       }
     });
@@ -1061,16 +1103,46 @@ $(document).ready(function() {
       const shortage = parseFloat($(this).data('shortage'));
       $('#shortage_date').val($(this).data('date'));
       $('#shortage_type').val($(this).data('type'));
+      $('#shortage_handover_id').val($(this).data('handover-id') || '');
       $('#shortage_amount_display').text(new Intl.NumberFormat().format(Math.abs(shortage)));
       $('#shortage_pay_amount').val(Math.abs(shortage));
       $('#payShortageModal').modal('show');
   });
 
-  $('#shortage_payment_form').submit(function(e) {
+  // Pay Shortage Submission (Using AJAX for max reliability)
+  $(document).on('click', '#shortage_submit_btn', function(e) {
       e.preventDefault();
-      $.post("{{ route('bar.manager.reconciliations.pay-shortage') }}", $(this).serialize(), function(response) {
-          if (response.success) location.reload();
-          else Swal.fire('Error', response.error, 'error');
+      const btn = $(this);
+      const form = $('#shortage_payment_form');
+      
+      btn.prop('disabled', true).html('<i class="fa fa-spinner fa-spin"></i> Saving...');
+      
+      $.ajax({
+          url: "{{ route('bar.manager.reconciliations.pay-shortage') }}",
+          method: 'POST',
+          data: form.serialize(),
+          success: function(response) {
+              if (response.success) {
+                  Swal.fire('Success', response.message, 'success').then(() => {
+                      location.reload();
+                  });
+              } else {
+                  Swal.fire('Error', response.error, 'error');
+                  btn.prop('disabled', false).text('Save Settlement');
+              }
+          },
+          error: function(xhr) {
+              btn.prop('disabled', false).text('Save Settlement');
+              let errorMsg = 'An error occurred during submission.';
+              if (xhr.status === 422) {
+                  const errors = xhr.responseJSON.errors;
+                  errorMsg = Object.values(errors).flat().join('\n');
+              } else if (xhr.responseJSON && xhr.responseJSON.error) {
+                  errorMsg = xhr.responseJSON.error;
+              }
+              Swal.fire({ icon: 'error', title: 'Submission Failed', text: errorMsg });
+              console.error('Shortage Pay Error:', xhr);
+          }
       });
   });
 

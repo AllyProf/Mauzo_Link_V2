@@ -51,12 +51,11 @@
               <tr>
                 <th>Shift #</th>
                 <th>Staff</th>
-                <th>Opened</th>
-                <th>Closed</th>
-                <th>Opening Bal</th>
-                <th>Sales (Cash)</th>
-                <th>Sales (Digital)</th>
-                <th>Closing Bal</th>
+                <th>Opened / Closed</th>
+                <th>Opening</th>
+                <th>Gross Revenue</th>
+                <th>Expenses</th>
+                <th>Total Handover</th>
                 <th>Status</th>
                 <th>Manager Audit</th>
                 <th>Actions</th>
@@ -68,30 +67,31 @@
                 @php
                   $recon = $reconciliationsByShift[$shift->id] ?? null;
                   $handover = $handoversByShift[$shift->id] ?? null;
+                  $totalExpRevenue = $recon['expected'] ?? ($shift->total_sales_cash + $shift->total_sales_digital);
+                  $submittedTotal = $handover ? $handover->amount : ($recon['submitted'] ?? $shift->closing_balance);
+                  $shiftExpenses = $recon['expenses'] ?? 0;
+                  $finalShortage = $recon['shortage'] ?? 0;
                 @endphp
                 <tr>
                   <td><strong>{{ $shift->shift_number }}</strong></td>
                   <td>{{ $shift->staff->full_name }}</td>
-                  <td>{{ $shift->opened_at->format('M d, H:i') }}</td>
-                  <td>{{ $shift->closed_at ? $shift->closed_at->format('M d, H:i') : '-' }}</td>
-                  <td>TSh {{ number_format($shift->opening_balance) }}</td>
-                  <td>TSh {{ number_format($shift->total_sales_cash) }}</td>
-                  <td>TSh {{ number_format($shift->total_sales_digital) }}</td>
                   <td>
-                    @if($shift->status === 'closed')
-                        TSh {{ number_format($shift->closing_balance) }}
-                        <br>
-                        @php $diff = $shift->closing_balance - $shift->expected_closing_balance; @endphp
-                        @if($diff != 0)
-                            <small class="{{ $diff > 0 ? 'text-success' : 'text-danger' }} font-weight-bold">
-                                {{ $diff > 0 ? '+' : '' }}{{ number_format($diff) }}
-                            </small>
-                        @else
-                            <small class="text-success font-weight-bold">Balanced</small>
-                        @endif
-                    @else
-                        -
-                    @endif
+                    <small><b>Op:</b> {{ $shift->opened_at->format('M d, H:i') }}</small><br>
+                    <small><b>Cl:</b> {{ $shift->closed_at ? $shift->closed_at->format('M d, H:i') : '-' }}</small>
+                  </td>
+                  <td>TSh {{ number_format($shift->opening_balance) }}</td>
+                  <td>
+                    <span class="text-primary font-weight-bold">TSh {{ number_format($totalExpRevenue) }}</span>
+                  </td>
+                  <td>
+                      @if($shiftExpenses > 0)
+                          <span class="badge badge-warning px-2 py-1">TSh {{ number_format($shiftExpenses) }}</span>
+                      @else
+                          <span class="text-muted small">0.00</span>
+                      @endif
+                  </td>
+                  <td>
+                    <span class="text-success font-weight-bold">TSh {{ number_format($submittedTotal) }}</span>
                   </td>
                   <td>
                     @if($shift->status === 'open')
@@ -106,30 +106,30 @@
                       $isAudited = ($handover && $handover->status === 'verified') || ($recon && $recon['status'] === 'verified');
                     @endphp
                     @if($isAudited)
-                        <span class="badge badge-success px-2 py-1" style="font-size:0.8rem;">
+                        <span class="badge badge-success px-2 py-1 mb-1" style="font-size:0.75rem;">
                           <i class="fa fa-check-circle"></i> VERIFIED & AUDITED
                         </span>
-                        @if($recon && $recon['shortage'] > 0.01)
+                        @if(abs($finalShortage) < 0.01)
+                             <br><small class="text-success font-weight-bold"><i class="fa fa-shield"></i> Balanced</small>
+                        @elseif($finalShortage > 0)
                           <br><small class="text-danger font-weight-bold mt-1 d-block">
                             <i class="fa fa-exclamation-triangle"></i>
-                            Short: TSh {{ number_format($recon['shortage']) }}
+                            Short: TSh {{ number_format($finalShortage) }}
                           </small>
-                        @elseif($recon && $recon['shortage'] < -0.01)
-                          <br><small class="text-success font-weight-bold mt-1 d-block">
+                        @else
+                          <br><small class="text-info font-weight-bold mt-1 d-block">
                             <i class="fa fa-arrow-up"></i>
-                            Surplus: TSh {{ number_format(abs($recon['shortage'])) }}
+                            Surplus: TSh {{ number_format(abs($finalShortage)) }}
                           </small>
-                        @elseif($recon)
-                          <br><small class="text-success mt-1 d-block"><i class="fa fa-shield"></i> Balanced</small>
                         @endif
                     @elseif($recon)
-                        <span class="badge badge-warning px-2 py-1" style="font-size:0.8rem;">
-                          <i class="fa fa-clock-o"></i> PENDING REVIEW
+                        <span class="badge badge-warning px-2 py-1" style="font-size:0.75rem;">
+                          <i class="fa fa-clock-o"></i> PENDING AUDIT
                         </span>
-                        <br><small class="text-muted mt-1 d-block">Awaiting manager audit</small>
+                        <br><small class="text-muted mt-1 d-block">Awaiting manager check</small>
                     @elseif($shift->status === 'closed')
-                      <span class="badge badge-light border px-2 py-1" style="font-size:0.8rem; color:#888;">
-                        <i class="fa fa-minus-circle"></i> NOT YET AUDITED
+                      <span class="badge badge-light border px-2 py-1 text-muted" style="font-size:0.75rem;">
+                        <i class="fa fa-minus-circle"></i> NOT AUDITED
                       </span>
                     @else
                       <span class="text-muted">—</span>

@@ -168,7 +168,7 @@
                        class="form-control" 
                        id="sms_sender_id" 
                        name="sms_sender_id" 
-                       value="{{ old('sms_sender_id', \App\Models\SystemSetting::get('sms_sender_id', 'MauzoLink')) }}">
+                       value="{{ old('sms_sender_id', \App\Models\SystemSetting::get('sms_sender_id', 'MIGLOP')) }}">
               </div>
             </div>
           </div>

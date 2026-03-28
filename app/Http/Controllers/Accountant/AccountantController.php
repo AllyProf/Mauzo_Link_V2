@@ -1298,107 +1298,110 @@ class AccountantController extends Controller
                 'portion_sales' => 0
             ];
         }
-
         // 1. Calculate how many total units were received before THIS receipt
         $previousReceiptsUnits = \App\Models\StockReceipt::where('user_id', $ownerId)
             ->where('product_variant_id', $transfer->product_variant_id)
             ->where('created_at', '<', $transfer->created_at)
             ->sum('total_units');
             
-        // 2. Fetch all order items for this variant
-        $orderItems = \App\Models\OrderItem::where('product_variant_id', $transfer->product_variant_id)
-            ->whereHas('order', function($q) use ($ownerId, $location) {
-                $q->where('user_id', $ownerId)
-                  ->whereIn('payment_status', ['paid', 'partial']); 
-                if ($location) {
-                    $q->whereHas('table', function($sq) use ($location) {
-                        $sq->where('location', $location);
-                    });
-                }
+        // 2. Fetch all OUT movements for this variant from the specified location
+        $movements = \App\Models\StockMovement::where('product_variant_id', $transfer->product_variant_id)
+            ->where('from_location', 'counter') 
+            ->where(function($q) {
+                $q->whereNull('to_location')->orWhere('to_location', '!=', 'warehouse');
             })
-            ->with(['order.orderPayments', 'productVariant'])
+            ->where('user_id', $ownerId)
+            ->with(['reference', 'productVariant']) 
             ->orderBy('id', 'asc')
             ->get();
             
         $myStart = $previousReceiptsUnits;
         $myEnd = $previousReceiptsUnits + $transfer->total_units;
-        
+
         $runningSales = 0;
+        $allocatedUnits = 0;
         $allocatedRevenue = 0;
         $allocatedProfit = 0;
-        $allocatedUnits = 0;
         $unitSalesCount = 0;
         $portionSalesCount = 0;
         $unitRevenue = 0;
         $portionRevenue = 0;
         $unitProfit = 0;
         $portionProfit = 0;
-        
-        foreach ($orderItems as $item) {
-            $itemQuantity = (float)$item->quantity;
-            $totsPerBtl = ($item->productVariant && $item->productVariant->total_tots > 0) ? $item->productVariant->total_tots : 1;
-            
-            if ($item->sell_type === 'tot') {
-                $itemQuantity = $itemQuantity / $totsPerBtl;
-            }
 
+        foreach ($movements as $movement) {
+            $qty = (float)$movement->quantity;
             $itemStart = $runningSales;
-            $itemEnd = $runningSales + $itemQuantity;
-            
-            // Check for overlap with our batch's window
+            $itemEnd = $runningSales + $qty;
+
+            // Check overlap with THIS receipt's window
             $overlapStart = max($myStart, $itemStart);
             $overlapEnd = min($myEnd, $itemEnd);
-            
-            if ($overlapStart < $overlapEnd) {
+
+            if ($overlapEnd > $overlapStart) {
+                // This movement (or part of it) belongs to THIS batch
                 $overlapQuantity = $overlapEnd - $overlapStart;
                 $allocatedUnits += $overlapQuantity;
+
+                // 3. Resolve the Order and Revenue for this movement
+                $order = null;
+                $ref = $movement->reference;
+                $isPortion = false;
                 
-                // Track breakdown
-                if ($item->sell_type === 'tot') {
-                    $portionSalesCount += round($overlapQuantity * $totsPerBtl);
+                if ($ref instanceof \App\Models\BarOrder) {
+                    $order = $ref;
+                } elseif ($ref instanceof \App\Models\OrderItem) {
+                    $order = $ref->order;
+                    $isPortion = ($ref->sell_type === 'tot');
+                }
+
+                if ($order && in_array($order->payment_status, ['paid', 'partial', 'pending']) && $order->status !== 'cancelled') {
+                    // Ratio of payments to order total
+                    $paymentRatio = 0;
+                    $itemPrice = $movement->unit_price ?: ($movement->productVariant->selling_price_per_unit ?? 0);
+                    
+                    if ($order->total_amount > 0) {
+                        $recordedPayments = \DB::table('order_payments')->where('order_id', $order->id)->sum('amount');
+                        $paymentRatio = min(1.0, $recordedPayments / $order->total_amount);
+                    }
+                    
+                    $movementRevenue = $overlapQuantity * $itemPrice;
+                    $revenueShare = $movementRevenue * $paymentRatio;
+                } else {
+                    // TRUST THE FRIDGE: If order is missing or not resolved, assume cash sale for this unit
+                    $itemPrice = $movement->unit_price ?: ($movement->productVariant->selling_price_per_unit ?? 0);
+                    $revenueShare = $overlapQuantity * $itemPrice;
+                }
+
+                $allocatedRevenue += $revenueShare;
+                $allocatedProfit += $revenueShare; // Add back the earned revenue to profit
+
+                // Breakdown for breakdown columns
+                if ($isPortion) {
+                    $portionSalesCount += $overlapQuantity; 
+                    $portionRevenue += $revenueShare;
                 } else {
                     $unitSalesCount += $overlapQuantity;
+                    $unitRevenue += $revenueShare;
                 }
 
-                // Calculate proportion
-                $ratio = $overlapQuantity / $itemQuantity;
+                // ALWAYS subtract cost for physical units leaving this batch (OUTSIDE the order check)
+                $unitBuyingPrice = (float)$buyingPrice;
+                $profitShare = - ($overlapQuantity * $unitBuyingPrice);
+                $allocatedProfit += $profitShare;
                 
-                $order = $item->order;
-                $paymentRatio = 1.0;
-                
-                if ($order && $order->orderPayments && $order->orderPayments->count() > 0) {
-                    $recordedPayments = $order->orderPayments->sum('amount');
-                    $orderItemsTotal = $order->items->sum('total_price') + ($order->kitchenOrderItems ? $order->kitchenOrderItems->sum('total_price') : 0);
-                    if ($orderItemsTotal > 0) {
-                        $paymentRatio = min(1.0, $recordedPayments / $orderItemsTotal);
-                    }
-                } elseif ($order && $order->payment_status !== 'paid') {
-                    $paymentRatio = 0.0;
-                }
-                
-                $normalizedUnitPrice = $item->unit_price;
-                if ($item->sell_type === 'tot') {
-                    $normalizedUnitPrice = $item->unit_price * $totsPerBtl;
-                }
-
-                $itemRevenue = $item->total_price * $ratio * $paymentRatio;
-                $itemProfit = ($normalizedUnitPrice - $buyingPrice) * $overlapQuantity * $paymentRatio;
-
-                if ($item->sell_type === 'tot') {
-                    $portionRevenue += $itemRevenue;
-                    $portionProfit += $itemProfit;
+                if ($isPortion) {
+                    $portionProfit += $profitShare;
                 } else {
-                    $unitRevenue += $itemRevenue;
-                    $unitProfit += $itemProfit;
+                    $unitProfit += $profitShare;
                 }
-
-                $allocatedRevenue += $itemRevenue;
-                $allocatedProfit += $itemProfit;
             }
-            
-            $runningSales += $itemQuantity;
+
+            // Update cumulative total AFTER checking overlap
+            $runningSales += $qty;
+
             if ($runningSales >= $myEnd) {
-                break; 
+                break;
             }
         }
         
@@ -1721,6 +1724,8 @@ class AccountantController extends Controller
                 $receipt->status = 'completed'; // Receipts are instantly in stock
                 $receipt->expected_revenue = $receipt->total_selling_value;
                 $receipt->expected_profit = $receipt->total_profit;
+                $receipt->expected_revenue_bottle = $receipt->total_selling_value;
+                $receipt->expected_revenue_glass = ($receipt->productVariant->can_sell_in_tots ?? false) ? ($receipt->total_units * ($receipt->productVariant->total_tots ?? 0) * ($receipt->selling_price_per_tot ?? 0)) : $receipt->total_selling_value;
                 
                 // Real-time metrics based on FIFO allocation
                 $metrics = $this->calculateRealTimeMetricsForTransfer(
@@ -1740,10 +1745,6 @@ class AccountantController extends Controller
                 $receipt->real_time_portion_revenue = $metrics['portion_revenue'];
                 $receipt->real_time_unit_profit = $metrics['unit_profit'];
                 $receipt->real_time_portion_profit = $metrics['portion_profit'];
-                $variant = $receipt->productVariant;
-                $receipt->expected_revenue_bottle = $receipt->total_units * ($variant->selling_price_per_unit ?? 0);
-                $receipt->expected_revenue_glass = ($receipt->productVariant->can_sell_in_tots ?? false) ? ($receipt->total_units * ($variant->total_tots ?? 0) * ($variant->selling_price_per_tot ?? 0)) : $receipt->expected_revenue_bottle;
-
                 return $receipt;
             });
 

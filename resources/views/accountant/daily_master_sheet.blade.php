@@ -16,7 +16,7 @@
 </div>
 
 <div class="d-none d-print-block text-center mb-4 border-bottom pb-3">
-    <h1 class="mb-0" style="letter-spacing: 2px;">MAUZOLINK BUSINESS SYSTEM</h1>
+    <h1 class="mb-0" style="letter-spacing: 2px;">MIGLOP INVESTMENT SYSTEM</h1>
     <h2 class="mb-1 text-uppercase">Daily Master Sheet Report</h2>
     <h4 class="font-weight-bold mt-2">DATE: {{ \Carbon\Carbon::parse($date)->format('l, d F Y') }}</h4>
 </div>

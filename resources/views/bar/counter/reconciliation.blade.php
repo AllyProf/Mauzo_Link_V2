@@ -5,22 +5,33 @@
 @push('styles')
 {{-- Use local styles instead of CDN --}}
 <style>
-  #waiters-table { border-collapse: collapse !important; border-radius: 8px; overflow: hidden; }
-  #waiters-table th, #waiters-table td { vertical-align: middle; white-space: nowrap; border: 1px solid #dee2e6 !important; }
-  #waiters-table thead th { background-color: #f8f9fa; color: #333; font-weight: 700; text-transform: uppercase; font-size: 0.75rem; border-bottom: 2px solid #009688 !important; }
-  .table-responsive { overflow-x: auto; -webkit-overflow-scrolling: touch; border: 1px solid #dee2e6; border-radius: 5px; }
+  #waiters-table { border-collapse: collapse !important; border-radius: 8px; overflow: hidden; border: 1px solid #dee2e6 !important; }
+  #waiters-table th, #waiters-table td { vertical-align: middle; padding: 12px 10px; border: 1px solid #dee2e6 !important; }
+  #waiters-table thead th { background-color: #2d3436 !important; color: white !important; font-weight: 700; text-transform: uppercase; font-size: 0.75rem; letter-spacing: 0.5px; border-right: 1px solid rgba(255,255,255,0.1) !important; }
+  .table-responsive { border-radius: 8px; border: 1px solid #dee2e6; }
   
-  /* Audit Columns Highlight */
-  .audit-col-bg { background-color: rgba(0, 150, 136, 0.03); }
-  .diff-col-bg { background-color: rgba(0, 0, 0, 0.02); }
+  /* Audit & Variance Highlighting */
+  .audit-col-bg { background-color: #f1f7fe !important; }
+  .diff-col-bg { background-color: #fff9f1 !important; }
   
+  /* Status Pill Badges */
+  .status-pill { border-radius: 50px; padding: 4px 12px; font-size: 0.75rem; font-weight: 700; text-transform: uppercase; }
+  
+  /* Simple Compact Widgets */
+  .widget-small { height: 90px; border-radius: 8px !important; margin-bottom: 15px; }
+  .widget-small.coloured-icon .info { color: #000 !important; }
+  .widget-small .icon { min-width: 70px !important; padding: 10px !important; font-size: 2rem !important; }
+  .widget-small .info h4 { font-size: 0.8rem !important; margin-bottom: 2px !important; }
+  .widget-small .info p { font-size: 15px !important; }
+
   #waiters-table_wrapper .row { margin-bottom: 15px; }
   .badge { font-weight: 600; padding: 5px 8px; }
+  
   @media (max-width: 768px) {
-    .widget-small { margin-bottom: 10px; }
+    .widget-small { margin-bottom: 15px; }
     .tile-title { font-size: 1.2rem; }
   }
-  .date-header-row td { background-color: #5d6d7e !important; color: white !important; font-size: 0.85rem; letter-spacing: 0.5px; border-top: 2px solid #34495e !important; position: sticky; top: 0; z-index: 5; }
+  .date-header-row td { background-color: #4b5e71 !important; color: white !important; font-size: 0.85rem; font-weight: 700; letter-spacing: 1px; border: none !important; position: sticky; top: 0; z-index: 5; }
 </style>
 @endpush
 
@@ -86,12 +97,23 @@
       </div>
     </div>
   </div>
+  @php
+    // Use actual handover breakdown if submitted; otherwise fall back to waiter sums
+    if (isset($todayHandover) && $todayHandover && $todayHandover->payment_breakdown) {
+        $hBreakdown = $todayHandover->payment_breakdown;
+        $widgetCash = $hBreakdown['cash'] ?? 0;
+        $widgetDigital = array_sum(array_filter($hBreakdown, fn($k) => $k !== 'cash', ARRAY_FILTER_USE_KEY));
+    } else {
+        $widgetCash = $waiters->sum('cash_collected');
+        $widgetDigital = $waiters->sum('mobile_money_collected');
+    }
+  @endphp
   <div class="col-md-3">
     <div class="widget-small warning coloured-icon">
       <i class="icon fa fa-bank fa-3x"></i>
       <div class="info">
         <h4>Total Cash</h4>
-        <p><b>TSh {{ number_format($waiters->sum('cash_collected'), 0) }}</b></p>
+        <p><b>TSh {{ number_format($widgetCash, 0) }}</b></p>
       </div>
     </div>
   </div>
@@ -100,7 +122,7 @@
       <i class="icon fa fa-mobile fa-3x"></i>
       <div class="info">
         <h4>Total Digital Money</h4>
-        <p><b>TSh {{ number_format($waiters->sum('mobile_money_collected'), 0) }}</b></p>
+        <p><b>TSh {{ number_format($widgetDigital, 0) }}</b></p>
       </div>
     </div>
   </div>
@@ -119,11 +141,12 @@
                 <tr>
                   <th class="all">#</th>
                   <th class="all">Staff</th>
-                  <th class="all text-center">Date</th>
+                  <th class="all text-center d-none">Date</th>
                   <th>Bar Sales</th>
                   <th>Orders</th>
                   <th>Cash</th>
                   <th>Digital</th>
+                  <th>Expenses</th>
                   <th class="all audit-col-bg text-center">Expected Amount</th>
                   <th class="all audit-col-bg">Recorded</th>
                   <th class="all audit-col-bg">Settled Amount</th>
@@ -133,7 +156,10 @@
                 </tr>
               </thead>
               <tbody>
-                @php $lastDate = null; @endphp
+                @php 
+                  $lastDate = null; 
+                  $totalExpenses = $shiftExpenses->sum('amount');
+                @endphp
                 @foreach($waiters as $index => $data)
                   @php 
                     $currentDate = date('Y-m-d', strtotime($data['date']));
@@ -148,7 +174,7 @@
                     <span class="badge badge-secondary ml-1">{{ $data['waiter']->role->name ?? 'Staff' }}</span><br>
                     <small class="text-muted">{{ $data['waiter']->email }}</small>
                   </td>
-                  <td class="text-center">
+                  <td class="text-center d-none">
                     <span class="badge badge-light border">{{ date('M d, Y', strtotime($data['date'])) }}</span>
                   </td>
                   <td>
@@ -157,6 +183,7 @@
                   <td><span class="badge badge-info">{{ $data['total_orders'] }}</span></td>
                   <td>TSh {{ number_format($data['cash_collected'], 0) }}</td>
                   <td>TSh {{ number_format($data['mobile_money_collected'], 0) }}</td>
+                  <td>-</td>
                   <td class="audit-col-bg"><strong>TSh {{ number_format($data['expected_amount'], 0) }}</strong></td>
                    <td class="audit-col-bg">
                     @if(isset($data['recorded_amount']) && $data['recorded_amount'] > 0)
@@ -166,19 +193,31 @@
                     @endif
                   </td>
                   <td class="audit-col-bg">
-                    @if($data['submitted_amount'] > 0)
-                      <strong class="text-success">TSh {{ number_format($data['submitted_amount'], 0) }}</strong>
+                    @php
+                      // For verified rows: show the actual recorded (order-based) amount cleanly
+                      // For pending/partial: show submitted amount from reconciliation
+                      $displaySettled = ($data['status'] === 'verified')
+                          ? $data['recorded_amount']   // clean value from actual orders
+                          : ($data['submitted_amount'] > 0 ? $data['submitted_amount'] : null);
+                      $displayDiff = ($data['status'] === 'verified')
+                          ? ($data['recorded_amount'] - $data['expected_amount'])
+                          : $data['difference'];
+                    @endphp
+                    @if($displaySettled !== null && $displaySettled > 0)
+                      <strong class="{{ $displaySettled >= $data['expected_amount'] ? 'text-success' : 'text-warning' }}">
+                        TSh {{ number_format($displaySettled, 0) }}
+                      </strong>
                     @else
                       <span class="text-muted">Waiting</span>
                     @endif
                   </td>
                   <td class="diff-col-bg text-center">
                     @if($data['submitted_amount'] > 0 || $data['reconciliation'])
-                      <strong class="{{ $data['difference'] >= 0 ? 'text-success' : 'text-danger' }}">
-                        @if($data['difference'] > 0)
-                          +{{ number_format($data['difference'], 0) }}
-                        @elseif($data['difference'] < 0)
-                          {{ number_format($data['difference'], 0) }}
+                      <strong class="{{ $displayDiff >= 0 ? 'text-success' : 'text-danger' }}">
+                        @if($displayDiff > 0)
+                          +{{ number_format($displayDiff, 0) }}
+                        @elseif($displayDiff < 0)
+                          {{ number_format($displayDiff, 0) }}
                         @else
                           0
                         @endif
@@ -189,17 +228,17 @@
                   </td>
                   <td class="text-center">
                     @if($data['status'] === 'verified')
-                      <span class="badge badge-success">Verified</span>
+                      <span class="status-pill badge-success">Verified</span>
                     @elseif($data['status'] === 'submitted')
-                      <span class="badge badge-info">Settled</span>
+                      <span class="status-pill badge-info">Settled</span>
                     @elseif($data['status'] === 'paid')
-                      <span class="badge badge-success">Paid</span>
+                      <span class="status-pill badge-success">Paid</span>
                     @elseif($data['status'] === 'partial')
-                      <span class="badge badge-warning">Partial</span>
+                      <span class="status-pill badge-warning">Partial</span>
                     @elseif($data['status'] === 'disputed')
-                      <span class="badge badge-danger">Disputed</span>
+                      <span class="status-pill badge-danger">Disputed</span>
                     @else
-                      <span class="badge badge-warning">Pending</span>
+                      <span class="status-pill badge-warning">Pending</span>
                     @endif
                   </td>
                   <td class="text-nowrap">
@@ -264,51 +303,16 @@
         @endif
       </h3>
       <div class="tile-body">
-        @if($todayHandover)
-          <div class="alert {{ $todayHandover->status === 'verified' ? 'alert-success' : ($todayHandover->status === 'disputed' ? 'alert-danger' : 'alert-info') }}">
-            <h4>Handover {{ ucfirst($todayHandover->status) }}</h4>
-            <p>You submitted your daily physical and digital collections on {{ $todayHandover->created_at->format('h:i A') }}.</p>
-            <hr>
-            <div class="row">
-              <div class="col-md-6">
-                <strong>Total Amount:</strong> TSh {{ number_format($todayHandover->amount, 0) }}<br>
-                @if($todayHandover->payment_breakdown)
-                  <ul class="mb-0 mt-2">
-                    @foreach($todayHandover->payment_breakdown as $method => $amount)
-                      @if($amount > 0)
-                        <li><strong>{{ strtoupper(str_replace('_', ' ', $method)) }}:</strong> TSh {{ number_format($amount, 0) }}</li>
-                      @endif
-                    @endforeach
-                  </ul>
-                @endif
-              </div>
-              <div class="col-md-6">
-                <strong>Manager:</strong> {{ $todayHandover->recipientStaff->full_name ?? 'N/A' }}<br>
-                @if($todayHandover->notes)
-                  <strong>Notes:</strong> {{ $todayHandover->notes }}<br>
-                @endif
-                @if($todayHandover->dispute_reason)
-                  <strong class="text-danger">Dispute Reason:</strong> {{ $todayHandover->dispute_reason }}
-                @endif
-              </div>
-            </div>
-
-
-          </div>
-        @elseif($manager)
-
-          @php
+        @php
             $totalCashHandover = 0;
             $totalDigitalHandover = 0;
+            $overallTotalHandover = 0;
             $platformTotals = [];
             
             $totalCashRecordedArr = 0;
             $totalDigitalRecordedArr = 0;
             
             foreach($waiters as $data) {
-                // Only include in the Handover Summary if the date matches the targeted handover date ($date)
-                if ($data['date'] !== $date) continue;
-
                 $totalCashHandover += $data['cash_collected'];
                 $totalDigitalHandover += $data['mobile_money_collected'];
                 $totalCashRecordedArr += $data['recorded_cash'];
@@ -349,7 +353,6 @@
                             $platformTotals[$label] = ($platformTotals[$label] ?? 0) + $payment->amount;
                         }
                     } else {
-                        // Support for orders with older database structure
                         if ($order->payment_method === 'cash') continue;
                         $provider = strtolower(trim($order->mobile_money_number ?? ''));
                         $method = strtolower($order->payment_method ?? '');
@@ -374,8 +377,230 @@
                     }
                 }
             }
-            $overallTotalHandover = $totalCashHandover + $totalDigitalHandover;
+
+            // --- Subtract Expenses from Handover Totals ---
+            $totalExpenses = 0;
+            foreach($shiftExpenses as $expense) {
+                $overallTotalHandover -= $expense->amount;
+                $totalExpenses += $expense->amount;
+                $method = strtolower($expense->payment_method ?: 'cash');
+                
+                if ($method === 'cash') {
+                    $totalCashHandover -= $expense->amount;
+                } else {
+                    $totalDigitalHandover -= $expense->amount;
+                    
+                    // Subtract from individual platform totals too
+                    $labelFound = null;
+                    $normMethod = str_replace('_', ' ', $method);
+                    foreach($platformTotals as $l => $amt) {
+                        if (str_contains(strtolower($l), $normMethod)) {
+                            $labelFound = $l;
+                            break;
+                        }
+                    }
+                    
+                    if ($labelFound) {
+                        $platformTotals[$labelFound] -= $expense->amount;
+                    } else {
+                        // Hardcoded fallbacks
+                        if (str_contains($method, 'nbc')) {
+                            $platformTotals['NBC BANK'] = ($platformTotals['NBC BANK'] ?? 0) - $expense->amount;
+                            $labelFound = 'NBC BANK';
+                        } elseif (str_contains($method, 'mpesa')) {
+                            $platformTotals['M-PESA'] = ($platformTotals['M-PESA'] ?? 0) - $expense->amount;
+                            $labelFound = 'M-PESA';
+                        } elseif (str_contains($method, 'azania')) {
+                            $platformTotals['AZANIA BANK'] = ($platformTotals['AZANIA BANK'] ?? 0) - $expense->amount;
+                            $labelFound = 'AZANIA BANK';
+                        } else {
+                             // If completely unknown, treat as digital subtraction only
+                        }
+                    }
+                    
+                    // CASCADE NEGATIVE: If the platform is now negative, take the difference from cash
+                    if ($labelFound && $platformTotals[$labelFound] < 0) {
+                        $deficit = abs($platformTotals[$labelFound]);
+                        $totalCashHandover -= $deficit;
+                        $platformTotals[$labelFound] = 0; // Don't show negative in the UI/DB
+                    }
+                }
+            }
             
+            $overallTotalHandover = $totalCashHandover + $totalDigitalHandover;
+            $staffBreakdown = []; // For audit table display
+        @endphp
+
+        @if($todayHandover)
+          <div class="alert {{ $todayHandover->status === 'verified' ? 'alert-success' : ($todayHandover->status === 'disputed' ? 'alert-danger' : 'alert-info') }}">
+            <h4>Handover {{ ucfirst($todayHandover->status) }}</h4>
+            <p>You submitted your daily physical and digital collections on {{ $todayHandover->created_at->format('h:i A') }}.</p>
+            <hr>
+            <div class="row">
+              <div class="col-md-6">
+                <strong>Total Amount:</strong> TSh {{ number_format($todayHandover->amount, 0) }}<br>
+                @if($todayHandover->payment_breakdown)
+                  <ul class="mb-0 mt-2">
+                    @foreach($todayHandover->payment_breakdown as $method => $amount)
+                      @if($amount > 0)
+                        <li><strong>{{ strtoupper(str_replace('_', ' ', $method)) }}:</strong> TSh {{ number_format($amount, 0) }}</li>
+                      @endif
+                    @endforeach
+                  </ul>
+                @endif
+              </div>
+              <div class="col-md-6 border-left">
+                @if($totalExpenses > 0)
+                  <div class="mb-3">
+                    <strong class="text-danger">Total Operational Expenses:</strong><br>
+                    <span class="badge badge-danger p-2 mt-1">- TSh {{ number_format($totalExpenses, 0) }}</span>
+                    <ul class="mt-2 small text-muted list-unstyled">
+                      @foreach($shiftExpenses as $exp)
+                        <li><i class="fa fa-minus-circle mr-1"></i> {{ $exp->description }} ({{ strtoupper($exp->payment_method) }}): TSh {{ number_format($exp->amount, 0) }}</li>
+                      @endforeach
+                    </ul>
+                  </div>
+                @endif
+                <strong>Manager:</strong> {{ $todayHandover->recipientStaff->full_name ?? 'N/A' }}<br>
+                @if($todayHandover->notes)
+                  <strong>Notes:</strong> 
+                  @php
+                      $cleanNotes = preg_replace('/\[ShortagePaidTotal:\d+\]/i', '', $todayHandover->notes);
+                      $cleanNotes = preg_replace('/\[ShortagePaidBreakdown:[^\]]+\]/i', '', $cleanNotes);
+                      $cleanNotes = preg_replace('/\[ShortagePaid:[^\]]+\]/i', '', $cleanNotes);
+                      $cleanNotes = preg_replace('/\[ShortageNote:\s*([^\]]+)\]/i', '<span class="text-success d-block mt-1 font-italic">$1</span>', $cleanNotes);
+                      echo trim($cleanNotes);
+                  @endphp
+                  <br>
+                @endif
+                @if($todayHandover->dispute_reason)
+                  <strong class="text-danger">Dispute Reason:</strong> {{ $todayHandover->dispute_reason }}
+                @endif
+              </div>
+            </div>
+
+            @php
+              // Normalize a platform key for comparison
+              $normKey = fn(string $k): string => strtolower(trim(str_replace([' ', '-', '_'], '', $k)));
+
+              // Build System Expected per-platform from actual order payments (gross), then deduct expenses
+              $sysBreakdown = [];
+              foreach ($waiters as $wData) {
+                  foreach ($wData['orders'] as $order) {
+                      foreach ($order->orderPayments as $payment) {
+                          $provider = strtolower(trim($payment->mobile_money_number ?? ''));
+                          $method   = strtolower(trim($payment->payment_method ?? 'cash'));
+                          if ($method === 'cash') { $pKey = 'cash'; }
+                          elseif (str_contains($provider, 'nbc') || str_contains($method, 'nbc')) { $pKey = 'nbc'; }
+                          elseif (str_contains($provider, 'nmb') || str_contains($method, 'nmb')) { $pKey = 'nmb'; }
+                          elseif (str_contains($provider, 'crdb') || str_contains($method, 'crdb')) { $pKey = 'crdb'; }
+                          elseif (str_contains($provider, 'visa') || str_contains($method, 'visa')) { $pKey = 'visa'; }
+                          elseif (str_contains($provider, 'mastercard') || str_contains($method, 'mastercard')) { $pKey = 'mastercard'; }
+                          elseif (str_contains($provider, 'mixx') || str_contains($method, 'mixx')) { $pKey = 'mixx'; }
+                          elseif (str_contains($provider, 'halo') || str_contains($method, 'halo')) { $pKey = 'halopesa'; }
+                          elseif (str_contains($provider, 'mpesa') || str_contains($method, 'mpesa')) { $pKey = 'mpesa'; }
+                          elseif (str_contains($provider, 'tigo') || str_contains($method, 'tigo')) { $pKey = 'tigo_pesa'; }
+                          elseif (str_contains($provider, 'airtel') || str_contains($method, 'airtel')) { $pKey = 'airtel_money'; }
+                          else { $pKey = $method; }
+                          $sysBreakdown[$pKey] = ($sysBreakdown[$pKey] ?? 0) + (float)$payment->amount;
+                      }
+                  }
+              }
+              // Deduct expenses from appropriate platform
+              foreach ($shiftExpenses as $exp) {
+                  $expKey = strtolower(trim($exp->payment_method ?: 'cash'));
+                  if (isset($sysBreakdown[$expKey])) {
+                      $sysBreakdown[$expKey] -= $exp->amount;
+                  }
+              }
+
+              // Staff submitted breakdown (from handover)
+              $staffBreakdown = [];
+              if ($todayHandover->payment_breakdown) {
+                  foreach ($todayHandover->payment_breakdown as $k => $v) {
+                      $staffBreakdown[strtolower(trim($k))] = (float)$v;
+                  }
+              }
+
+              // Merge all channels
+              $auditChannels = array_unique(array_merge(array_keys($staffBreakdown), array_keys($sysBreakdown)));
+
+              // Calculate shortage
+              $handoverExpected = $waiters->sum('expected_amount') - $totalExpenses;
+              $handoverShortage = $handoverExpected - (float)$todayHandover->amount;
+            @endphp
+
+            @if($todayHandover->status === 'verified' && $handoverShortage > 0.01)
+              {{-- ========= SHORTAGE DETECTED ========= --}}
+              <div class="mt-3 border rounded shadow-sm overflow-hidden">
+                <div class="p-3" style="background: #fff5f5; border-left: 5px solid #dc3545;">
+                  <div class="d-flex align-items-center mb-2">
+                    <i class="fa fa-exclamation-triangle fa-2x mr-3 text-danger"></i>
+                    <div>
+                      <h5 class="mb-0 text-danger font-weight-bold"><i class="fa fa-warning"></i> Manager Audit: Revenue Shortage Recorded</h5>
+                      <small class="text-muted">Reference: Handover #{{ $todayHandover->id }} — Please report to your manager.</small>
+                    </div>
+                    <div class="ml-auto text-right">
+                      <div class="text-danger h4 font-weight-bold mb-0">-TSh {{ number_format($handoverShortage, 0) }}</div>
+                      <small class="text-muted">vs Expected TSh {{ number_format($handoverExpected, 0) }}</small>
+                    </div>
+                  </div>
+                </div>
+                <div class="table-responsive">
+                  <table class="table table-sm table-bordered mb-0" style="font-size: 0.85rem;">
+                    <thead style="background-color: #f9f9f9;">
+                      <tr>
+                        <th style="color: #940000; font-weight: 800; font-size: 11px;">REVENUE CHANNEL</th>
+                        <th>YOU SUBMITTED</th>
+                        <th>SYSTEM EXPECTED</th>
+                        <th>VARIANCE</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      @foreach($auditChannels as $ch)
+                        @php
+                          $staffAmt  = $staffBreakdown[$ch] ?? 0;
+                          $sysAmt    = $sysBreakdown[$ch]   ?? 0;
+                          $variance  = $staffAmt - $sysAmt;
+                        @endphp
+                        @if($staffAmt > 0 || $sysAmt > 0)
+                        <tr>
+                          <td class="font-weight-bold">{{ strtoupper(str_replace('_', ' ', $ch)) }}</td>
+                          <td>TSh {{ number_format($staffAmt, 0) }}</td>
+                          <td class="text-muted">TSh {{ number_format($sysAmt, 0) }}</td>
+                          <td>
+                            @if($variance < 0)
+                              <span class="text-danger font-weight-bold"><i class="fa fa-arrow-down"></i> Short: {{ number_format($variance, 0) }}</span>
+                            @elseif($variance > 0)
+                              <span class="text-success font-weight-bold"><i class="fa fa-arrow-up"></i> +{{ number_format($variance, 0) }}</span>
+                            @else
+                              <span class="text-success small"><i class="fa fa-check-circle"></i> OK</span>
+                            @endif
+                          </td>
+                        </tr>
+                        @endif
+                      @endforeach
+                      <tr style="background:#fff0f0; border-top: 2px solid #dc3545;">
+                        <td class="font-weight-bold">TOTAL</td>
+                        <td class="font-weight-bold">TSh {{ number_format($todayHandover->amount, 0) }}</td>
+                        <td class="font-weight-bold text-muted">TSh {{ number_format($handoverExpected, 0) }}</td>
+                        <td class="font-weight-bold text-danger">-TSh {{ number_format($handoverShortage, 0) }}</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+            @elseif($todayHandover->status === 'verified')
+              <div class="alert alert-success mt-3 mb-0 border-0 shadow-sm" style="border-left: 5px solid #28a745 !important;">
+                <i class="fa fa-check-circle text-success mr-2"></i>
+                <strong>Manager Audit Passed.</strong> Your handover has been fully verified with no discrepancies.
+              </div>
+            @endif
+
+          </div>
+        @elseif($manager)
+          @php
             $keyMap = [
                 'M-PESA' => 'mpesa_amount',
                 'MIXX BY YAS' => 'mixx_amount',
@@ -404,27 +629,38 @@
           <div class="alert alert-info border-primary mb-4 p-3 shadow-sm rounded">
             <h5><i class="fa fa-calculator"></i> Handover Summary</h5>
             <div class="row text-center mt-3">
-              <div class="col-md-4 mb-2 mb-md-0">
+              <div class="col-md-3 mb-2 mb-md-0">
                 <small class="text-uppercase font-weight-bold text-muted">Total Cash</small>
-                <h4 class="text-warning mb-0">TSh {{ number_format($totalCashHandover, 0) }}</h4>
-                @if($totalCashHandover < $totalCashRecordedArr)
-                  <small class="text-danger font-weight-bold">Short: -{{ number_format($totalCashRecordedArr - $totalCashHandover, 0) }}</small>
-                @elseif($totalCashHandover > $totalCashRecordedArr)
-                  <small class="text-success font-weight-bold">Surplus: +{{ number_format($totalCashHandover - $totalCashRecordedArr, 0) }}</small>
+                <h4 class="text-success mb-0">TSh {{ number_format($totalCashHandover, 0) }}</h4>
+                @php 
+                    $netRecordedCash = $totalCashRecordedArr - array_sum(array_column($shiftExpenses->where('payment_method', 'cash')->toArray(), 'amount'));
+                @endphp
+                @if($totalCashHandover < $netRecordedCash)
+                  <small class="text-danger font-weight-bold">Short: -{{ number_format($netRecordedCash - $totalCashHandover, 0) }}</small>
+                @elseif($totalCashHandover > $netRecordedCash)
+                  <small class="text-success font-weight-bold">Surplus: +{{ number_format($totalCashHandover - $netRecordedCash, 0) }}</small>
                 @endif
               </div>
-              <div class="col-md-4 mb-2 mb-md-0" style="border-left: 1px solid #dee2e6; border-right: 1px solid #dee2e6;">
+              <div class="col-md-3 mb-2 mb-md-0">
                 <small class="text-uppercase font-weight-bold text-muted">Total Digital</small>
                 <h4 class="text-success mb-0">TSh {{ number_format($totalDigitalHandover, 0) }}</h4>
-                @if($totalDigitalHandover < $totalDigitalRecordedArr)
-                  <small class="text-danger font-weight-bold">Short: -{{ number_format($totalDigitalRecordedArr - $totalDigitalHandover, 0) }}</small>
-                @elseif($totalDigitalHandover > $totalDigitalRecordedArr)
-                  <small class="text-success font-weight-bold">Surplus: +{{ number_format($totalDigitalHandover - $totalDigitalRecordedArr, 0) }}</small>
+                @php 
+                    $netRecordedDigital = $totalDigitalRecordedArr - array_sum(array_column($shiftExpenses->where('payment_method', '!=', 'cash')->toArray(), 'amount'));
+                @endphp
+                @if($totalDigitalHandover < $netRecordedDigital)
+                  <small class="text-danger font-weight-bold">Short: -{{ number_format($netRecordedDigital - $totalDigitalHandover, 0) }}</small>
+                @elseif($totalDigitalHandover > $netRecordedDigital)
+                  <small class="text-success font-weight-bold">Surplus: +{{ number_format($totalDigitalHandover - $netRecordedDigital, 0) }}</small>
                 @endif
               </div>
-              <div class="col-md-4">
-                <small class="text-uppercase font-weight-bold text-muted">Overall Handover</small>
+              <div class="col-md-3 mb-2 mb-md-0" style="border-left: 1px solid #dee2e6;">
+                <small class="text-uppercase font-weight-bold text-muted text-danger">Total Expenses</small>
+                <h4 class="text-danger mb-0">-TSh {{ number_format($totalExpenses, 0) }}</h4>
+              </div>
+              <div class="col-md-3" style="border-left: 1px solid #dee2e6;">
+                <small class="text-uppercase font-weight-bold text-muted">Net Handover</small>
                 <h4 class="text-primary mb-0">TSh {{ number_format($overallTotalHandover, 0) }}</h4>
+                <small class="text-muted">(After Expenses)</small>
               </div>
             </div>
           </div>
@@ -439,25 +675,23 @@
             </div>
 
             <div class="row">
-              @if($totalCashHandover > 0)
+              @if($totalCashHandover != 0)
               <div class="col-md-3 form-group">
                 <label>Physical Cash</label>
                 <div class="input-group">
                   <div class="input-group-prepend"><span class="input-group-text">TSh</span></div>
-                  <input type="number" name="cash_amount" class="form-control handover-input bg-light" value="{{ round($totalCashHandover) }}" readonly>
+                  <input type="number" name="cash_amount" class="form-control handover-input" value="{{ round($totalCashHandover) }}">
                 </div>
               </div>
-              @else
-              <input type="hidden" name="cash_amount" value="0">
               @endif
 
               @foreach($platformTotals as $label => $amount)
-                @if($amount > 0)
+                @if($amount != 0)
                 <div class="col-md-3 form-group" title="{{ $label }} breakdown">
                   <label>{{ $label }}</label>
                   <div class="input-group">
                     <div class="input-group-prepend"><span class="input-group-text">TSh</span></div>
-                    <input type="number" name="{{ $keyMap[$label] ?? 'mobile_money_amount' }}" class="form-control handover-input bg-light" value="{{ round($amount) }}" readonly>
+                    <input type="number" name="{{ $keyMap[$label] ?? 'mobile_money_amount' }}" class="form-control handover-input" value="{{ round($amount) }}">
                   </div>
                 </div>
                 @endif
@@ -490,7 +724,7 @@
               </div>
             </div>
             
-            <button type="submit" class="btn btn-primary btn-block">
+            <button type="button" id="submitHandoverBtn" class="btn btn-primary btn-block">
               <i class="fa fa-paper-plane"></i> Submit Detailed Handover to Manager
             </button>
           </form>
@@ -535,6 +769,10 @@
 <script type="text/javascript" src="{{ asset('js/admin/plugins/dataTables.bootstrap.min.js') }}?v=2.1"></script>
 <script>
 jQuery(document).ready(function($) {
+  // Define global maps for JS
+  const dailyExpenses = {!! json_encode($expensesByDate->map(fn($group) => $group->sum('amount'))) !!};
+  const expensesDetails = {!! json_encode($expensesByDate) !!};
+
   // Initialize DataTables
   if ($('#waiters-table').length > 0) {
     const table = $('#waiters-table').DataTable({
@@ -551,14 +789,34 @@ jQuery(document).ready(function($) {
         var last = null;
  
         api.column(2, { page: 'current' }).data().each(function(group, i) {
-          // Extract the plain date text from the badge/span if needed
           let tempDiv = document.createElement('div');
           tempDiv.innerHTML = group;
           let dateText = tempDiv.innerText.trim();
+          
+          // Original date format from badge is 'Mar 28, 2026' - need to match with Y-m-d
+          const dateObj = new Date(dateText);
+          const dateKey = dateObj.getFullYear() + '-' + String(dateObj.getMonth() + 1).padStart(2, '0') + '-' + String(dateObj.getDate()).padStart(2, '0');
+          const dailyTotal = dailyExpenses[dateKey] || 0;
 
           if (last !== dateText) {
               $(rows[i]).before(
-                '<tr class="date-header-row"><td colspan="13" style="background-color: #5d6d7e !important; color: white !important; font-weight: bold; padding: 10px;"><i class="fa fa-calendar-check-o mr-2"></i> ' + dateText.toUpperCase() + '</td></tr>'
+                `<tr class="date-header-row"><td colspan="13" style="background-color: #5d6d7e !important; color: white !important; font-weight: bold; padding: 10px;">
+                  <div class="d-flex justify-content-between align-items-center">
+                    <span><i class="fa fa-calendar-check-o mr-2"></i> ${dateText.toUpperCase()}</span>
+                    <div>
+                      <span class="badge badge-warning p-2 mr-2">
+                        Expenses: TSh ${dailyTotal.toLocaleString()}
+                        ${dailyTotal > 0 ? `<a href="javascript:void(0)" class="text-white ml-2 view-expenses-btn" data-date="${dateKey}" title="View Details"><i class="fa fa-search-plus"></i> View</a>` : ''}
+                      </span>
+                      <button class="btn btn-xs btn-outline-light add-expense-btn" 
+                              data-date="${dateKey}" 
+                              data-display-date="${dateText}"
+                              data-platforms='{!! json_encode(array_keys(array_filter($expectedBreakdowns, fn($v) => $v > 0))) !!}'>
+                        <i class="fa fa-plus-circle"></i> Add Expense
+                      </button>
+                    </div>
+                  </div>
+                </td></tr>`
               );
             last = dateText;
           }
@@ -728,7 +986,191 @@ jQuery(document).ready(function($) {
       }
     });
   });
-  
+
+  // Add counter expense
+  $(document).on('click', '.add-expense-btn', function() {
+    const date = $(this).data('date');
+    const displayDate = $(this).data('display-date');
+    const activePlatforms = $(this).data('platforms') || ['cash_amount'];
+    const shiftId = '{{ $shiftId }}';
+    
+    // Map internal database keys to friendly labels
+    const platformNames = {
+      'cash_amount': 'Petty Cash (Daily Drawer)',
+      'mpesa_amount': 'M-PESA Phone',
+      'tigo_pesa_amount': 'Tigo Pesa Phone',
+      'airtel_money_amount': 'Airtel Money Phone',
+      'halopesa_amount': 'Halopesa Phone',
+      'mixx_amount': 'MIXX BY YAS',
+      'nmb_amount': 'NMB Bank',
+      'crdb_amount': 'CRDB Bank',
+      'nbc_amount': 'NBC Bank',
+      'kcb_amount': 'KCB Bank',
+      'azania_amount': 'Azania Bank',
+      'equity_amount': 'Equity Bank',
+      'absa_amount': 'Absa Bank',
+      'dtb_amount': 'DTB Bank',
+      'exim_amount': 'Exim Bank',
+      'stanbic_amount': 'Stanbic Bank',
+      'bank_card_amount': 'Bank Card POS',
+      'bank_transfer_amount': 'Bank Transfer',
+      'visa_card_amount': 'VISA CARD Machine',
+      'mastercard_amount': 'MASTERCARD Machine'
+    };
+
+    let platformOptions = `<option value="cash">Petty Cash (Daily Drawer)</option>`;
+    // Only show digital/bank platforms if they have recorded money in this shift
+    activePlatforms.forEach(p => {
+      if (p === 'cash_amount') return; // Cash is already added first
+      
+      const label = platformNames[p] || p.replace('_amount', '').replace(/_/g, ' ').toUpperCase();
+      platformOptions += `<option value="${p.replace('_amount', '')}">${label}</option>`;
+    });
+
+    if (!platformOptions) {
+        platformOptions = `<option value="cash">Petty Cash (Daily Drawer)</option>`;
+    }
+
+    Swal.fire({
+      title: 'Add Daily Expense',
+      html: `
+        <div class="text-left">
+          <p class="mb-2">Expense for <strong>${displayDate}</strong></p>
+          <div class="form-group">
+            <label>Amount (TSh)</label>
+            <input type="number" id="expense-amount" class="form-control" placeholder="e.g. 10000" autofocus>
+          </div>
+          <div class="form-group">
+            <label>Description</label>
+            <input type="text" id="expense-desc" class="form-control" placeholder="e.g. Electricity, Water, Soap...">
+          </div>
+          <div class="form-group">
+            <label>Payment Platform</label>
+            <select id="expense-method" class="form-control">
+              ${platformOptions}
+            </select>
+          </div>
+        </div>
+      `,
+      showCancelButton: true,
+      confirmButtonText: 'Save Expense',
+      showLoaderOnConfirm: true,
+      preConfirm: () => {
+        const amount = $('#expense-amount').val();
+        const desc = $('#expense-desc').val();
+        const method = $('#expense-method').val();
+        if (!amount || !desc) { Swal.showValidationMessage('Please fill all fields'); return false; }
+        return { amount, desc, method };
+      }
+    }).then((result) => {
+      if (result.isConfirmed) {
+        $.ajax({
+          url: '{{ route("bar.counter.expense") }}',
+          method: 'POST',
+          data: {
+            _token: '{{ csrf_token() }}',
+            amount: result.value.amount,
+            description: result.value.desc,
+            payment_method: result.value.method,
+            expense_date: date,
+            shift_id: shiftId
+          },
+          success: function(response) {
+            Swal.fire({
+              toast: true,
+              position: 'top-end',
+              icon: 'success',
+              title: 'Expense Saved Successfully!',
+              showConfirmButton: false,
+              timer: 1500,
+              timerProgressBar: true
+            }).then(() => {
+              location.reload();
+            });
+          },
+          error: function(xhr) {
+            Swal.fire({ icon: 'error', title: 'Oops...', text: xhr.responseJSON?.message || 'Error occurred' });
+          }
+        });
+      }
+    });
+  });
+
+  // View and Delete expenses
+  $(document).on('click', '.view-expenses-btn', function() {
+    const date = $(this).data('date');
+    const dayExpenses = expensesDetails[date] || [];
+    
+    let listHtml = `
+      <div class="table-responsive">
+        <table class="table table-sm table-striped text-left">
+          <thead>
+            <tr>
+              <th>Description</th>
+              <th>Platform</th>
+              <th>Amount</th>
+              <th>Action</th>
+            </tr>
+          </thead>
+          <tbody>
+    `;
+    
+    dayExpenses.forEach(exp => {
+      listHtml += `
+        <tr>
+          <td>${exp.description}</td>
+          <td><span class="badge badge-light">${exp.payment_method.toUpperCase()}</span></td>
+          <td><strong>TSh ${parseFloat(exp.amount).toLocaleString()}</strong></td>
+          <td>
+            <button class="btn btn-xs btn-danger delete-exp-btn" data-id="${exp.id}">
+              <i class="fa fa-trash"></i>
+            </button>
+          </td>
+        </tr>
+      `;
+    });
+    
+    listHtml += `</tbody></table></div>`;
+    
+    Swal.fire({
+      title: 'Daily Expenses Details',
+      html: listHtml,
+      showConfirmButton: false,
+      showCloseButton: true,
+      width: '500px'
+    });
+  });
+
+  // Handle delete expense
+  $(document).on('click', '.delete-exp-btn', function() {
+    const id = $(this).data('id');
+    const btn = $(this);
+    
+    Swal.fire({
+      title: 'Delete Expense?',
+      text: "This will restore the handover balance.",
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonColor: '#d33',
+      confirmButtonText: 'Yes, delete it!'
+    }).then((result) => {
+      if (result.isConfirmed) {
+        $.ajax({
+          url: '{{ url("bar/counter/expense") }}/' + id,
+          method: 'DELETE',
+          data: { _token: '{{ csrf_token() }}' },
+          success: function(response) {
+            Swal.fire({ icon: 'success', title: 'Deleted!', toast: true, position: 'top-end', timer: 1500, showConfirmButton: false });
+            location.reload();
+          },
+          error: function() {
+            Swal.fire('Error', 'Failed to delete expense', 'error');
+          }
+        });
+      }
+    });
+  });
+
   // Verify reconciliation button
   $(document).on('click', '.verify-btn', function() {
     const reconciliationId = $(this).data('reconciliation-id');
@@ -900,34 +1342,60 @@ jQuery(document).ready(function($) {
   $('.handover-input').first().trigger('input');
 
   
-  // Handover Form Confirmation
-  $('#handoverForm').on('submit', function(e) {
-    e.preventDefault();
-    const form = this;
+  // Handover Form Confirmation (Using AJAX for max reliability and debugging)
+  $(document).on('click', '#submitHandoverBtn', function() {
+    const btn = $(this);
+    const form = $('#handoverForm');
     
-    // Parse the total dynamically
+    // Parse the total dynamically from the UI
     const totalValue = parseFloat($('#handover-total').text().replace(/[^0-9.-]+/g, "")) || 0;
     
     if (totalValue <= 0) {
-      Swal.fire({
-        icon: 'error',
-        title: 'Empty Handover',
-        text: 'You cannot submit a handover with zero collections. Reconcile staff payments first!'
-      });
+      Swal.fire({ icon: 'error', title: 'Empty Handover', text: 'You cannot submit a handover with zero collections. Please fill the boxes above.' });
       return false;
     }
 
     Swal.fire({
       title: 'Final Confirmation',
-      text: "Are you ready? Please confirm you want to submit your final collection to the manager. You will not be able to edit these reconciliations once submitted.",
+      text: "Submit TSh " + totalValue.toLocaleString() + " collection to the manager?",
       icon: 'question',
       showCancelButton: true,
       confirmButtonColor: '#009688',
-      cancelButtonColor: '#6c757d',
       confirmButtonText: 'Yes, I am ready!'
     }).then((result) => {
       if (result.isConfirmed) {
-        form.submit();
+        btn.prop('disabled', true).html('<i class="fa fa-spinner fa-spin"></i> Processing Handover...');
+        
+        // Gather data manually to be safe
+        const formData = form.serialize();
+
+        $.ajax({
+          url: form.attr('action'),
+          method: 'POST',
+          data: formData,
+          success: function(response) {
+            Swal.fire({
+              icon: 'success',
+              title: 'Handover Successful',
+              text: 'The financial handover has been sent to the manager.',
+              timer: 3000
+            }).then(() => {
+              location.reload();
+            });
+          },
+          error: function(xhr) {
+            btn.prop('disabled', false).html('<i class="fa fa-paper-plane"></i> Submit Detailed Handover');
+            let errorMsg = 'An error occurred during submission.';
+            if (xhr.status === 422) {
+                const errors = xhr.responseJSON.errors;
+                errorMsg = Object.values(errors).flat().join('\n');
+            } else if (xhr.responseJSON && xhr.responseJSON.error) {
+                errorMsg = xhr.responseJSON.error;
+            }
+            Swal.fire({ icon: 'error', title: 'Submission Failed', text: errorMsg });
+            console.error('Handover Error:', xhr);
+          }
+        });
       }
     });
   });

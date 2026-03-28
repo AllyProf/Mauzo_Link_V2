@@ -58,7 +58,7 @@
 </head>
 <body>
     <div class="header">
-        <h1>MAUZOLINK</h1>
+        <h1>MIGLOP</h1>
         <p>Point of Sale System</p>
         <p>Invoice</p>
     </div>

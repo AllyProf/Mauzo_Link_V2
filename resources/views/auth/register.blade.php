@@ -3,10 +3,10 @@
 
 <head>
     <meta charset="utf-8">
-    <title>Register - MauzoLink</title>
+    <title>Register - MIGLOP</title>
     <meta content="width=device-width, initial-scale=1.0" name="viewport">
-    <meta content="Register for MauzoLink POS System" name="keywords">
-    <meta content="Create your MauzoLink account and start managing your business" name="description">
+    <meta content="Register for MIGLOP POS System" name="keywords">
+    <meta content="Create your MIGLOP account and start managing your business" name="description">
 
     <!-- Favicon -->
     <link href="{{ asset('img/landing/favicon.ico') }}" rel="icon">
@@ -94,7 +94,7 @@
                 <div class="d-inline-flex align-items-center" style="height: 45px;">
                     <small class="me-3 text-light"><i class="fa fa-map-marker-alt me-2"></i>123 Street, New York, USA</small>
                     <small class="me-3 text-light"><i class="fa fa-phone-alt me-2"></i>+012 345 6789</small>
-                    <small class="text-light"><i class="fa fa-envelope-open me-2"></i>info@mauzolink.com</small>
+                    <small class="text-light"><i class="fa fa-envelope-open me-2"></i>info@MIGLOP.com</small>
                 </div>
             </div>
             <div class="col-lg-4 text-center text-lg-end">
@@ -115,7 +115,7 @@
     <div class="container-fluid position-relative p-0">
         <nav class="navbar navbar-expand-lg navbar-dark px-5 py-3 py-lg-0">
             <a href="{{ route('home') }}" class="navbar-brand p-0">
-                <h1 class="m-0"><i class="fa fa-shopping-cart me-2"></i>MauzoLink</h1>
+                <h1 class="m-0"><i class="fa fa-shopping-cart me-2"></i>MIGLOP</h1>
             </a>
             <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarCollapse">
                 <span class="fa fa-bars"></span>
@@ -179,7 +179,7 @@
                 <div class="col-lg-10 mx-auto">
                     <div class="section-title position-relative pb-3 mb-5 text-center">
                         <h5 class="fw-bold text-primary text-uppercase">Sign Up</h5>
-                        <h1 class="mb-0">Create Your MauzoLink Account</h1>
+                        <h1 class="mb-0">Create Your MIGLOP Account</h1>
                         <p class="mt-3">Start your free trial today. No credit card required.</p>
                     </div>
 
@@ -397,9 +397,9 @@
                 <div class="col-lg-4 col-md-6 footer-about">
                     <div class="d-flex flex-column align-items-center justify-content-center text-center h-100 bg-primary p-4">
                         <a href="{{ route('home') }}" class="navbar-brand">
-                            <h1 class="m-0 text-white"><i class="fa fa-shopping-cart me-2"></i>MauzoLink</h1>
+                            <h1 class="m-0 text-white"><i class="fa fa-shopping-cart me-2"></i>MIGLOP</h1>
                         </a>
-                        <p class="mt-3 mb-4">MauzoLink is a comprehensive Point of Sale system designed for various business types. Manage your business efficiently with our modern POS solution.</p>
+                        <p class="mt-3 mb-4">MIGLOP is a comprehensive Point of Sale system designed for various business types. Manage your business efficiently with our modern POS solution.</p>
                         <form action="">
                             <div class="input-group">
                                 <input type="text" class="form-control border-white p-3" placeholder="Your Email">
@@ -473,7 +473,7 @@
             <div class="row justify-content-end">
                 <div class="col-lg-8 col-md-6">
                     <div class="d-flex flex-column align-items-center justify-content-center" style="min-height: 75px; padding: 10px 0;">
-                        <p class="mb-0">&copy; {{ date('Y') }} <a class="text-white border-bottom" href="{{ route('home') }}">MauzoLink</a>. All Rights Reserved. | Built by <a class="text-white border-bottom" href="https://www.emca.tech" target="_blank">EmCa Technologies</a></p>
+                        <p class="mb-0">&copy; {{ date('Y') }} <a class="text-white border-bottom" href="{{ route('home') }}">MIGLOP</a>. All Rights Reserved. | Built by <a class="text-white border-bottom" href="https://www.emca.tech" target="_blank">EmCa Technologies</a></p>
                         <p class="mb-0 mt-2" style="font-size: 0.75rem; opacity: 0.8;">
                             Reg. No: 181103264 | TIN: 181-103-264 | License: BL01408832024-2500004066
                         </p>

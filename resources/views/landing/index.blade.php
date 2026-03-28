@@ -32,6 +32,11 @@
     <link href="{{ asset('css/restaurant/style.css') }}" rel="stylesheet">
     
     <style>
+        /* Global Font Override - Protect Icons */
+        *:not(i):not([class*="fa-"]):not([class*="fa"]):not([class*="bi-"]) { 
+            font-family: 'Century Gothic', sans-serif !important; 
+        }
+        
         /* Fix hero header background image path */
         .hero-header {
             background: linear-gradient(rgba(15, 23, 43, .9), rgba(15, 23, 43, .9)), url({{ asset('img/restaurant/bg-hero.jpg') }}) !important;

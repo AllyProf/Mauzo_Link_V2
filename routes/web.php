@@ -236,6 +236,8 @@ Route::middleware('allow.staff')->group(function () {
         Route::get('counter/reconciliation/waiter-orders/{waiter}', [\App\Http\Controllers\Bar\CounterReconciliationController::class, 'getWaiterOrders'])->name('counter.reconciliation.waiter-orders');
         Route::post('counter/reconciliation/{reconciliation}/reset', [\App\Http\Controllers\Bar\CounterReconciliationController::class, 'resetReconciliation'])->name('counter.reset-reconciliation');
         Route::post('counter/handover', [\App\Http\Controllers\Bar\CounterReconciliationController::class, 'storeHandover'])->name('counter.handover');
+        Route::post('counter/expense', [\App\Http\Controllers\Bar\CounterReconciliationController::class, 'storeExpense'])->name('counter.expense');
+        Route::delete('counter/expense/{id}', [\App\Http\Controllers\Bar\CounterReconciliationController::class, 'destroyExpense'])->name('counter.expense.delete');
         Route::post('counter/reset-handover', [\App\Http\Controllers\Bar\CounterReconciliationController::class, 'resetHandover'])->name('counter.reset-handover');
 
         Route::post('counter/save-voice-clip', [\App\Http\Controllers\Bar\CounterController::class, 'saveVoiceClip'])->name('counter.save-voice-clip');
@@ -255,6 +257,7 @@ Route::middleware('allow.staff')->group(function () {
         Route::get('counter/shift/close', [\App\Http\Controllers\Bar\CounterController::class, 'closeShiftPage'])->name('counter.shift.close-page');
         Route::post('counter/shift/close', [\App\Http\Controllers\Bar\CounterController::class, 'closeShift'])->name('counter.shift.close');
         Route::get('counter/shift/print/{id}', [\App\Http\Controllers\Bar\CounterController::class, 'printShift'])->name('counter.shift.print');
+        Route::get('counter/stock/print-sheet', [\App\Http\Controllers\Bar\CounterController::class, 'printStockSheet'])->name('counter.stock.print-sheet');
         Route::get('counter/print-receipt/{order}', [\App\Http\Controllers\Bar\CounterController::class, 'printReceipt'])->name('counter.print-receipt');
         // Chef Routes
         Route::get('chef/dashboard', [\App\Http\Controllers\Bar\ChefController::class, 'dashboard'])->name('chef.dashboard');

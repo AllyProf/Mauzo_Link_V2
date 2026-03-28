@@ -211,7 +211,7 @@
         </div>
         <div class="col-6 text-right d-flex flex-column align-items-end text-right">
             <div style="border-top: 1px dashed #333; width: 220px; margin-bottom: 8px;"></div>
-            <p class="smallest font-weight-bold text-uppercase text-muted">Receiving Officer (MauzoLink)</p>
+            <p class="smallest font-weight-bold text-uppercase text-muted">Receiving Officer (MIGLOP)</p>
             <p class="smallest text-muted">Verification Stamp Required</p>
         </div>
     </div>

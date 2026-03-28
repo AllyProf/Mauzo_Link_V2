@@ -19,28 +19,37 @@
 <div class="row">
   <!-- Status Summary Cards -->
   <div class="col-md-3">
-    <div class="widget-small primary coloured-icon">
-      <i class="icon fa fa-clock-o fa-3x"></i>
-      <div class="info">
-        <h4>Pending</h4>
-        <p><b>{{ $pendingCount }}</b></p>
+    <div class="widget-small primary coloured-icon shadow-sm mb-3 bg-primary text-white">
+      <i class="icon fa fa-bell fa-2x"></i>
+      <div class="info text-white">
+        <h4 class="text-white">Active</h4>
+        <p class="text-white"><b>{{ $pendingCount }}</b></p>
       </div>
     </div>
   </div>
   <div class="col-md-3">
-    <div class="widget-small warning coloured-icon">
-      <i class="icon fa fa-truck fa-3x"></i>
+    <div class="widget-small warning coloured-icon shadow-sm mb-3">
+      <i class="icon fa fa-money fa-2x"></i>
       <div class="info">
-        <h4>Served</h4>
+        <h4>Wait Pay</h4>
         <p><b>{{ $servedCount }}</b></p>
       </div>
     </div>
   </div>
   <div class="col-md-3">
-    <div class="widget-small success coloured-icon">
-      <i class="icon fa fa-money fa-3x"></i>
+    <div class="widget-small info coloured-icon shadow-sm mb-3">
+      <i class="icon fa fa-check-circle fa-2x"></i>
       <div class="info">
-        <h4>Total Orders</h4>
+        <h4>Paid</h4>
+        <p><b>{{ $paidCount ?? 0 }}</b></p>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-3">
+    <div class="widget-small danger coloured-icon shadow-sm mb-3">
+      <i class="icon fa fa-list-ul fa-2x"></i>
+      <div class="info">
+        <h4>Total</h4>
         <p><b>{{ $orders->total() }}</b></p>
       </div>
     </div>

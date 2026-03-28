@@ -144,6 +144,15 @@
         animation: spin 1s linear infinite;
         margin-bottom: 15px;
     }
+    /* Simple Compact Widgets */
+    .widget-small { height: 90px !important; border-radius: 8px !important; margin-bottom: 20px; overflow: hidden; transition: transform 0.2s ease; box-shadow: 0 2px 4px rgba(0,0,0,0.05) !important; }
+    .widget-small:hover { transform: translateY(-3px); box-shadow: 0 4px 8px rgba(0,0,0,0.1) !important; }
+    .widget-small.coloured-icon { background-color: #fff !important; }
+    .widget-small.coloured-icon .info { color: #000 !important; }
+    .widget-small .icon { min-width: 70px !important; padding: 10px !important; font-size: 1.8rem !important; }
+    .widget-small .info h4 { font-size: 0.75rem !important; margin-bottom: 2px !important; text-transform: uppercase; font-weight: 700; letter-spacing: 0.5px; color: #666; }
+    .widget-small .info p { font-size: 16px !important; margin: 0 !important; font-weight: 700; }
+
     @keyframes spin {
         0% { transform: rotate(0deg); }
         100% { transform: rotate(360deg); }
@@ -228,9 +237,9 @@
                                     <i class="fa fa-list"></i>
                                 </button>
                             </div>
-                            <button type="button" class="btn btn-outline-secondary btn-sm mr-3 shadow-sm d-print-none" onclick="window.print();">
+                            <a href="{{ route('bar.counter.stock.print-sheet') }}?print=true" target="_blank" class="btn btn-outline-secondary btn-sm mr-3 shadow-sm d-print-none">
                                 <i class="fa fa-print"></i> Print Stock Sheet
-                            </button>
+                            </a>
                             <span class="badge badge-light border text-muted px-3 py-2" style="border-radius: 20px;">
                                 <i class="fa fa-info-circle"></i> Verification required to start shift
                             </span>
@@ -263,29 +272,29 @@
                         @csrf
                         <div class="tile-body">
                             <!-- 1. GRID VIEW (Current) -->
-                            <div id="verifyStockGrid" class="row" style="max-height: 450px; overflow-y: auto; padding-bottom: 20px;">
+                            <div id="verifyStockGrid" class="row mx-n2" style="max-height: 500px; overflow-y: auto; padding-bottom: 20px;">
                                 @forelse($variants as $variant)
-                                    <div class="col-md-3 mb-3 verify-item-wrapper" 
+                                    <div class="col-xl-2 col-lg-3 col-md-4 col-6 px-2 mb-3 verify-item-wrapper" 
                                          data-category="{{ Str::slug($variant['category']) }}"
                                          data-name="{{ strtolower($variant['product_name'] . ' ' . $variant['variant_name']) }}">
                                         
-                                        <div class="p-3 bg-light rounded border-left border-primary shadow-xs h-100 transition-all hover-grow" 
-                                             style="border-left-width: 4px !important; border-radius: 12px; background: #fbfbfb;">
-                                            <div class="d-flex justify-content-between align-items-start mb-2">
+                                        <div class="p-2 bg-white rounded border shadow-xs h-100 transition-all hover-grow" 
+                                             style="border-radius: 12px; border-top: 3px solid var(--brand) !important;">
+                                            <div class="d-flex justify-content-between align-items-start mb-1">
                                                 <div class="overflow-hidden">
-                                                    <h6 class="smallest font-weight-bold text-dark mb-0 text-truncate" title="{{ $variant['variant_name'] }}">{{ $variant['variant_name'] }}</h6>
-                                                    <span class="smallest text-muted text-uppercase" style="font-size: 9px;">Ref: {{ $variant['category'] }}</span>
+                                                    <h6 class="smallest font-weight-bold text-dark mb-0 text-truncate" style="font-size: 11px;" title="{{ $variant['variant_name'] }}">{{ $variant['variant_name'] }}</h6>
+                                                    <span class="smallest text-muted text-uppercase" style="font-size: 8px;">{{ $variant['category'] }}</span>
                                                 </div>
-                                                <span class="badge badge-secondary smallest">{{ $variant['measurement'] }}{{ $variant['unit'] }}</span>
+                                                <span class="badge badge-light border text-muted" style="font-size: 8px; border-radius: 4px;">{{ $variant['measurement'] }}{{ $variant['unit'] }}</span>
                                             </div>
 
-                                            <div class="bg-white border rounded p-2 text-center shadow-xs mt-2">
-                                                <div class="smallest text-muted text-uppercase mb-1">In Counter</div>
-                                                <h4 class="mb-0 font-weight-bold text-success">{{ $variant['formatted_quantity'] }}</h4>
+                                            <div class="bg-light rounded p-2 text-center mt-1" style="border: 1px dashed #ddd;">
+                                                <div class="smallest text-muted text-uppercase" style="font-size: 8px; letter-spacing: 0.5px;">Counter Stock</div>
+                                                <h5 class="mb-0 font-weight-bold text-success" style="font-size: 14px;">{{ $variant['formatted_quantity'] }}</h5>
                                                 
                                                 @if(isset($variant['can_sell_in_tots']) && $variant['can_sell_in_tots'] && $variant['quantity_in_tots'] > 0 && !str_contains($variant['formatted_quantity'], $variant['portion_unit_name']))
-                                                    <div class="smallest font-weight-bold text-info border-top mt-1 pt-1">
-                                                        {{ number_format($variant['quantity_in_tots']) }} {{ $variant['portion_unit_name'] }}{{ $variant['portion_unit_name'] === 'Glass' ? 'es' : 's' }}
+                                                    <div class="smallest font-weight-bold text-info border-top mt-1 pt-1" style="font-size: 9px;">
+                                                        {{ number_format($variant['quantity_in_tots']) }} {{ $variant['portion_unit_name'] }}s
                                                     </div>
                                                 @endif
                                             </div>
@@ -357,7 +366,13 @@
                 <div class="tile p-3 mb-4 bg-light border-left border-primary d-flex justify-content-between align-items-center shadow-sm">
                     <div>
                         <h5 class="mb-0 text-dark"><i class="fa fa-user-circle text-primary"></i> Working as: <span class="font-weight-bold">{{ $staff->full_name }}</span></h5>
-                        <small class="text-muted"><i class="fa fa-terminal"></i> Current Shift: <span class="text-info font-weight-bold">{{ $activeShift->shift_number }}</span> (Opened at {{ $activeShift->opened_at->format('H:i') }})</small>
+                        <small class="text-muted">
+                            <i class="fa fa-terminal"></i> Current Shift: <span class="text-info font-weight-bold">{{ $activeShift->shift_number }}</span> 
+                            (Opened at {{ $activeShift->opened_at->format('H:i') }}) &nbsp;|&nbsp; 
+                            <span id="shift-realtime-counter" data-opened-at="{{ $activeShift->opened_at->toISOString() }}" class="badge badge-success" style="font-size: 0.85em;">
+                                <i class="fa fa-clock-o"></i> <span id="shift-timer-text">00:00:00</span>
+                            </span>
+                        </small>
                     </div>
                     <div>
                         <a href="{{ route('bar.counter.reconciliation') }}" class="btn btn-outline-danger font-weight-bold shadow-sm">
@@ -375,43 +390,39 @@
           <i class="icon fa fa-shopping-bag fa-3x"></i>
           <div class="info">
             <h4>Shift Orders</h4>
-            <p><b>{{ number_format($shiftOrderCount ?? 0) }}</b></p>
+            <p>{{ number_format($shiftOrderCount ?? 0) }}</p>
           </div>
         </div>
       </div>
+      
       <div class="col-md-3">
-        <a href="{{ route('bar.counter.counter-stock') }}" style="text-decoration: none;">
-            <div class="widget-small info coloured-icon">
-              <i class="icon fa fa-money fa-3x"></i>
-              <div class="info">
-                <h4>Shift Revenue</h4>
-                <p><b>TSh {{ number_format($shiftRevenue ?? 0) }}</b></p>
-              </div>
-            </div>
-        </a>
+        <div class="widget-small success coloured-icon">
+          <i class="icon fa fa-money fa-3x"></i>
+          <div class="info">
+            <h4>Shift Revenue</h4>
+            <p>TSh {{ number_format($shiftRevenue ?? 0) }}</p>
+          </div>
+        </div>
       </div>
+
       <div class="col-md-3">
-        <a href="{{ route('bar.counter.counter-stock') }}" style="text-decoration: none;">
-            <div class="widget-small info coloured-icon" style="background-color: #17a2b8 !important;">
-              <i class="icon fa fa-cubes fa-3x"></i>
-              <div class="info">
-                <h4>Counter Inventory</h4>
-                <p><b>{{ $counterStockItems }}</b></p>
-              </div>
-            </div>
-        </a>
+        <div class="widget-small info coloured-icon">
+          <i class="icon fa fa-cubes fa-3x"></i>
+          <div class="info">
+            <h4>Inventory Items</h4>
+            <p>{{ $counterStockItems }}</p>
+          </div>
+        </div>
       </div>
+
       <div class="col-md-3">
-        <a href="{{ route('bar.counter.waiter-orders') }}" style="text-decoration: none;">
-            <div class="widget-small warning coloured-icon">
-              <i class="icon fa fa-bell fa-3x"></i>
-              <div class="info">
-                <h4>Pending Orders</h4>
-                <p><b>{{ $pendingOrders }}</b></p>
-                <small>Requires action</small>
-              </div>
-            </div>
-        </a>
+        <div class="widget-small danger coloured-icon">
+          <i class="icon fa fa-bell fa-3x"></i>
+          <div class="info">
+            <h4>Pending Orders</h4>
+            <p>{{ $pendingOrders }}</p>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -509,71 +520,56 @@
                                     @endif
                                 </td>
                                 <td>
-                                    <div class="">
-                                        {{-- View is always available --}}
-                                        <button class="btn btn-sm btn-secondary view-order-details mr-1 mb-1"
-                                            data-order-id="{{ $order->id }}" title="View Details">
-                                            <i class="fa fa-eye"></i>
-                                        </button>
+                                    <div class="d-flex align-items-center flex-wrap">
+                                        <!-- Primary Actions -->
+                                        <div class="btn-group btn-group-sm mr-2 shadow-sm mb-1">
+                                            <button class="btn btn-info view-order-details" 
+                                                data-order-id="{{ $order->id }}" title="View Details">
+                                                <i class="fa fa-eye"></i>
+                                            </button>
+
+                                            @if(($order->status === 'pending' || $order->status === 'served') && $order->payment_status !== 'paid')
+                                                <button class="btn btn-primary btn-add-items" 
+                                                    data-order-id="{{ $order->id }}" title="Add Items">
+                                                    <i class="fa fa-plus"></i>
+                                                </button>
+                                            @endif
+                                        </div>
 
                                         @if($order->status === 'pending' && $order->payment_status !== 'paid')
-                                            {{-- PENDING: Add, Print, Cancel --}}
-                                            <button class="btn btn-sm btn-primary btn-add-items mr-1 mb-1"
-                                                data-table-id="{{ $order->table_id }}"
-                                                data-order-id="{{ $order->id }}"
-                                                data-order-num="{{ $order->order_number }}"
-                                                title="Add More Items">
-                                                <i class="fa fa-plus"></i>
+                                            <!-- Print/Cancel Group -->
+                                            <div class="btn-group btn-group-sm shadow-sm mb-1">
+                                                <a href="{{ route('bar.counter.print-receipt', $order->id) }}" target="_blank" 
+                                                   class="btn btn-dark" title="Print">
+                                                    <i class="fa fa-print"></i>
+                                                </a>
+                                                <button class="btn btn-danger btn-cancel-order" 
+                                                    data-order-id="{{ $order->id }}" title="Cancel">
+                                                    <i class="fa fa-times"></i>
+                                                </button>
+                                            </div>
+                                        @endif
+                                        
+                                        @if($order->status === 'served' && $order->payment_status !== 'paid')
+                                            <button class="btn btn-sm btn-success btn-pay-order font-weight-bold px-3 mr-2 shadow-sm mb-1"
+                                                data-order-id="{{ $order->id }}" data-total="{{ $order->total_amount }}" title="PAY NOW">
+                                                <i class="fa fa-money"></i> <b>PAY</b>
                                             </button>
-                                            <a href="{{ route('bar.counter.print-receipt', $order->id) }}" target="_blank" class="btn btn-sm btn-dark mr-1 mb-1" title="Print Docket">
-                                                <i class="fa fa-print"></i>
-                                            </a>
-                                            <button class="btn btn-sm btn-danger btn-cancel-order mr-1 mb-1"
-                                                data-order-id="{{ $order->id }}"
-                                                data-order-number="{{ $order->order_number }}"
-                                                title="Cancel Order">
-                                                <i class="fa fa-times"></i>
-                                            </button>
-
-                                        @elseif($order->status === 'served' && $order->payment_status !== 'paid')
-                                            {{-- SERVED & UNPAID: Pay, Add, Print, Cancel --}}
-                                            <button class="btn btn-sm btn-primary btn-add-items mr-1 mb-1"
-                                                data-table-id="{{ $order->table_id }}"
-                                                data-order-id="{{ $order->id }}"
-                                                data-order-num="{{ $order->order_number }}"
-                                                title="Add More Items">
-                                                <i class="fa fa-plus"></i>
-                                            </button>
-                                            <button class="btn btn-sm btn-success btn-pay-order font-weight-bold mr-1 mb-1"
-                                                data-order-id="{{ $order->id }}"
-                                                data-total="{{ $order->total_amount }}"
-                                                title="Collect Payment">
-                                                <i class="fa fa-money"></i> PAY
-                                            </button>
-                                            <a href="{{ route('bar.counter.print-receipt', $order->id) }}" target="_blank" class="btn btn-sm btn-dark mr-1 mb-1" title="Print Docket">
-                                                <i class="fa fa-print"></i>
-                                            </a>
-                                            <button class="btn btn-sm btn-danger btn-cancel-order mr-1 mb-1"
-                                                data-order-id="{{ $order->id }}"
-                                                data-order-number="{{ $order->order_number }}"
-                                                title="Cancel Order">
-                                                <i class="fa fa-times"></i>
-                                            </button>
+                                            
+                                            <!-- Admin Group -->
+                                            <div class="btn-group btn-group-sm shadow-sm mb-1">
+                                                <a href="{{ route('bar.counter.print-receipt', $order->id) }}" target="_blank" class="btn btn-dark"><i class="fa fa-print"></i></a>
+                                                <button class="btn btn-danger btn-cancel-order" data-order-id="{{ $order->id }}"><i class="fa fa-times"></i></button>
+                                            </div>
 
                                         @elseif($order->payment_status === 'paid')
-                                            {{-- PAID: label + Print --}}
-                                            <button class="btn btn-sm btn-success mr-1 mb-1" disabled style="opacity: 1;">
+                                            <span class="badge badge-success px-2 py-1 mr-2 shadow-sm mb-1 text-uppercase" style="font-size: 0.65rem;">
                                                 <i class="fa fa-check-circle"></i> Paid
-                                            </button>
-                                            <a href="{{ route('bar.counter.print-receipt', $order->id) }}" target="_blank" class="btn btn-sm btn-dark mr-1 mb-1" title="Print Docket">
-                                                <i class="fa fa-print"></i>
-                                            </a>
+                                            </span>
+                                            <a href="{{ route('bar.counter.print-receipt', $order->id) }}" target="_blank" class="btn btn-sm btn-dark shadow-sm mb-1"><i class="fa fa-print"></i></a>
 
                                         @elseif($order->status === 'cancelled')
-                                            {{-- CANCELLED: label --}}
-                                            <button class="btn btn-sm btn-secondary" disabled style="opacity: 1;">
-                                                <i class="fa fa-ban"></i> Cancelled
-                                            </button>
+                                            <span class="badge badge-secondary ml-2 opacity-75 mb-1"><i class="fa fa-ban"></i> Cancelled</span>
                                         @endif
                                     </div>
                                 </td>
@@ -1920,6 +1916,32 @@ $(document).ready(function() {
         showRecentPage(1);
     } else {
         $('#recent-orders-pagination').hide();
+    }
+
+    // Shift Timer Logic
+    const timerEl = document.getElementById('shift-timer-text');
+    const shiftCounterEl = document.getElementById('shift-realtime-counter');
+    if(timerEl && shiftCounterEl) {
+        const openedAtStr = shiftCounterEl.getAttribute('data-opened-at');
+        if (openedAtStr) {
+            const openedAt = new Date(openedAtStr);
+            function updateTimer() {
+                const now = new Date();
+                const diffMs = now - openedAt;
+                if (diffMs > 0) {
+                    const hours = Math.floor(diffMs / 3600000);
+                    const minutes = Math.floor((diffMs % 3600000) / 60000);
+                    const seconds = Math.floor((diffMs % 60000) / 1000);
+                    
+                    timerEl.textContent = 
+                        String(hours).padStart(2, '0') + ':' + 
+                        String(minutes).padStart(2, '0') + ':' + 
+                        String(seconds).padStart(2, '0');
+                }
+            }
+            updateTimer();
+            setInterval(updateTimer, 1000);
+        }
     }
 });
 </script>

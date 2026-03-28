@@ -1,10 +1,10 @@
 <!DOCTYPE html>
 <html lang="en">
   <head>
-    <meta name="description" content="MauzoLink - Point of Sale System for Business">
+    <meta name="description" content="MIGLOP - Point of Sale System for Business">
     <script src="{{ asset('js/admin/jquery-3.2.1.min.js') }}?v=2.1"></script>
     <script>window.$ = window.jQuery;</script>
-    <title>@yield('title', 'Dashboard') - MauzoLink</title>
+    <title>@yield('title', 'Dashboard') - MIGLOP</title>
     <meta charset="utf-8">
     <meta http-equiv="X-UA-Compatible" content="IE=edge">
     <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -28,7 +28,11 @@
       :root {
         --primary: #940000;
         --secondary: #000000;
-        --font-family: "Century Gothic", sans-serif;
+        --font-family: "Century Gothic", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      }
+      /* Global Font - Target text but EXEMPT common icons and UI toggles */
+      html, body, div:not(.fa):not(.bi), p, h1, h2, h3, h4, h5, h6, a:not(.fa):not(.bi):not(.app-sidebar__toggle), span:not(.fa):not(.bi), input, select, textarea, button:not(.fa):not(.bi), td, th, label {
+        font-family: var(--font-family) !important;
       }
       body {
         font-family: var(--font-family);
@@ -119,7 +123,7 @@
     @endphp
     <!-- Navbar-->
     <header class="app-header">
-      <a class="app-header__logo" href="{{ $dashboardUrl }}">MauzoLink</a>
+      <a class="app-header__logo" href="{{ $dashboardUrl }}">MIGLOP</a>
       <!-- Sidebar toggle button-->
       <a class="app-sidebar__toggle" href="#" data-toggle="sidebar" aria-label="Hide Sidebar"></a>
       <!-- Navbar Right Menu-->
@@ -290,8 +294,8 @@
                 
                 // Format icon
                 $menuIcon = $menu->icon ?? 'fa-circle';
-                if (strpos($menuIcon, 'fa ') === false) {
-                  $menuIcon = 'fa ' . (strpos($menuIcon, 'fa-') === 0 ? $menuIcon : 'fa-' . $menuIcon);
+                if (!str_contains($menuIcon, 'fa ')) {
+                  $menuIcon = 'fa ' . (str_starts_with($menuIcon, 'fa-') ? $menuIcon : 'fa-' . $menuIcon);
                 }
                 
                 // Generate full URL
@@ -332,45 +336,94 @@
 
               {{-- Business Type Separator (Removed) --}}
               
-              @if($menu->children && $menu->children->count() > 0)
-                <li class="treeview {{ request()->routeIs($menu->route ?? '') || ($menu->children && $menu->children->contains(function($child) { return request()->routeIs($child->route ?? ''); })) ? 'is-expanded' : '' }}">
-                  <a class="app-menu__item" href="javascript:void(0);" data-toggle="treeview">
-                    <i class="app-menu__icon {{ $menuIcon }}"></i>
-                    <span class="app-menu__label">{{ $menu->name }}</span>
-                    @if(strtolower($menu->name ?? '') === 'stock transfers' && $pendingTransfersCount > 0)
-                      <span class="badge badge-danger" style="margin-left: 8px;">{{ $pendingTransfersCount }}</span>
-                    @endif
-                    <i class="treeview-indicator fa fa-angle-right"></i>
-                  </a>
-                  <ul class="treeview-menu">
-                    @foreach($menu->children as $child)
-                      @php
-                        $childIcon = $child->icon ?? 'fa-circle-o';
-                        if (strpos($childIcon, 'fa ') === false) {
-                          $childIcon = 'fa ' . (strpos($childIcon, 'fa-') === 0 ? $childIcon : 'fa-' . $childIcon);
-                        }
-                        $child->full_url = $child->route ? route($child->route) : '#';
-                      @endphp
-                      <li>
-                        <a class="treeview-item {{ request()->routeIs($child->route ?? '') ? 'active' : '' }}" href="{{ $child->full_url }}">
-                          <i class="icon {{ $childIcon }}"></i> {{ $child->name }}
-                          @if(strtolower($child->name ?? '') === 'all transfers' && $pendingTransfersCount > 0)
-                            <span class="badge badge-danger" style="margin-left: 8px;">{{ $pendingTransfersCount }}</span>
-                          @endif
-                        </a>
-                      </li>
-                    @endforeach
-                  </ul>
-                </li>
-              @else
-                <li>
-                  <a class="app-menu__item {{ request()->routeIs($menu->route ?? '') ? 'active' : '' }}" href="{{ $menu->full_url }}">
-                    <i class="app-menu__icon {{ $menuIcon }}"></i>
-                    <span class="app-menu__label">{{ $menu->name }}</span>
-                  </a>
-                </li>
-              @endif
-              <li style="border-bottom: 1px solid rgba(255, 255, 255, 0.1); margin: 2px 15px;"></li>
+                @php
+                  $mNameLower = strtolower($menu->name);
+                  
+                  // --- Counter Role Menu Filtering (Specific Restrictions) ---
+                  if ($staffRole && (strtolower($staffRole->name) === 'counter' || str_contains(strtolower($staffRole->name), 'counter'))) {
+                      // 1. Only hide "Financial Reconciliation" (Verify Reconciliations) as requested
+                      if (str_contains($mNameLower, 'financial reconciliation')) {
+                          continue; // Skip this menu
+                      }
+                      
+                      // 2. Filter Sales & Orders: Only keep if it contains "Tables"
+                      if (str_contains($mNameLower, 'sales') || str_contains($mNameLower, 'order')) {
+                          // Allow the "Counter Reconciliation" module to pass through
+                          if (!str_contains($mNameLower, 'counter reconciliation')) {
+                              $hasTablesChild = false;
+                              foreach($menu->children as $c) {
+                                  if (str_contains(strtolower($c->name), 'table')) {
+                                      $hasTablesChild = true;
+                                      break;
+                                  }
+                              }
+                              if (!$hasTablesChild) continue;
+                              
+                              // Rename to specifically reflect its restricted context
+                              $menu->name = 'Table Management';
+                              $menu->icon = 'fa-table';
+                          }
+                      }
+                      
+                      // 3. For any other menus (Customers, Stock, Settings), keep them unless explicitly blocked
+                  }
+                @endphp
+
+                @if($menu->children && $menu->children->count() > 0)
+                  <li class="treeview {{ request()->routeIs($menu->route ?? '') || ($menu->children && $menu->children->contains(function($child) { return request()->routeIs($child->route ?? ''); })) ? 'is-expanded' : '' }}">
+                    <a class="app-menu__item" href="javascript:void(0);" data-toggle="treeview">
+                      <i class="app-menu__icon {{ $menuIcon }}"></i>
+                      <span class="app-menu__label">{{ $menu->name }}</span>
+                      @if(strtolower($menu->name ?? '') === 'stock transfers' && $pendingTransfersCount > 0)
+                        <span class="badge badge-danger" style="margin-left: 8px;">{{ $pendingTransfersCount }}</span>
+                      @endif
+                      <i class="treeview-indicator fa fa-angle-right"></i>
+                    </a>
+                    <ul class="treeview-menu">
+                      @foreach($menu->children as $child)
+                        @php
+                          // Filter children for Counter
+                          if ($staffRole && str_contains(strtolower($staffRole->name), 'counter')) {
+                              $currMName = strtolower($menu->name);
+                              $currCName = strtolower($child->name);
+                              
+                              // Sales & Orders pruning (Allow Counter Recon and Tables)
+                              if ((str_contains($currMName, 'sales') || str_contains($currMName, 'order') || str_contains($currMName, 'table')) && !str_contains($currMName, 'counter reconciliation')) {
+                                  if (!str_contains($currCName, 'table')) continue;
+                              }
+                              
+                              // Operations & Settings: Skip "Reconciliation" (Manager audit) if it is separate from Counter Recon
+                              if (str_contains($currMName, 'operations') && str_contains($currCName, 'reconciliation')) {
+                                  continue;
+                              }
+                          }
+
+                          $childIcon = $child->icon ?? 'fa-circle-o';
+                          if (!str_contains($childIcon, 'fa ')) {
+                            $childIcon = 'fa ' . (str_starts_with($childIcon, 'fa-') ? $childIcon : 'fa-' . $childIcon);
+                          }
+                          $child->full_url = $child->route ? route($child->route) : '#';
+                        @endphp
+                        <li>
+                          <a class="treeview-item {{ request()->routeIs($child->route ?? '') ? 'active' : '' }}" href="{{ $child->full_url }}">
+                            <i class="icon {{ $childIcon }}"></i> {{ $child->name }}
+                            @if(strtolower($child->name ?? '') === 'all transfers' && $pendingTransfersCount > 0)
+                              <span class="badge badge-danger" style="margin-left: 8px;">{{ $pendingTransfersCount }}</span>
+                            @endif
+                          </a>
+                        </li>
+                      @endforeach
+                    </ul>
+                  </li>
+                @else
+                  <li>
+                    <a class="app-menu__item {{ request()->routeIs($menu->route ?? '') ? 'active' : '' }}" href="{{ $menu->full_url }}">
+                      <i class="app-menu__icon {{ $menuIcon }}"></i>
+                      <span class="app-menu__label">{{ $menu->name }}</span>
+                    </a>
+                  </li>
+                @endif
+                <li style="border-bottom: 1px solid rgba(255, 255, 255, 0.1); margin: 2px 15px;"></li>
             @endforeach
           @else
             {{-- Fallback: Show only Dashboard if no menus available --}}
@@ -432,6 +485,37 @@
                 $isCommonMenu = in_array($menu->slug, $commonMenuSlugs);
                 $isBusinessSpecific = isset($menu->business_type_id) && !$isCommonMenu;
                 $isPlaceholder = isset($menu->is_placeholder) && $menu->is_placeholder;
+
+                        // --- Counter Role Menu Filtering (Specific Restrictions) ---
+                        if (session('is_staff') && session('staff_role_id')) {
+                            $staffRoleRef = \App\Models\Role::find(session('staff_role_id'));
+                            if ($staffRoleRef && (strtolower($staffRoleRef->name) === 'counter' || str_contains(strtolower($staffRoleRef->name), 'counter'))) {
+                                $mNameLower = strtolower($menu->name);
+                                
+                                // 1. Only hide "Financial Reconciliation" as requested
+                                if (str_contains($mNameLower, 'financial reconciliation')) {
+                                    continue;
+                                }
+                                
+                                // 2. Filter Sales & Orders: Only keep if it contains "Tables"
+                                if (str_contains($mNameLower, 'sales') || str_contains($mNameLower, 'order')) {
+                                    if (!str_contains($mNameLower, 'counter reconciliation')) {
+                                        $hasTablesChild = false;
+                                        foreach($children as $c) {
+                                            if (str_contains(strtolower($c->name), 'table')) {
+                                                $hasTablesChild = true;
+                                                break;
+                                            }
+                                        }
+                                        if (!$hasTablesChild) continue;
+                                        
+                                        // Rename to specifically reflect its restricted context
+                                        $menu->name = 'Table Management';
+                                        $menu->icon = 'fa-table';
+                                    }
+                                }
+                            }
+                        }
                 
                 // Show General Header
                 $showGeneralHeader = false;
@@ -456,8 +540,8 @@
                 
                 // Format icon - add 'fa' prefix if not present
                 $menuIcon = $menu->icon ?? 'fa-circle';
-                if (strpos($menuIcon, 'fa ') === false) {
-                  $menuIcon = 'fa ' . (strpos($menuIcon, 'fa-') === 0 ? $menuIcon : 'fa-' . $menuIcon);
+                if (!str_contains($menuIcon, 'fa ')) {
+                  $menuIcon = 'fa ' . (str_starts_with($menuIcon, 'fa-') ? $menuIcon : 'fa-' . $menuIcon);
                 }
               @endphp
               
@@ -481,9 +565,28 @@
                   <ul class="treeview-menu">
                     @foreach($children as $child)
                       @php
+                        // Filter children for Counter
+                        if (session('is_staff') && session('staff_role_id')) {
+                            $staffRoleChild = \App\Models\Role::find(session('staff_role_id'));
+                            if ($staffRoleChild && str_contains(strtolower($staffRoleChild->name), 'counter')) {
+                                $currMName = strtolower($menu->name);
+                                $currCName = strtolower($child->name);
+                                
+                                // In Sales/Orders/Table Management, only keep Tables
+                                if ((str_contains($currMName, 'sales') || str_contains($currMName, 'order') || str_contains($currMName, 'table')) && !str_contains($currMName, 'counter reconciliation')) {
+                                    if (!str_contains($currCName, 'table')) continue;
+                                }
+
+                                // Operations: Keep Counter Settings, hide Reconciliation (Manager audit)
+                                if (str_contains($currMName, 'operations') && str_contains($currCName, 'reconciliation')) {
+                                    continue;
+                                }
+                            }
+                        }
+
                         $childIcon = $child->icon ?? 'fa-circle-o';
-                        if (strpos($childIcon, 'fa ') === false) {
-                          $childIcon = 'fa ' . (strpos($childIcon, 'fa-') === 0 ? $childIcon : 'fa-' . $childIcon);
+                        if (!str_contains($childIcon, 'fa ')) {
+                          $childIcon = 'fa ' . (str_starts_with($childIcon, 'fa-') ? $childIcon : 'fa-' . $childIcon);
                         }
                         // Generate full URL for child menu
                         $childFullUrl = $child->route ? route($child->route) : '#';
@@ -500,8 +603,8 @@
                             @foreach($child->children as $grandchild)
                               @php
                                 $grandchildIcon = $grandchild->icon ?? 'fa-circle-o';
-                                if (strpos($grandchildIcon, 'fa ') === false) {
-                                  $grandchildIcon = 'fa ' . (strpos($grandchildIcon, 'fa-') === 0 ? $grandchildIcon : 'fa-' . $grandchildIcon);
+                                if (!str_contains($grandchildIcon, 'fa ')) {
+                                  $grandchildIcon = 'fa ' . (str_starts_with($grandchildIcon, 'fa-') ? $grandchildIcon : 'fa-' . $grandchildIcon);
                                 }
                                 $grandchildFullUrl = $grandchild->route ? route($grandchild->route) : '#';
                               @endphp
@@ -557,34 +660,56 @@
         </li>
         @endif
         @if(Auth::check() && Auth::user()->isAdmin())
-        <li>
-          <a class="app-menu__item {{ request()->routeIs('admin.users.*') ? 'active' : '' }}" href="{{ route('admin.users.index') }}">
-            <i class="app-menu__icon fa fa-users"></i>
-            <span class="app-menu__label">Users</span>
-          </a>
+        <li class="treeview {{ request()->routeIs('admin.users.*') ? 'is-expanded' : '' }}">
+          <a class="app-menu__item" href="#" data-toggle="treeview"><i class="app-menu__icon fa fa-users"></i><span class="app-menu__label">User Management</span><i class="treeview-indicator fa fa-angle-right"></i></a>
+          <ul class="treeview-menu">
+            <li><a class="treeview-item {{ request()->routeIs('admin.users.index') ? 'active' : '' }}" href="{{ route('admin.users.index') }}"><i class="icon fa fa-circle-o"></i> All Users</a></li>
+            <li><a class="treeview-item" href="#"><i class="icon fa fa-circle-o"></i> Active Admins</a></li>
+            <li><a class="treeview-item" href="#"><i class="icon fa fa-circle-o"></i> User Audit Logs</a></li>
+          </ul>
         </li>
-        <li>
-          <a class="app-menu__item {{ request()->routeIs('admin.subscriptions.*') ? 'active' : '' }}" href="{{ route('admin.subscriptions.index') }}">
-            <i class="app-menu__icon fa fa-list"></i>
-            <span class="app-menu__label">Subscriptions</span>
-          </a>
+
+        <li class="treeview {{ request()->routeIs('admin.subscriptions.*') || request()->routeIs('admin.plans.*') ? 'is-expanded' : '' }}">
+          <a class="app-menu__item" href="#" data-toggle="treeview"><i class="app-menu__icon fa fa-credit-card"></i><span class="app-menu__label">Billing & Plans</span><i class="treeview-indicator fa fa-angle-right"></i></a>
+          <ul class="treeview-menu">
+            <li><a class="treeview-item {{ request()->routeIs('admin.subscriptions.index') ? 'active' : '' }}" href="{{ route('admin.subscriptions.index') }}"><i class="icon fa fa-circle-o"></i> Subscriptions</a></li>
+            <li><a class="treeview-item {{ request()->routeIs('admin.plans.index') ? 'active' : '' }}" href="{{ route('admin.plans.index') }}"><i class="icon fa fa-circle-o"></i> Pricing Plans</a></li>
+            <li><a class="treeview-item {{ request()->routeIs('admin.payments.index') ? 'active' : '' }}" href="{{ route('admin.payments.index') }}"><i class="icon fa fa-circle-o"></i> Payment Evidence</a></li>
+          </ul>
         </li>
+
         <li>
-          <a class="app-menu__item {{ request()->routeIs('admin.plans.*') ? 'active' : '' }}" href="{{ route('admin.plans.index') }}">
-            <i class="app-menu__icon fa fa-credit-card"></i>
-            <span class="app-menu__label">Plans</span>
-          </a>
-        </li>
-        <li>
-          <a class="app-menu__item {{ request()->routeIs('admin.payments.*') ? 'active' : '' }}" href="{{ route('admin.payments.index') }}">
-            <i class="app-menu__icon fa fa-money"></i>
-            <span class="app-menu__label">Payments</span>
-          </a>
-        </li>
-        <li>
-          <a class="app-menu__item {{ request()->routeIs('admin.analytics.*') ? 'active' : '' }}" href="{{ route('admin.analytics.index') }}">
+          <a class="app-menu__item {{ request()->routeIs('admin.analytics.index') ? 'active' : '' }}" href="{{ route('admin.analytics.index') }}">
             <i class="app-menu__icon fa fa-bar-chart"></i>
-            <span class="app-menu__label">Analytics</span>
+            <span class="app-menu__label">Global Analytics</span>
+          </a>
+        </li>
+
+        <li>
+          <a class="app-menu__item" href="#">
+            <i class="app-menu__icon fa fa-history"></i>
+            <span class="app-menu__label">System Audit Logs</span>
+          </a>
+        </li>
+
+        <li>
+          <a class="app-menu__item" href="#">
+            <i class="app-menu__icon fa fa-envelope"></i>
+            <span class="app-menu__label">SMS Management</span>
+          </a>
+        </li>
+
+        <li>
+          <a class="app-menu__item" href="#">
+            <i class="app-menu__icon fa fa-toggle-on"></i>
+            <span class="app-menu__label">Feature Management</span>
+          </a>
+        </li>
+
+        <li>
+          <a class="app-menu__item" href="{{ route('settings.index') }}">
+            <i class="app-menu__icon fa fa-gears"></i>
+            <span class="app-menu__label">Global Settings</span>
           </a>
         </li>
         @endif

@@ -10,12 +10,12 @@
   </div>
   <ul class="app-breadcrumb breadcrumb">
     <li class="breadcrumb-item"><i class="fa fa-home fa-lg"></i></li>
-    <li class="breadcrumb-item"><a href="{{ $user && $user->isAdmin() ? route('admin.dashboard.index') : route('dashboard') }}">Dashboard</a></li>
+    <li class="breadcrumb-item"><a href="{{ $user && $user->isAdmin ? route('admin.dashboard.index') : route('dashboard') }}">Dashboard</a></li>
     <li class="breadcrumb-item">Settings</li>
   </ul>
 </div>
 
-@if($user && $user->isAdmin())
+@if($user && $user->isAdmin)
 <!-- System Settings (Admin Only) -->
 <div class="row">
   <div class="col-md-12">
@@ -253,72 +253,67 @@
 </div>
 @endif
 
-@if(!$user || !$user->isAdmin())
-<!-- Business Configuration -->
+{{-- Profile Page for non-admin users: show only Profile Info + Password --}}
 <div class="row">
-  <div class="col-md-12">
-    <div class="tile">
-      <h3 class="tile-title"><i class="fa fa-cog"></i> Business Configuration</h3>
-      <div class="tile-body">
-        <p>Manage your business types, roles, and permissions.</p>
-        <a href="{{ route('business-configuration.edit') }}" class="btn btn-primary">
-          <i class="fa fa-edit"></i> Edit Business Configuration
-        </a>
-      </div>
-    </div>
-  </div>
-</div>
-@endif
 
-<!-- Profile Settings (All Users) -->
-<div class="row">
+  {{-- LEFT: Profile Information --}}
   <div class="col-md-6">
     <div class="tile">
-      <h3 class="tile-title">Profile Information</h3>
+      <h3 class="tile-title"><i class="fa fa-user-circle mr-2"></i>Profile Information</h3>
       <div class="tile-body">
-        <form method="POST" action="{{ route('settings.update-profile') }}">
+        <form method="POST" action="{{ route('settings.update-profile') }}" enctype="multipart/form-data">
           @csrf
-          
-          <div class="form-group">
-            <label for="name">Full Name <span class="text-danger">*</span></label>
-            <input type="text" 
-                   class="form-control @error('name') is-invalid @enderror" 
-                   id="name" 
-                   name="name" 
-                   value="{{ old('name', $user->name) }}" 
-                   required>
-            @error('name')
-              <div class="invalid-feedback">{{ $message }}</div>
-            @enderror
+
+          {{-- Avatar Preview + Upload --}}
+          <div class="form-group text-center mb-4">
+            @php
+              $avatarName = session('is_staff') ? session('staff_name') : ($user->name ?? 'User');
+              $avatarUrl  = $user->avatar ?? null;
+            @endphp
+            <div style="position:relative; display:inline-block;">
+              <img id="avatarPreview"
+                   src="{{ $avatarUrl ?? 'https://ui-avatars.com/api/?name=' . urlencode($avatarName) . '&background=940000&color=fff&size=120' }}"
+                   style="width:100px;height:100px;border-radius:50%;object-fit:cover;border:3px solid #940000;cursor:pointer;"
+                   onclick="document.getElementById('avatarInput').click()"
+                   title="Click to change photo">
+              <span style="position:absolute;bottom:0;right:0;background:#940000;color:#fff;border-radius:50%;width:28px;height:28px;display:flex;align-items:center;justify-content:center;cursor:pointer;"
+                    onclick="document.getElementById('avatarInput').click()">
+                <i class="fa fa-camera" style="font-size:12px;"></i>
+              </span>
+            </div>
+            <input type="file" id="avatarInput" name="avatar" accept="image/*" style="display:none;"
+                   onchange="previewAvatar(this)">
+            <div><small class="text-muted mt-1 d-block">Click photo to change</small></div>
           </div>
 
           <div class="form-group">
-            <label for="email">Email Address <span class="text-danger">*</span></label>
-            <input type="email" 
-                   class="form-control @error('email') is-invalid @enderror" 
-                   id="email" 
-                   name="email" 
-                   value="{{ old('email', $user->email) }}" 
-                   required>
-            @error('email')
-              <div class="invalid-feedback">{{ $message }}</div>
-            @enderror
+            <label for="name">Full Name <span class="text-muted text-sm">(Unchangeable)</span></label>
+            <input type="text" class="form-control"
+                   id="name" name="name" value="{{ $user->name }}" readonly style="background-color: #f8f9fa;">
+          </div>
+
+          <div class="form-group">
+            <label for="email">Email Address <span class="text-muted text-sm">(Unchangeable)</span></label>
+            <input type="email" class="form-control"
+                   id="email" name="email" value="{{ $user->email }}" readonly style="background-color: #f8f9fa;">
           </div>
 
           <div class="form-group">
             <label for="phone">Phone Number</label>
-            <input type="text" 
-                   class="form-control @error('phone') is-invalid @enderror" 
-                   id="phone" 
-                   name="phone" 
-                   value="{{ old('phone', $user->phone) }}">
-            @error('phone')
-              <div class="invalid-feedback">{{ $message }}</div>
-            @enderror
+            <div class="input-group">
+              <div class="input-group-prepend">
+                <span class="input-group-text">255</span>
+              </div>
+              <input type="text" class="form-control @error('phone') is-invalid @enderror"
+                     id="phone" name="phone" value="{{ old('phone', str_replace('255', '', $user->phone)) }}"
+                     placeholder="700 000 000">
+            </div>
+            <small class="form-text text-muted">Enter number without starting 0 or 255</small>
+            @error('phone')<div class="invalid-feedback">{{ $message }}</div>@enderror
           </div>
 
-          <div class="form-group">
-            <button type="submit" class="btn btn-primary">
+          <div class="form-group mt-3">
+            <button type="submit" class="btn btn-primary btn-block">
               <i class="fa fa-save"></i> Update Profile
             </button>
           </div>
@@ -327,49 +322,47 @@
     </div>
   </div>
 
+  {{-- RIGHT: Change Password --}}
   <div class="col-md-6">
     <div class="tile">
-      <h3 class="tile-title">Change Password</h3>
+      <h3 class="tile-title"><i class="fa fa-lock mr-2"></i>Change Password</h3>
       <div class="tile-body">
         <form method="POST" action="{{ route('settings.update-password') }}">
           @csrf
-          
-          <div class="form-group">
-            <label for="current_password">Current Password <span class="text-danger">*</span></label>
-            <input type="password" 
-                   class="form-control @error('current_password') is-invalid @enderror" 
-                   id="current_password" 
-                   name="current_password" 
-                   required>
-            @error('current_password')
-              <div class="invalid-feedback">{{ $message }}</div>
-            @enderror
-          </div>
 
           <div class="form-group">
             <label for="password">New Password <span class="text-danger">*</span></label>
-            <input type="password" 
-                   class="form-control @error('password') is-invalid @enderror" 
-                   id="password" 
-                   name="password" 
-                   required>
-            <small class="form-text text-muted">Minimum 8 characters</small>
-            @error('password')
-              <div class="invalid-feedback">{{ $message }}</div>
-            @enderror
+            <div class="input-group">
+              <input type="password" class="form-control @error('password') is-invalid @enderror"
+                     id="password" name="password" required onkeyup="checkPasswordStrength(this.value)">
+              <div class="input-group-append">
+                <button class="btn btn-outline-secondary toggle-password" type="button" data-target="password">
+                  <i class="fa fa-eye"></i>
+                </button>
+              </div>
+            </div>
+            <div class="progress mt-2" style="height: 5px;">
+              <div id="password-strength-bar" class="progress-bar" role="progressbar" style="width: 0%"></div>
+            </div>
+            <small id="password-strength-text" class="form-text text-muted">Minimum 8 characters</small>
+            @error('password')<div class="invalid-feedback">{{ $message }}</div>@enderror
           </div>
 
           <div class="form-group">
             <label for="password_confirmation">Confirm New Password <span class="text-danger">*</span></label>
-            <input type="password" 
-                   class="form-control" 
-                   id="password_confirmation" 
-                   name="password_confirmation" 
-                   required>
+            <div class="input-group">
+              <input type="password" class="form-control"
+                     id="password_confirmation" name="password_confirmation" required>
+              <div class="input-group-append">
+                <button class="btn btn-outline-secondary toggle-password" type="button" data-target="password_confirmation">
+                  <i class="fa fa-eye"></i>
+                </button>
+              </div>
+            </div>
           </div>
 
-          <div class="form-group">
-            <button type="submit" class="btn btn-primary">
+          <div class="form-group mt-3">
+            <button type="submit" class="btn btn-danger btn-block">
               <i class="fa fa-key"></i> Update Password
             </button>
           </div>
@@ -377,9 +370,75 @@
       </div>
     </div>
   </div>
+
 </div>
 
-@if($user && $user->isAdmin())
+<script>
+  function previewAvatar(input) {
+    if (input.files && input.files[0]) {
+      const reader = new FileReader();
+      reader.onload = function(e) {
+        document.getElementById('avatarPreview').src = e.target.result;
+      };
+      reader.readAsDataURL(input.files[0]);
+    }
+  }
+
+  // Password Toggle Logic
+  document.querySelectorAll('.toggle-password').forEach(button => {
+    button.addEventListener('click', function() {
+      const targetId = this.getAttribute('data-target');
+      const input = document.getElementById(targetId);
+      const icon = this.querySelector('i');
+      
+      if (input.type === 'password') {
+        input.type = 'text';
+        icon.classList.remove('fa-eye');
+        icon.classList.add('fa-eye-slash');
+      } else {
+        input.type = 'password';
+        icon.classList.remove('fa-eye-slash');
+        icon.classList.add('fa-eye');
+      }
+    });
+  });
+
+  // Password Strength Logic
+  function checkPasswordStrength(password) {
+    const bar = document.getElementById('password-strength-bar');
+    const text = document.getElementById('password-strength-text');
+    let strength = 0;
+
+    if (password.length >= 8) strength += 25;
+    if (password.match(/[A-Z]/)) strength += 25;
+    if (password.match(/[a-z]/)) strength += 25;
+    if (password.match(/[0-9]/)) strength += 25;
+    if (password.match(/[!@#$%^&*(),.?":{}|<>]/)) strength += 0; // Bonus? No, let's stick to 4 categories
+
+    bar.style.width = strength + '%';
+    
+    if (strength <= 25) {
+      bar.className = 'progress-bar bg-danger';
+      text.innerHTML = 'Weak (Needs letters, numbers, uppercase)';
+      text.className = 'form-text text-danger';
+    } else if (strength <= 50) {
+      bar.className = 'progress-bar bg-warning';
+      text.innerHTML = 'Moderate (Add uppercase or numbers)';
+      text.className = 'form-text text-warning';
+    } else if (strength <= 75) {
+      bar.className = 'progress-bar bg-info';
+      text.innerHTML = 'Strong';
+      text.className = 'form-text text-info';
+    } else {
+      bar.className = 'progress-bar bg-success';
+      text.innerHTML = 'Very Strong';
+      text.className = 'form-text text-success';
+    }
+  }
+</script>
+
+
+@if($user && $user->isAdmin)
 <div class="row">
   <div class="col-md-12">
     <div class="tile">
@@ -389,7 +448,7 @@
           <tr>
             <th width="30%">Role:</th>
             <td>
-              @if($user->isAdmin())
+              @if($user->isAdmin)
                 <span class="badge badge-danger">Super Admin</span>
               @else
                 <span class="badge badge-info">Customer</span>

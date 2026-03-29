@@ -35,7 +35,7 @@
      ROW 1 – KPI Cards                     ║
 ══════════════════════════════════════════--}}
 <div class="row">
-  <div class="col-md-3">
+  <div class="col-md-4">
     <div class="widget-small primary coloured-icon" style="min-height: 110px;"><i class="icon fa fa-money fa-3x"></i>
       <div class="info">
         <h4>Today Revenue</h4>
@@ -43,7 +43,7 @@
       </div>
     </div>
   </div>
-  <div class="col-md-3">
+  <div class="col-md-4">
     <div class="widget-small info coloured-icon" style="min-height: 110px;"><i class="icon fa fa-line-chart fa-3x"></i>
       <div class="info">
         <h4>Month {{ now()->format('M Y') }}</h4>
@@ -52,19 +52,11 @@
     </div>
   </div>
 
-  <div class="col-md-3">
+  <div class="col-md-4">
     <div class="widget-small danger coloured-icon" style="min-height: 110px;"><i class="icon fa fa-shopping-bag fa-3x"></i>
       <div class="info">
         <h4>Month Purchases</h4>
         <p><b>TSh {{ number_format($monthlyPurchaseCost) }}</b></p>
-      </div>
-    </div>
-  </div>
-  <div class="col-md-3">
-    <div class="widget-small success coloured-icon" style="min-height: 110px;"><i class="icon fa fa-trophy fa-3x"></i>
-      <div class="info">
-        <h4>Boss Profit (M)</h4>
-        <p><b>TSh {{ number_format($monthProfit) }}</b></p>
       </div>
     </div>
   </div>

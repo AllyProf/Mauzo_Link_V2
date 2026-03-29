@@ -16,19 +16,38 @@ class SettingsController extends Controller
      */
     public function index()
     {
-        $user = $this->getCurrentUser();
+        $businessUser = $this->getCurrentUser();
+        $person = $this->getLoggedInPerson();
         
-        if (!$user) {
+        if (!$businessUser || !$person) {
             return redirect()->route('login');
         }
         
         // Get system settings if admin
         $systemSettings = null;
-        if ($user->isAdmin()) {
+        if ($businessUser->isAdmin()) {
             $systemSettings = SystemSetting::getGrouped();
         }
 
+        // Standardize fields for view
+        $user = (object)[
+            'id' => $person->id,
+            'name' => $person->name ?? $person->full_name,
+            'email' => $person->email,
+            'phone' => $person->phone ?? $person->phone_number,
+            'avatar' => $person->avatar,
+            'isAdmin' => method_exists($businessUser, 'isAdmin') ? $businessUser->isAdmin() : false,
+        ];
+
         return view('settings.index', compact('user', 'systemSettings'));
+    }
+
+    protected function getLoggedInPerson()
+    {
+        if (session('is_staff')) {
+            return \App\Models\Staff::find(session('staff_id'));
+        }
+        return \Illuminate\Support\Facades\Auth::user();
     }
 
     /**
@@ -36,27 +55,44 @@ class SettingsController extends Controller
      */
     public function updateProfile(Request $request)
     {
-        $user = $this->getCurrentUser();
+        $person = $this->getLoggedInPerson();
         
-        if (!$user) {
+        if (!$person) {
             return redirect()->route('login');
         }
 
         $validator = Validator::make($request->all(), [
-            'name' => 'required|string|max:255',
-            'email' => 'required|string|email|max:255|unique:users,email,' . $user->id,
             'phone' => 'nullable|string|max:20',
+            'avatar' => 'nullable|image|mimes:jpeg,png,jpg,gif|max:2048',
         ]);
 
         if ($validator->fails()) {
             return redirect()->back()->withErrors($validator)->withInput();
         }
 
-        $user->update([
-            'name' => $request->name,
-            'email' => $request->email,
-            'phone' => $request->phone,
-        ]);
+        $data = [];
+
+        // Handle Phone prefixing
+        if ($request->has('phone') && !empty($request->phone)) {
+            $phoneSuffix = preg_replace('/^0|^\+255|^255/', '', $request->phone);
+            $fullPhone = '255' . $phoneSuffix;
+            
+            // Map to correct attribute name
+            if (isset($person->phone_number)) {
+                $data['phone_number'] = $fullPhone;
+            } else {
+                $data['phone'] = $fullPhone;
+            }
+        }
+
+        // Handle Avatar Upload
+        if ($request->hasFile('avatar')) {
+            $imageName = time() . '.' . $request->avatar->extension();
+            $request->avatar->move(public_path('uploads/avatars'), $imageName);
+            $data['avatar'] = asset('uploads/avatars/' . $imageName);
+        }
+
+        $person->update($data);
 
         return redirect()->back()->with('success', 'Profile updated successfully.');
     }
@@ -67,21 +103,16 @@ class SettingsController extends Controller
     public function updatePassword(Request $request)
     {
         $request->validate([
-            'current_password' => 'required',
             'password' => 'required|confirmed|min:8',
         ]);
 
-        $user = $this->getCurrentUser();
+        $person = $this->getLoggedInPerson();
         
-        if (!$user) {
+        if (!$person) {
             return redirect()->route('login');
         }
 
-        if (!Hash::check($request->current_password, $user->password)) {
-            return redirect()->back()->withErrors(['current_password' => 'Current password is incorrect.'])->withInput();
-        }
-
-        $user->update([
+        $person->update([
             'password' => Hash::make($request->password),
         ]);
 

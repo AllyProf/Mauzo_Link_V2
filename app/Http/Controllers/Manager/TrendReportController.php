@@ -157,4 +157,85 @@ class TrendReportController extends Controller
 
         return view('manager.reports.trends', compact('chartData', 'totals', 'circulationData', 'monthlyComparison', 'range'));
     }
+
+    /**
+     * Show Waiter Performance Trends
+     */
+    public function waiterTrends(Request $request)
+    {
+        $ownerId = $this->getOwnerId();
+        $range = $request->get('range', '7');
+        $endDate = Carbon::now();
+        
+        if ($range === '7') {
+            $startDate = Carbon::today()->subDays(6);
+        } elseif ($range === '30') {
+            $startDate = Carbon::today()->subDays(29);
+        } else {
+            $startDate = Carbon::today()->startOfMonth();
+        }
+
+        $startStr = $startDate->toDateTimeString();
+        $endStr = $endDate->toDateTimeString();
+
+        // 1. Get Sales Volume by Waiter (Filter by Role: Waiter)
+        $waiterSales = DB::table('orders')
+            ->join('staff', 'orders.waiter_id', '=', 'staff.id')
+            ->join('roles', 'staff.role_id', '=', 'roles.id')
+            ->where('orders.user_id', $ownerId)
+            ->where('orders.payment_status', 'paid')
+            ->where(function($q) {
+                $q->where('roles.slug', 'waiter')
+                  ->orWhere('roles.name', 'like', '%Waiter%');
+            })
+            ->whereBetween('orders.created_at', [$startStr, $endStr])
+            ->select('staff.full_name', DB::raw('SUM(total_amount) as total_sales'), DB::raw('COUNT(orders.id) as order_count'))
+            ->groupBy('staff.id', 'staff.full_name')
+            ->orderBy('total_sales', 'desc')
+            ->get();
+
+        // 2. Daily Trends for Top 5 Waiters
+        $topWaiters = $waiterSales->take(5)->pluck('full_name');
+        $dailyTrends = [];
+        
+        if ($topWaiters->count() > 0) {
+            $trends = DB::table('orders')
+                ->join('staff', 'orders.waiter_id', '=', 'staff.id')
+                ->join('roles', 'staff.role_id', '=', 'roles.id')
+                ->where('orders.user_id', $ownerId)
+                ->whereIn('staff.full_name', $topWaiters->all())
+                ->where('orders.payment_status', 'paid')
+                ->where(function($q) {
+                    $q->where('roles.slug', 'waiter')
+                      ->orWhere('roles.name', 'like', '%Waiter%');
+                })
+                ->whereBetween('orders.created_at', [$startStr, $endStr])
+                ->selectRaw('DATE(orders.created_at) as day_date, staff.full_name, SUM(total_amount) as amount')
+                ->groupByRaw('DATE(orders.created_at), staff.full_name')
+                ->get();
+
+            // Structure data for line chart
+            foreach ($topWaiters->all() as $name) {
+                $dailyTrends[(string) $name] = [];
+            }
+
+            for ($i = $startDate->diffInDays($endDate); $i >= 0; $i--) {
+                $day = (clone $endDate)->subDays($i)->format('Y-m-d');
+                $label = (clone $endDate)->subDays($i)->format('M d');
+                $dates[] = $label;
+
+                foreach ($topWaiters->all() as $name) {
+                    $val = $trends->where('full_name', $name)->where('day_date', $day)->first();
+                    $dailyTrends[(string) $name][] = $val ? (float)$val->amount : 0;
+                }
+            }
+        }
+
+        $chartData = [
+            'labels' => $dates ?? [],
+            'datasets' => $dailyTrends
+        ];
+
+        return view('manager.reports.waiter_trends', compact('waiterSales', 'chartData', 'range'));
+    }
 }

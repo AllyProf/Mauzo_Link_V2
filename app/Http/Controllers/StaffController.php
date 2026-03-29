@@ -624,13 +624,34 @@ class StaffController extends Controller
         $ownerId = $this->getOwnerId();
         $staff = Staff::where('user_id', $ownerId)->findOrFail($id);
         
-        // Generate new random password
+        // Generate new random password (8 digits/characters)
         $newPassword = \Illuminate\Support\Str::random(8);
         $staff->password = \Illuminate\Support\Facades\Hash::make($newPassword);
         $staff->save();
         
+        // Send SMS with new credentials
+        $this->sendPasswordResetSms($staff, $newPassword);
+        
         return redirect()->route('staff.index')
-            ->with('success', "Password for {$staff->full_name} has been reset to: <strong>{$newPassword}</strong>. Please share this with the staff member.");
+            ->with('success', "Password for {$staff->full_name} has been reset to: <strong>{$newPassword}</strong>. An SMS has been sent to {$staff->phone_number}.");
+    }
+
+    /**
+     * Send SMS for password reset
+     */
+    private function sendPasswordResetSms($staff, $newPassword)
+    {
+        $owner = $staff->owner;
+        $businessName = $owner->business_name ?? 'N/A';
+        
+        $message = "HABARI! Password yako ya MauzoLink imewekwa upya na admin wa " . $businessName . ".\n\n";
+        $message .= "TAARIFA MPYA:\n";
+        $message .= "Staff ID: " . $staff->staff_id . "\n";
+        $message .= "Password Mpya: " . $newPassword . "\n\n";
+        $message .= "Tafadhali tumia taarifa hizi kuaccess akaunti yako.\n";
+        $message .= "Asante!";
+        
+        $this->smsService->sendSms($staff->phone_number, $message);
     }
 
     /**

@@ -290,7 +290,7 @@ class MenuService
                   in_array($roleSlug, ['chef']);
         $isAccountant = in_array($roleName, ['accountant', 'finance officer']) || 
                         in_array($roleSlug, ['accountant', 'finance']);
-        $isManager = in_array($roleName, ['manager', 'general manager', 'administrator']) || in_array($roleSlug, ['manager', 'admin']);
+        $isManager = in_array($roleName, ['manager', 'general manager', 'administrator', 'super admin', 'super-admin']) || in_array($roleSlug, ['manager', 'admin', 'super-admin']);
 
         // Role-based route overrides for core functionality
         $overrides = [
@@ -329,7 +329,8 @@ class MenuService
             'manager' => [
                 'bar.manager.reconciliations',
                 'manager.targets.index',
-                'manager.reports.trends'
+                'manager.reports.trends',
+                'manager.reports.waiter-trends'
             ]
         ];
 

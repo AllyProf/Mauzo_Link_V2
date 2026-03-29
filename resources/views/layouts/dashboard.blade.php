@@ -128,10 +128,14 @@
       <a class="app-sidebar__toggle" href="#" data-toggle="sidebar" aria-label="Hide Sidebar"></a>
       <!-- Navbar Right Menu-->
       <ul class="app-nav">
+        {{-- Search Form --}}
         <li class="app-search">
-          <input class="app-search__input" type="search" placeholder="Search">
-          <button class="app-search__button"><i class="fa fa-search"></i></button>
+          <form method="GET" action="{{ route('bar.orders.index') }}" style="display:flex;">
+            <input class="app-search__input" type="search" name="search" placeholder="Search orders..." value="{{ request('search') }}">
+            <button class="app-search__button" type="submit"><i class="fa fa-search"></i></button>
+          </form>
         </li>
+
         @php
             $isOwner = Auth::check() && !session('is_staff');
             $isManager = false;
@@ -150,71 +154,102 @@
                     }
                 }
             }
+
+            // Live notification data
+            $notifPendingTransfers = 0;
+            $notifTodayOrders     = 0;
+            $notifOpenShifts      = 0;
+            if ($ownerId) {
+                $notifPendingTransfers = \Illuminate\Support\Facades\DB::table('stock_transfers')
+                    ->where('user_id', $ownerId)->where('status', 'pending')->count();
+                $notifTodayOrders = \Illuminate\Support\Facades\DB::table('orders')
+                    ->where('user_id', $ownerId)
+                    ->whereDate('created_at', now()->toDateString())
+                    ->where('payment_status', 'paid')->count();
+                $notifOpenShifts = \Illuminate\Support\Facades\DB::table('staff_shifts')
+                    ->where('user_id', $ownerId)->whereNull('closed_at')->count();
+            }
+            $totalNotifications = $notifPendingTransfers + ($notifOpenShifts > 0 ? 1 : 0);
         @endphp
 
-        {{-- Branch Context Switcher Removed --}}
-        <!--Notification Menu-->
+        {{-- Notification Menu --}}
         <li class="dropdown">
-          <a class="app-nav__item" href="#" data-toggle="dropdown" aria-label="Show notifications">
+          <a class="app-nav__item" href="#" data-toggle="dropdown" aria-label="Show notifications" style="position:relative;">
             <i class="fa fa-bell-o fa-lg"></i>
+            @if($totalNotifications > 0)
+              <span class="badge badge-danger" style="position:absolute;top:6px;right:4px;font-size:0.6rem;padding:2px 5px;">{{ $totalNotifications }}</span>
+            @endif
           </a>
           <ul class="app-notification dropdown-menu dropdown-menu-right">
-            <li class="app-notification__title">You have 4 new notifications.</li>
+            <li class="app-notification__title">
+              {{ $totalNotifications > 0 ? $totalNotifications . ' item(s) need your attention' : 'No new notifications' }}
+            </li>
             <div class="app-notification__content">
+
+              {{-- Today's paid orders --}}
               <li>
-                <a class="app-notification__item" href="javascript:;">
-                  <span class="app-notification__icon">
-                    <span class="fa-stack fa-lg">
-                      <i class="fa fa-circle fa-stack-2x text-primary"></i>
-                      <i class="fa fa-envelope fa-stack-1x fa-inverse"></i>
-                    </span>
-                  </span>
-                  <div>
-                    <p class="app-notification__message">New order received</p>
-                    <p class="app-notification__meta">2 min ago</p>
-                  </div>
-                </a>
-              </li>
-              <li>
-                <a class="app-notification__item" href="javascript:;">
-                  <span class="app-notification__icon">
-                    <span class="fa-stack fa-lg">
-                      <i class="fa fa-circle fa-stack-2x text-danger"></i>
-                      <i class="fa fa-hdd-o fa-stack-1x fa-inverse"></i>
-                    </span>
-                  </span>
-                  <div>
-                    <p class="app-notification__message">Low stock alert</p>
-                    <p class="app-notification__meta">5 min ago</p>
-                  </div>
-                </a>
-              </li>
-              <li>
-                <a class="app-notification__item" href="javascript:;">
+                <a class="app-notification__item" href="{{ route('bar.orders.index') }}">
                   <span class="app-notification__icon">
                     <span class="fa-stack fa-lg">
                       <i class="fa fa-circle fa-stack-2x text-success"></i>
-                      <i class="fa fa-money fa-stack-1x fa-inverse"></i>
+                      <i class="fa fa-shopping-cart fa-stack-1x fa-inverse"></i>
                     </span>
                   </span>
                   <div>
-                    <p class="app-notification__message">Transaction complete</p>
-                    <p class="app-notification__meta">2 days ago</p>
+                    <p class="app-notification__message">{{ $notifTodayOrders }} paid order(s) today</p>
+                    <p class="app-notification__meta">{{ now()->format('D, d M Y') }}</p>
                   </div>
                 </a>
               </li>
+
+              {{-- Pending Transfers --}}
+              @if($notifPendingTransfers > 0)
+              <li>
+                <a class="app-notification__item" href="{{ route('bar.stock-transfers.index') }}">
+                  <span class="app-notification__icon">
+                    <span class="fa-stack fa-lg">
+                      <i class="fa fa-circle fa-stack-2x text-warning"></i>
+                      <i class="fa fa-exchange fa-stack-1x fa-inverse"></i>
+                    </span>
+                  </span>
+                  <div>
+                    <p class="app-notification__message">{{ $notifPendingTransfers }} pending stock transfer(s)</p>
+                    <p class="app-notification__meta">Awaiting approval</p>
+                  </div>
+                </a>
+              </li>
+              @endif
+
+              {{-- Open Shifts --}}
+              @if($notifOpenShifts > 0)
+              <li>
+                <a class="app-notification__item" href="{{ route('dashboard') }}">
+                  <span class="app-notification__icon">
+                    <span class="fa-stack fa-lg">
+                      <i class="fa fa-circle fa-stack-2x text-danger"></i>
+                      <i class="fa fa-clock-o fa-stack-1x fa-inverse"></i>
+                    </span>
+                  </span>
+                  <div>
+                    <p class="app-notification__message">{{ $notifOpenShifts }} shift(s) still open</p>
+                    <p class="app-notification__meta">Remember to close at end of day</p>
+                  </div>
+                </a>
+              </li>
+              @endif
+
             </div>
-            <li class="app-notification__footer"><a href="#">See all notifications.</a></li>
+            <li class="app-notification__footer"><a href="{{ route('bar.orders.index') }}">View all orders &rarr;</a></li>
           </ul>
         </li>
-        <!-- User Menu-->
+
+        {{-- User Menu --}}
         <li class="dropdown">
           <a class="app-nav__item" href="#" data-toggle="dropdown" aria-label="Open Profile Menu">
             <i class="fa fa-user fa-lg"></i>
           </a>
           <ul class="dropdown-menu settings-menu dropdown-menu-right">
-            <li><a class="dropdown-item" href="{{ route('settings.index') }}"><i class="fa fa-cog fa-lg"></i> Settings</a></li>
-            <li><a class="dropdown-item" href="#"><i class="fa fa-user fa-lg"></i> Profile</a></li>
+            <li><a class="dropdown-item" href="{{ route('settings.index') }}"><i class="fa fa-user fa-lg"></i> Profile</a></li>
             <li>
               <form method="POST" action="{{ route('logout') }}">
                 @csrf
@@ -232,7 +267,11 @@
     <aside class="app-sidebar">
       <div class="app-sidebar__user">
         @if(session('is_staff'))
-          <img class="app-sidebar__user-avatar" src="https://ui-avatars.com/api/?name={{ urlencode(session('staff_name')) }}&background=940000&color=fff" alt="Staff Image">
+          @php
+            $currentStaff = \App\Models\Staff::find(session('staff_id'));
+            $sidebarAvatar = ($currentStaff && $currentStaff->avatar) ? $currentStaff->avatar : 'https://ui-avatars.com/api/?name=' . urlencode(session('staff_name')) . '&background=940000&color=fff';
+          @endphp
+          <img class="app-sidebar__user-avatar" src="{{ $sidebarAvatar }}" alt="Staff Image" style="width: 48px; height: 48px; object-fit: cover; border-radius: 50%;">
           <div>
             <p class="app-sidebar__user-name">{{ session('staff_name') }}</p>
             <p class="app-sidebar__user-designation">
@@ -243,7 +282,10 @@
             </p>
           </div>
         @elseif(Auth::check())
-          <img class="app-sidebar__user-avatar" src="https://ui-avatars.com/api/?name={{ urlencode(Auth::user()->name) }}&background=940000&color=fff" alt="User Image">
+          @php
+            $sidebarAvatar = Auth::user()->avatar ? Auth::user()->avatar : 'https://ui-avatars.com/api/?name=' . urlencode(Auth::user()->name) . '&background=940000&color=fff';
+          @endphp
+          <img class="app-sidebar__user-avatar" src="{{ $sidebarAvatar }}" alt="User Image" style="width: 48px; height: 48px; object-fit: cover; border-radius: 50%;">
           <div>
             <p class="app-sidebar__user-name">{{ Auth::user()->name }}</p>
             <p class="app-sidebar__user-designation">
@@ -339,6 +381,44 @@
                 @php
                   $mNameLower = strtolower($menu->name);
                   
+                  // --- Manager Role Menu Filtering ---
+                  if ($staffRole && (strtolower($staffRole->name) === 'manager' || str_contains(strtolower($staffRole->name), 'manager'))) {
+                      if (str_contains($mNameLower, 'sales') || str_contains($mNameLower, 'order')) {
+                          continue; // Remove Sales & Orders from Manager sidebar
+                      }
+                  }
+
+                   // --- Super Admin Role Menu Filtering ---
+                  if ($staffRole && (strtolower($staffRole->name) === 'super admin' || str_contains(strtolower($staffRole->name), 'super admin') || str_contains(strtolower($staffRole->name), 'super-admin'))) {
+                      // Remove Sales, Orders, Operations, Settings but keep Supplier
+                      if (str_contains($mNameLower, 'sales') || str_contains($mNameLower, 'order') || str_contains($mNameLower, 'operation') || str_contains($mNameLower, 'setting')) {
+                          // Allow access if parent is "Supplier" related
+                          if (str_contains($mNameLower, 'supplier')) {
+                              // keep
+                          } else {
+                              // Check if any child is "Supplier"
+                              $hasSupplierChild = false;
+                              if (isset($menu->children)) {
+                                  foreach($menu->children as $c) {
+                                      if (str_contains(strtolower($c->name), 'supplier')) {
+                                          $hasSupplierChild = true;
+                                          break;
+                                      }
+                                  }
+                              }
+                              if (!$hasSupplierChild) {
+                                  continue;
+                              }
+                              
+                              // Optional: Rename parent to specifically focus on the remaining allowed menu
+                              if (str_contains($mNameLower, 'operations')) {
+                                  $menu->name = 'Supplier Management';
+                                  $menu->icon = 'fa-truck';
+                              }
+                          }
+                      }
+                  }
+                  
                   // --- Counter Role Menu Filtering (Specific Restrictions) ---
                   if ($staffRole && (strtolower($staffRole->name) === 'counter' || str_contains(strtolower($staffRole->name), 'counter'))) {
                       // 1. Only hide "Financial Reconciliation" (Verify Reconciliations) as requested
@@ -398,6 +478,19 @@
                               }
                           }
 
+                          // Filter children for Super Admin
+                          if ($staffRole && (str_contains(strtolower($staffRole->name), 'super admin') || str_contains(strtolower($staffRole->name), 'super-admin'))) {
+                               $currMName = str_contains(strtolower($menu->name), 'supplier') ? 'operations' : strtolower($menu->name);
+                               $currCName = strtolower($child->name);
+                               
+                               // In the Supplier/Operations/Settings block, ONLY keep Suppliers
+                               if (str_contains($currMName, 'operations') || str_contains($currMName, 'settings') || str_contains($currMName, 'supplier management')) {
+                                   if (!str_contains($currCName, 'supplier')) {
+                                       continue;
+                                   }
+                               }
+                          }
+
                           $childIcon = $child->icon ?? 'fa-circle-o';
                           if (!str_contains($childIcon, 'fa ')) {
                             $childIcon = 'fa ' . (str_starts_with($childIcon, 'fa-') ? $childIcon : 'fa-' . $childIcon);
@@ -434,12 +527,42 @@
               </a>
             </li>
           @endif
+          
+          {{-- Always show System Monitor for Super Admin staff if they have menus or not --}}
+          @php
+            $staffRoleRef = \App\Models\Role::find(session('staff_role_id'));
+            $isSuperAdminStaff = $staffRoleRef && (strtolower($staffRoleRef->name) === 'super admin' || str_contains(strtolower($staffRoleRef->name), 'super admin') || str_contains(strtolower($staffRoleRef->name), 'super-admin'));
+          @endphp
+          @if($isSuperAdminStaff)
+            <li class="treeview {{ request()->is('system-monitor*') ? 'is-expanded' : '' }}">
+              <a class="app-menu__item" href="javascript:void(0);" data-toggle="treeview">
+                <i class="app-menu__icon fa fa-cogs"></i>
+                <span class="app-menu__label">System Monitor</span>
+                <i class="treeview-indicator fa fa-angle-right"></i>
+              </a>
+              <ul class="treeview-menu">
+                <li><a class="treeview-item {{ request()->routeIs('system.logs') ? 'active' : '' }}" href="{{ route('system.logs') }}"><i class="icon fa fa-terminal"></i> Logs</a></li>
+                <li><a class="treeview-item {{ request()->routeIs('system.sessions') ? 'active' : '' }}" href="{{ route('system.sessions') }}"><i class="icon fa fa-users"></i> Sessions</a></li>
+              </ul>
+            </li>
+          @endif
         @elseif(Auth::check() && Auth::user()->isAdmin())
         <li>
           <a class="app-menu__item {{ request()->routeIs('admin.dashboard.*') ? 'active' : '' }}" href="{{ route('admin.dashboard.index') }}">
             <i class="app-menu__icon fa fa-dashboard"></i>
             <span class="app-menu__label">Admin Dashboard</span>
           </a>
+        </li>
+        <li class="treeview {{ request()->is('system-monitor*') ? 'is-expanded' : '' }}">
+          <a class="app-menu__item" href="javascript:void(0);" data-toggle="treeview">
+            <i class="app-menu__icon fa fa-cogs"></i>
+            <span class="app-menu__label">System Monitor</span>
+            <i class="treeview-indicator fa fa-angle-right"></i>
+          </a>
+          <ul class="treeview-menu">
+            <li><a class="treeview-item {{ request()->routeIs('system.logs') ? 'active' : '' }}" href="{{ route('system.logs') }}"><i class="icon fa fa-terminal"></i> Logs</a></li>
+            <li><a class="treeview-item {{ request()->routeIs('system.sessions') ? 'active' : '' }}" href="{{ route('system.sessions') }}"><i class="icon fa fa-users"></i> Sessions</a></li>
+          </ul>
         </li>
         @elseif(Auth::check())
         {{-- Show only Dashboard menu during configuration --}}
@@ -489,6 +612,27 @@
                         // --- Counter Role Menu Filtering (Specific Restrictions) ---
                         if (session('is_staff') && session('staff_role_id')) {
                             $staffRoleRef = \App\Models\Role::find(session('staff_role_id'));
+                            
+                            // --- Manager Role Menu Filtering ---
+                            if ($staffRoleRef && (strtolower($staffRoleRef->name) === 'manager' || str_contains(strtolower($staffRoleRef->name), 'manager'))) {
+                                $mNameLower = strtolower($menu->name);
+                                if (str_contains($mNameLower, 'sales') || str_contains($mNameLower, 'order')) {
+                                    continue; // Remove Sales & Orders from Manager sidebar
+                                }
+                            }
+
+                            // --- Super Admin Role Menu Filtering ---
+                            if ($staffRoleRef && (strtolower($staffRoleRef->name) === 'super admin' || str_contains(strtolower($staffRoleRef->name), 'super admin') || str_contains(strtolower($staffRoleRef->name), 'super-admin'))) {
+                                $mNameLower = strtolower($menu->name);
+                                // Remove Sales, Orders, Operations, Settings but keep Supplier
+                                if (str_contains($mNameLower, 'sales') || str_contains($mNameLower, 'order') || str_contains($mNameLower, 'operation') || str_contains($mNameLower, 'setting')) {
+                                    if (!str_contains($mNameLower, 'supplier')) {
+                                      continue;
+                                    }
+                                }
+                            }
+
+                            // --- Counter Role Menu Filtering (Specific Restrictions) ---
                             if ($staffRoleRef && (strtolower($staffRoleRef->name) === 'counter' || str_contains(strtolower($staffRoleRef->name), 'counter'))) {
                                 $mNameLower = strtolower($menu->name);
                                 

@@ -387,6 +387,7 @@ Route::middleware('allow.staff')->group(function () {
 
         // Business Trends Report
         Route::get('reports/trends', [\App\Http\Controllers\Manager\TrendReportController::class, 'index'])->name('reports.trends');
+        Route::get('reports/waiter-trends', [\App\Http\Controllers\Manager\TrendReportController::class, 'waiterTrends'])->name('reports.waiter-trends');
     });
     
     // Marketing Routes (Require Payment & Configuration)
@@ -410,7 +411,7 @@ Route::middleware('allow.staff')->group(function () {
     });
     
     // Admin Routes (Admin Only)
-    Route::prefix('admin')->name('admin.')->middleware('admin')->group(function () {
+    Route::group(['prefix' => 'admin', 'as' => 'admin.', 'middleware' => 'admin'], function () {
         // Admin Dashboard
         Route::get('/dashboard', [\App\Http\Controllers\Admin\DashboardController::class, 'index'])->name('dashboard.index');
         
@@ -443,6 +444,14 @@ Route::middleware('allow.staff')->group(function () {
         
         // Analytics
         Route::get('/analytics', [\App\Http\Controllers\Admin\AnalyticsController::class, 'index'])->name('analytics.index');
+    });
+
+    // System Monitor (Super Admin & Global Admins)
+    Route::prefix('system-monitor')->name('system.')->group(function () {
+        Route::get('/logs', [\App\Http\Controllers\Admin\SystemMonitorController::class, 'logs'])->name('logs');
+        Route::get('/sessions', [\App\Http\Controllers\Admin\SystemMonitorController::class, 'sessions'])->name('sessions');
+        Route::post('/sessions/kill/{id}', [\App\Http\Controllers\Admin\SystemMonitorController::class, 'killSession'])->name('sessions.kill');
+        Route::post('/sessions/clear-guests', [\App\Http\Controllers\Admin\SystemMonitorController::class, 'clearGuestSessions'])->name('sessions.clear-guests');
     });
 
     // Purchase Requests Workflow

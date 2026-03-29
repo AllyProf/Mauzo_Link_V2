@@ -333,6 +333,7 @@
                             elseif (str_contains($provider, 'nbc') || str_contains($method, 'nbc')) $label = 'NBC BANK';
                             elseif (str_contains($provider, 'mpesa') || str_contains($provider, 'm-pesa')) $label = 'M-PESA';
                             elseif (str_contains($provider, 'mixx')) $label = 'MIXX BY YAS';
+                            elseif (str_contains($provider, 't-pesa') || str_contains($provider, 'tpesa') || str_contains($provider, 'ttcl')) $label = 'T-PESA';
                             elseif (str_contains($provider, 'airtel')) $label = 'AIRTEL MONEY';
                             elseif (str_contains($provider, 'tigo')) $label = 'TIGO PESA';
                             elseif (str_contains($provider, 'halo')) $label = 'HALOPESA';
@@ -392,9 +393,10 @@
                     
                     // Subtract from individual platform totals too
                     $labelFound = null;
-                    $normMethod = str_replace('_', ' ', $method);
+                    $normMethod = str_replace(['_', '-'], '', $method);
                     foreach($platformTotals as $l => $amt) {
-                        if (str_contains(strtolower($l), $normMethod)) {
+                        $normL = strtolower(str_replace([' ', '-', '_'], '', $l));
+                        if (str_contains($normL, $normMethod) || str_contains($normMethod, $normL)) {
                             $labelFound = $l;
                             break;
                         }
@@ -604,7 +606,7 @@
             $keyMap = [
                 'M-PESA' => 'mpesa_amount',
                 'MIXX BY YAS' => 'mixx_amount',
-                'T-PESA' => 'tigo_pesa_amount',
+                'T-PESA' => 'tpesa_amount',
                 'HALOPESA' => 'halopesa_amount',
                 'TIGO PESA' => 'tigo_pesa_amount',
                 'AIRTEL MONEY' => 'airtel_money_amount',
@@ -918,6 +920,7 @@ jQuery(document).ready(function($) {
                   else if (provider.includes('mixx')) displayLabel = 'MIXX BY YAS';
                   else if (provider.includes('halo')) displayLabel = 'HALOPESA';
                   else if (provider.includes('tigo')) displayLabel = 'TIGO PESA';
+                  else if (provider.includes('t-pesa') || provider.includes('tpesa') || provider.includes('ttcl')) displayLabel = 'T-PESA';
                   else if (provider.includes('airtel')) displayLabel = 'AIRTEL MONEY';
                   else if (provider.includes('nmb')) displayLabel = 'NMB BANK';
                   else if (provider.includes('crdb')) displayLabel = 'CRDB BANK';
@@ -944,6 +947,7 @@ jQuery(document).ready(function($) {
                 else if (providerName.includes('mixx')) displayProvider = 'MIXX BY YAS';
                 else if (providerName.includes('halo')) displayProvider = 'HALOPESA';
                 else if (providerName.includes('tigo')) displayProvider = 'TIGO PESA';
+                else if (providerName.includes('t-pesa') || providerName.includes('tpesa') || providerName.includes('ttcl')) displayProvider = 'T-PESA';
                 else if (providerName.includes('airtel')) displayProvider = 'AIRTEL MONEY';
                 else if (providerName.includes('nmb')) displayProvider = 'NMB BANK';
                 else if (providerName.includes('crdb')) displayProvider = 'CRDB BANK';
@@ -999,6 +1003,7 @@ jQuery(document).ready(function($) {
       'cash_amount': 'Petty Cash (Daily Drawer)',
       'mpesa_amount': 'M-PESA Phone',
       'tigo_pesa_amount': 'Tigo Pesa Phone',
+      'tpesa_amount': 'T-Pesa Phone',
       'airtel_money_amount': 'Airtel Money Phone',
       'halopesa_amount': 'Halopesa Phone',
       'mixx_amount': 'MIXX BY YAS',

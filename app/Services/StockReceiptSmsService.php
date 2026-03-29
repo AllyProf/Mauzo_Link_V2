@@ -38,7 +38,7 @@ class StockReceiptSmsService
 
         // Build simple message for admin / Manager
         $stockMessage = "STOCK RECEIVED!\n\n";
-        $stockMessage .= "{$product->name} ({$variant->measurement})\n";
+        $stockMessage .= "{$variant->display_name}\n";
         $stockMessage .= "Qty: {$stockReceipt->quantity_received} {$variant->packaging}\n";
         $stockMessage .= "Total: " . number_format($stockReceipt->total_units) . " Btls\n";
         $stockMessage .= "Supplier: {$supplier->company_name}\n";
@@ -46,7 +46,7 @@ class StockReceiptSmsService
 
         // Build simple message for counter
         $counterMessage = "NEW STOCK ADDED!\n\n";
-        $counterMessage .= "{$product->name} ({$variant->measurement})\n";
+        $counterMessage .= "{$variant->display_name}\n";
         $counterMessage .= "Added: {$stockReceipt->quantity_received} {$variant->packaging}\n";
         $counterMessage .= "Total: " . number_format($stockReceipt->total_units) . " Btls\n";
         $counterMessage .= "\nCheck your counter stock list for details.";

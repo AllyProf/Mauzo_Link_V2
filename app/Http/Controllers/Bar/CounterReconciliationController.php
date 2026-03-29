@@ -196,7 +196,7 @@ class CounterReconciliationController extends Controller
                     elseif (str_contains($provider, 'mixx')) { $label = 'MIXX BY YAS'; }
                     elseif (str_contains($provider, 'halo')) { $label = 'HALOPESA'; }
                     elseif (str_contains($provider, 'tigo')) { $label = 'TIGO PESA'; }
-                    elseif (str_contains($provider, 't-pesa') || str_contains($provider, 'tpesa')) { $label = 'T-PESA'; }
+                    elseif (str_contains($provider, 't-pesa') || str_contains($provider, 'tpesa') || str_contains($provider, 'ttcl')) { $label = 'T-PESA'; }
                     elseif (str_contains($provider, 'airtel')) { $label = 'AIRTEL MONEY'; }
                     elseif (str_contains($provider, 'visa')) { $label = 'VISA CARD'; }
                     elseif (str_contains($provider, 'mastercard') || str_contains($provider, 'master card')) { $label = 'MASTERCARD'; }
@@ -346,6 +346,7 @@ class CounterReconciliationController extends Controller
             'mixx_amount' => 0,
             'halopesa_amount' => 0,
             'tigo_pesa_amount' => 0,
+            'tpesa_amount' => 0,
             'airtel_money_amount' => 0,
             'nmb_amount' => 0,
             'crdb_amount' => 0,
@@ -385,7 +386,8 @@ class CounterReconciliationController extends Controller
                         $provider = strtolower(trim($payment->mobile_money_number ?? ''));
                         if (str_contains($provider, 'm-pesa') || str_contains($provider, 'mpesa')) $expectedBreakdowns['mpesa_amount'] += $amount;
                         elseif (str_contains($provider, 'mixx')) $expectedBreakdowns['mixx_amount'] += $amount;
-                        elseif (str_contains($provider, 't-pesa') || str_contains($provider, 'tpesa') || str_contains($provider, 'tigo')) $expectedBreakdowns['tigo_pesa_amount'] += $amount;
+                        elseif (str_contains($provider, 't-pesa') || str_contains($provider, 'tpesa') || str_contains($provider, 'ttcl')) $expectedBreakdowns['tpesa_amount'] += $amount;
+                        elseif (str_contains($provider, 'tigo')) $expectedBreakdowns['tigo_pesa_amount'] += $amount;
                         elseif (str_contains($provider, 'halo')) $expectedBreakdowns['halopesa_amount'] += $amount;
                         elseif (str_contains($provider, 'airtel')) $expectedBreakdowns['airtel_money_amount'] += $amount;
                         elseif (str_contains($provider, 'nbc')) $expectedBreakdowns['nbc_amount'] += $amount;
@@ -427,6 +429,7 @@ class CounterReconciliationController extends Controller
                 if (isset($expectedBreakdowns[$key])) $expectedBreakdowns[$key] -= $amount;
                 else {
                     if (str_contains($method, 'mpesa')) $expectedBreakdowns['mpesa_amount'] -= $amount;
+                    elseif (str_contains($method, 'tpesa') || str_contains($method, 't-pesa') || str_contains($method, 'ttcl')) $expectedBreakdowns['tpesa_amount'] -= $amount;
                     elseif (str_contains($method, 'tigo')) $expectedBreakdowns['tigo_pesa_amount'] -= $amount;
                     elseif (str_contains($method, 'airtel')) $expectedBreakdowns['airtel_money_amount'] -= $amount;
                     elseif (str_contains($method, 'halo')) $expectedBreakdowns['halopesa_amount'] -= $amount;
@@ -870,6 +873,7 @@ class CounterReconciliationController extends Controller
             'mastercard_amount' => 'nullable|numeric|min:0',
             'mixx_amount' => 'nullable|numeric|min:0',
             'tigo_pesa_amount' => 'nullable|numeric|min:0',
+            'tpesa_amount' => 'nullable|numeric|min:0',
             'airtel_money_amount' => 'nullable|numeric|min:0',
             'halopesa_amount' => 'nullable|numeric|min:0',
             'stanbic_amount' => 'nullable|numeric|min:0',
@@ -895,6 +899,7 @@ class CounterReconciliationController extends Controller
             'mastercard' => $request->input('mastercard_amount', 0),
             'mixx' => $request->input('mixx_amount', 0),
             'tigo_pesa' => $request->input('tigo_pesa_amount', 0),
+            'tpesa' => $request->input('tpesa_amount', 0),
             'airtel_money' => $request->input('airtel_money_amount', 0),
             'halopesa' => $request->input('halopesa_amount', 0),
             'stanbic' => $request->input('stanbic_amount', 0),

@@ -14,8 +14,10 @@ use App\Http\Controllers\InvoiceController;
 use App\Http\Controllers\PaymentController;
 use App\Http\Controllers\UpgradeController;
 
-// Landing Page
-Route::get('/', [HomeController::class, 'index'])->name('home');
+// Landing Page Redirect to Login
+Route::get('/', function() {
+    return redirect()->route('login');
+})->name('home');
 
 // Static Pages
 Route::get('/about', [AboutController::class, 'index'])->name('about');
@@ -45,6 +47,9 @@ Route::post('/logout', [LoginController::class, 'logout'])->name('logout');
 Route::get('/verify-otp', [OtpVerificationController::class, 'showVerificationForm'])->name('otp.verify');
 Route::post('/verify-otp', [OtpVerificationController::class, 'verify']);
 Route::post('/resend-otp', [OtpVerificationController::class, 'resend'])->name('otp.resend');
+Route::get('/support', function() {
+    return redirect()->away('https://www.emca.tech/contact');
+})->name('support');
 
 // Business Configuration Routes (Must be before require.configuration middleware)
 // Allow both regular users and staff to access (but staff should only view, not edit)

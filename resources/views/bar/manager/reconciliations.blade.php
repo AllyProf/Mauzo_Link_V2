@@ -63,7 +63,7 @@
           @php
               $summaryExpected = $financialReconciliations->sum('total_expected');
               $summaryCollected = $financialReconciliations->sum(function($fr) {
-                  return ($fr->total_submitted_bag ?? $fr->total_submitted) + ($fr->shortage_paid ?? 0);
+                  return ($fr->total_submitted_bag ?? $fr->total_submitted);
               });
               $summaryShortage = $summaryExpected - $summaryCollected;
           @endphp
@@ -143,7 +143,7 @@
                       $rowTotalPaid = 0;
                       if(preg_match('/\[ShortagePaidTotal:(\d+)\]/', $fr->notes ?? '', $m)) $rowTotalPaid = (int)$m[1];
                       
-                      $netDiff = $fr->total_expected - ($fr->total_submitted_bag + $rowTotalPaid);
+                      $netDiff = $fr->total_expected - ($fr->total_submitted_bag);
                       $hasActiveShortage = ($netDiff > 0);
 
                       $breakdown = [];
@@ -196,7 +196,7 @@
                             <div class="small text-danger" style="font-size: 11px;"><i class="fa fa-minus-circle"></i> TSh {{ number_format($fr->total_expenses) }} Exp</div>
                         @endif
                     </td>
-                    <td><strong class="text-mauzo">TSh {{ number_format($fr->total_submitted_bag + $rowTotalPaid) }}</strong></td>
+                    <td><strong class="text-mauzo">TSh {{ number_format($fr->total_submitted_bag) }}</strong></td>
                     <td>
                       @php 
                           $grossProfit = $fr->profit_amount ?? 0; 
@@ -211,7 +211,7 @@
                         TSh {{ number_format($circulationAmt) }}
                     </td>
                     <td>TSh {{ number_format(($fr->submitted_cash ?? 0) + ($breakdown['cash'] ?? 0)) }}</td>
-                    <td>TSh {{ number_format(($fr->total_submitted_bag + $rowTotalPaid) - (($fr->submitted_cash ?? 0) + ($breakdown['cash'] ?? 0))) }}</td>
+                    <td>TSh {{ number_format(($fr->total_submitted_bag) - (($fr->submitted_cash ?? 0) + ($breakdown['cash'] ?? 0))) }}</td>
                     <td>
                       @if($netDiff > 0)
                         <span class="text-danger font-weight-bold">Short: -{{ number_format($netDiff) }}</span>
@@ -261,6 +261,7 @@
                                   data-date="{{ \Carbon\Carbon::parse($fr->reconciliation_date)->format('Y-m-d') }}" 
                                   data-type="{{ $fr->reconciliation_type }}"
                                   data-shortage="{{ $netDiff }}"
+                                  data-shift="{{ $fr->staff_shift_id }}"
                                   data-handover-id="{{ $fr->handover_id }}"
                                   title="Pay Shortage Discovered">
                               <i class="fa fa-money"></i>
@@ -301,7 +302,7 @@
                                              @php 
                                                $origAmt = $fr->submitted_platform_breakdown[$channelKey] ?? 0;
                                                $adjAmt = $breakdown[$channelKey] ?? 0;
-                                               $amt = $origAmt + $adjAmt;
+                                               $amt = $origAmt; // No longer adding $adjAmt here to avoid double-counting
 
                                                // Use POST-expense breakdown: shows what staff is expected to hand over per platform
                                                $recVal = $fr->recorded_platform_breakdown[$channelKey] ?? 0;
@@ -336,20 +337,14 @@
                                              <tr><td colspan="4" class="text-muted text-center italic">No platform details found</td></tr>
                                          @endforelse
 
-                                         @if($rowTotalPaid > 0)
-                                           <tr style="background-color: #ebfaff;">
-                                             <td style="font-weight: 800;"><i class="fa fa-plus-circle text-info"></i> AUDIT ADJUSTMENTS</td>
-                                             <td colspan="2"><span class="badge badge-info shadow-sm">TSh {{ number_format($rowTotalPaid) }}</span></td>
-                                             <td><span class="text-info small font-weight-bold">Manually Balanced</span></td>
-                                           </tr>
-                                         @endif
+
 
                                          <tr class="bg-light" style="border-top: 2px solid #555;">
                                              <td style="font-weight: 900; color: #333;">GRAND TOTAL DECLARED REVENUE</td>
-                                             <td style="font-weight: 900;">TSh {{ number_format($totalSubVisible + ($totalSubVisible == 0 ? ($fr->total_submitted_bag + $rowTotalPaid) : 0)) }}</td>
+                                             <td style="font-weight: 900;">TSh {{ number_format($totalSubVisible > 0 ? $totalSubVisible : ($fr->total_submitted_bag)) }}</td>
                                              <td style="font-weight: 900; color: #777;">TSh {{ number_format($totalRecVisible > 0 ? $totalRecVisible : $fr->total_expected) }}</td>
                                              <td style="font-weight: 900;">
-                                                @php $finalVar = ($totalSubVisible + ($totalSubVisible == 0 ? ($fr->total_submitted_bag + $rowTotalPaid) : 0)) - ($totalRecVisible > 0 ? $totalRecVisible : $fr->total_expected); @endphp
+                                                @php $finalVar = ($totalSubVisible > 0 ? $totalSubVisible : ($fr->total_submitted_bag)) - ($totalRecVisible > 0 ? $totalRecVisible : $fr->total_expected); @endphp
                                                 @if($finalVar == 0)
                                                     <span class="text-success"><i class="fa fa-shield"></i> {{ $fr->status_indicator === 'verified' ? 'AUDIT COMPLIANT' : 'STAFF BALANCED' }}</span>
                                                 @else
@@ -868,6 +863,7 @@
         @csrf
         <input type="hidden" name="date" id="shortage_date">
         <input type="hidden" name="type" id="shortage_type">
+        <input type="hidden" name="shift_id" id="shortage_shift_id">
         <input type="hidden" name="handover_id" id="shortage_handover_id">
         <div class="modal-body">
             <div class="alert alert-info shadow-sm">
@@ -1103,6 +1099,7 @@ $(document).ready(function() {
       const shortage = parseFloat($(this).data('shortage'));
       $('#shortage_date').val($(this).data('date'));
       $('#shortage_type').val($(this).data('type'));
+      $('#shortage_shift_id').val($(this).data('shift') || '');
       $('#shortage_handover_id').val($(this).data('handover-id') || '');
       $('#shortage_amount_display').text(new Intl.NumberFormat().format(Math.abs(shortage)));
       $('#shortage_pay_amount').val(Math.abs(shortage));
@@ -1123,7 +1120,16 @@ $(document).ready(function() {
           data: form.serialize(),
           success: function(response) {
               if (response.success) {
-                  Swal.fire('Success', response.message, 'success').then(() => {
+                  Swal.fire({
+                      toast: true,
+                      position: 'top-end',
+                      icon: 'success',
+                      title: 'Success',
+                      text: response.message,
+                      showConfirmButton: false,
+                      timer: 3000,
+                      timerProgressBar: true
+                  }).then(() => {
                       location.reload();
                   });
               } else {

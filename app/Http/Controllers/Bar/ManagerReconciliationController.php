@@ -436,7 +436,7 @@ class ManagerReconciliationController extends Controller
             ->get();
         $handoverMap = $handovers->mapWithKeys(function($h) {
             if ($h->staff_shift_id) {
-                return ['shift_' . $h->staff_shift_id => $h];
+                return ['shift_' . $h->staff_shift_id . '_' . $h->department => $h];
             }
             $dateStr = $h->handover_date instanceof Carbon ? $h->handover_date->format('Y-m-d') : date('Y-m-d', strtotime($h->handover_date));
             return [$dateStr . '_' . $h->department => $h];
@@ -462,7 +462,7 @@ class ManagerReconciliationController extends Controller
             ->filter(function($r) use ($handoverMap) {
                 // Only show to accountant if handover exists
                 if ($r->staff_shift_id) {
-                    $key = 'shift_' . $r->staff_shift_id;
+                    $key = 'shift_' . $r->staff_shift_id . '_' . $r->reconciliation_type;
                 } else {
                     $dateStr = ($r->last_activity_date instanceof \Carbon\Carbon) ? $r->last_activity_date->format('Y-m-d') : date('Y-m-d', strtotime($r->last_activity_date));
                     $key = $dateStr . '_' . $r->reconciliation_type;
@@ -471,7 +471,7 @@ class ManagerReconciliationController extends Controller
             })
             ->map(function($r) use ($handoverMap, $ownerId) {
                 if ($r->staff_shift_id) {
-                    $key = 'shift_' . $r->staff_shift_id;
+                    $key = 'shift_' . $r->staff_shift_id . '_' . $r->reconciliation_type;
                 } else {
                     $dateStr = ($r->last_activity_date instanceof \Carbon\Carbon) ? $r->last_activity_date->format('Y-m-d') : date('Y-m-d', strtotime($r->last_activity_date));
                     $key = $dateStr . '_' . $r->reconciliation_type;
@@ -492,182 +492,39 @@ class ManagerReconciliationController extends Controller
                 }
 
                 $r->payment_breakdown = $h ? $h->payment_breakdown : [];
-                $r->handover_id = $h ? $h->id : null;
                 $r->handover_staff_name = ($h && $h->staff) ? $h->staff->full_name : null;
 
                 // AGGREGATE RECORDED PLATFORM BREAKDOWNS FROM ALL WAITERS
                 $dbDate = ($r->reconciliation_date instanceof \Illuminate\Support\Carbon) ? $r->reconciliation_date->toDateString() : date('Y-m-d', strtotime($r->reconciliation_date));
-                $dbTypeArr = ($r->reconciliation_type === 'food') ? ['food', 'kitchen'] : [$r->reconciliation_type];
                 
-                $underlyingRecsQuery = \App\Models\WaiterDailyReconciliation::whereIn('reconciliation_type', $dbTypeArr);
-                    
-                if ($r->staff_shift_id) {
-                    $underlyingRecsQuery->where('staff_shift_id', $r->staff_shift_id);
-                } else {
-                    $underlyingRecsQuery->where('reconciliation_date', $dbDate)
-                        ->whereNull('staff_shift_id');
-                }
-                
-                $underlyingRecs = $underlyingRecsQuery->get();
-                
-                // Canonical key normalizer — used for BOTH system and handover breakdowns
-                $normalizeKey = function(string $channel): string {
-                    $c = strtolower(trim(str_replace([' ', '-'], '_', $channel)));
-                    if (str_contains($c, 'mpesa') || str_contains($c, 'm_pesa')) return 'mpesa';
-                    if (str_contains($c, 'tigo')) return 'tigo_pesa';
-                    if (str_contains($c, 'airtel')) return 'airtel_money';
-                    if (str_contains($c, 'halo')) return 'halopesa';
-                    if (str_contains($c, 'mixx')) return 'mixx';
-                    if (str_contains($c, 'crdb')) return 'crdb';
-                    if (str_contains($c, 'nmb')) return 'nmb';
-                    if (str_contains($c, 'nbc')) return 'nbc';
-                    if (str_contains($c, 'kcb')) return 'kcb';
-                    if (str_contains($c, 'stanbic')) return 'stanbic';
-                    if (str_contains($c, 'equity')) return 'equity';
-                    if (str_contains($c, 'dtb') || str_contains($c, 'diamond')) return 'dtb';
-                    if (str_contains($c, 'exim')) return 'exim';
-                    if (str_contains($c, 'azania')) return 'azania';
-                    if (str_contains($c, 'visa')) return 'visa';
-                    if (str_contains($c, 'mastercard')) return 'mastercard';
-                    if (str_contains($c, 'cash')) return 'cash';
-                    if (str_contains($c, 'bank') || str_contains($c, 'transfer')) return 'bank_transfer';
-                    return $c;
-                };
-
-                $recordedPlatformBreakdown = [];
+                $recordedPlatformBreakdown = $this->getSystemExpectedBreakdown($ownerId, $dbDate, $r->reconciliation_type, $r->staff_shift_id);
                 $submittedPlatformBreakdown = [];
-
-                // ✅ Build System (Expected) breakdown from REAL order payments — the only reliable source
-                $ordersQuery = \App\Models\BarOrder::where('payment_status', 'paid')
-                    ->with('orderPayments');
-
-                if ($r->staff_shift_id) {
-                    $ordersQuery->where('shift_id', $r->staff_shift_id);
-                } else {
-                    $ordersQuery->where('user_id', $ownerId)
-                        ->whereDate('created_at', $dbDate);
-                }
-
-                $shiftOrders = $ordersQuery->get();
-
-                foreach ($shiftOrders as $order) {
-                    foreach ($order->orderPayments as $payment) {
-                        $provider = strtolower(trim($payment->mobile_money_number ?? ''));
-                        $method   = strtolower(trim($payment->payment_method ?? 'cash'));
-
-                        // Identify platform key from provider string or method
-                        if ($method === 'cash') {
-                            $key = 'cash';
-                        } elseif (str_contains($provider, 'nbc') || str_contains($method, 'nbc')) {
-                            $key = 'nbc';
-                        } elseif (str_contains($provider, 'nmb') || str_contains($method, 'nmb')) {
-                            $key = 'nmb';
-                        } elseif (str_contains($provider, 'crdb') || str_contains($method, 'crdb')) {
-                            $key = 'crdb';
-                        } elseif (str_contains($provider, 'kcb') || str_contains($method, 'kcb')) {
-                            $key = 'kcb';
-                        } elseif (str_contains($provider, 'azania') || str_contains($method, 'azania')) {
-                            $key = 'azania';
-                        } elseif (str_contains($provider, 'equity') || str_contains($method, 'equity')) {
-                            $key = 'equity';
-                        } elseif (str_contains($provider, 'absa') || str_contains($method, 'absa')) {
-                            $key = 'absa';
-                        } elseif (str_contains($provider, 'dtb') || str_contains($method, 'dtb')) {
-                            $key = 'dtb';
-                        } elseif (str_contains($provider, 'exim') || str_contains($method, 'exim')) {
-                            $key = 'exim';
-                        } elseif (str_contains($provider, 'stanbic') || str_contains($method, 'stanbic')) {
-                            $key = 'stanbic';
-                        } elseif (str_contains($provider, 'mixx') || str_contains($method, 'mixx')) {
-                            $key = 'mixx';
-                        } elseif (str_contains($provider, 'halo') || str_contains($method, 'halo')) {
-                            $key = 'halopesa';
-                        } elseif (str_contains($provider, 'mpesa') || str_contains($method, 'mpesa')) {
-                            $key = 'mpesa';
-                        } elseif (str_contains($provider, 'tigo') || str_contains($method, 'tigo')) {
-                            $key = 'tigo_pesa';
-                        } elseif (str_contains($provider, 'airtel') || str_contains($method, 'airtel')) {
-                            $key = 'airtel_money';
-                        } elseif (str_contains($provider, 'visa') || str_contains($method, 'visa')) {
-                            $key = 'visa';
-                        } elseif (str_contains($provider, 'mastercard') || str_contains($method, 'mastercard')) {
-                            $key = 'mastercard';
-                        } else {
-                            $key = $normalizeKey($method);
-                        }
-
-                        $recordedPlatformBreakdown[$key] = ($recordedPlatformBreakdown[$key] ?? 0) + (float)$payment->amount;
-                    }
-                }
                 
                 // Deduct Counter Expenses from Expected Sales to accurately reflect the balance
                 if ($r->reconciliation_type === 'bar') {
                     $expensesQuery = \App\Models\CounterExpense::query();
-                    if ($r->staff_shift_id) {
-                        $expensesQuery->where('staff_shift_id', $r->staff_shift_id);
-                    } else {
-                        $expensesQuery->where('expense_date', $dbDate);
-                    }
-                    $totalExpenses = 0;
+                    if ($r->staff_shift_id) $expensesQuery->where('staff_shift_id', $r->staff_shift_id);
+                    else $expensesQuery->where('expense_date', $dbDate);
+                    $totalExpenses = $expensesQuery->sum('amount');
                     
-                    // ✅ Snapshot CLEAN raw sales before mutating for display in audit table
-                    $cleanSystemBreakdown = $recordedPlatformBreakdown;
-                    
-                    foreach ($expensesQuery->get() as $exp) {
-                        $totalExpenses += $exp->amount;
-                        $method = $normalizeKey($exp->payment_method ?: 'cash');
-                        
-                        $labelFound = null;
-                        if (isset($recordedPlatformBreakdown[$method])) {
-                            $labelFound = $method;
-                        } else {
-                            foreach ($recordedPlatformBreakdown as $channel => $amt) {
-                                if (str_contains(str_replace('_', ' ', $channel), str_replace('_', ' ', $method))) {
-                                    $labelFound = $channel;
-                                    break;
-                                }
-                            }
-                        }
-                        
-                        if ($labelFound) {
-                            $recordedPlatformBreakdown[$labelFound] -= $exp->amount;
-                            
-                            // CASCADE NEGATIVE: Take from cash if a specific digital channel goes negative
-                            if ($labelFound !== 'cash' && $recordedPlatformBreakdown[$labelFound] < 0) {
-                                $deficit = abs($recordedPlatformBreakdown[$labelFound]);
-                                $recordedPlatformBreakdown['cash'] = ($recordedPlatformBreakdown['cash'] ?? 0) - $deficit;
-                                $recordedPlatformBreakdown[$labelFound] = 0;
-                            }
-                        } else {
-                            // Default subtraction if no channel match
-                            if ($method === 'cash') {
-                                $recordedPlatformBreakdown['cash'] = ($recordedPlatformBreakdown['cash'] ?? 0) - $exp->amount;
-                            } else {
-                                $recordedPlatformBreakdown[$method] = ($recordedPlatformBreakdown[$method] ?? 0) - $exp->amount;
-                            }
-                        }
-                    }
                     $r->total_expected -= $totalExpenses;
                     $r->total_expenses = $totalExpenses;
-                    
-                    // Store the clean (pre-expense) breakdown for display in System (Expected) column
-                    $r->system_platform_breakdown = $cleanSystemBreakdown;
-                } else {
-                    $r->system_platform_breakdown = $recordedPlatformBreakdown;
                 }
+                
+                $r->system_platform_breakdown = $recordedPlatformBreakdown;
+                $r->recorded_platform_breakdown = $recordedPlatformBreakdown;
 
                 // CRITICAL: TRUTH comes from Handover ($h) for submitted platforms
                 if ($h && is_array($h->payment_breakdown)) {
                     $submittedPlatformBreakdown = [];
                     foreach ($h->payment_breakdown as $channel => $amt) {
-                        $key = $normalizeKey($channel);
+                        $key = $this->normalizePaymentChannel($channel);
                         $submittedPlatformBreakdown[$key] = ($submittedPlatformBreakdown[$key] ?? 0) + (float)$amt;
                     }
                     $r->submitted_platform_breakdown = $submittedPlatformBreakdown;
                 } else {
                     $r->submitted_platform_breakdown = $submittedPlatformBreakdown;
                 }
-                $r->recorded_platform_breakdown = $recordedPlatformBreakdown;
 
                 // Track shortage payments for summary and JS
                 $paid = 0;
@@ -681,6 +538,7 @@ class ManagerReconciliationController extends Controller
                 $r->shortage_breakdown = $breakdown;
 
                 if ($h) {
+                    $r->handover_id = $h->id;
                     $r->handover_amount = $h->amount;
                     $r->submitted_cash = 0;
                     $r->submitted_mobile = 0;
@@ -688,11 +546,11 @@ class ManagerReconciliationController extends Controller
                     $r->submitted_card = 0;
                     
                     foreach ($h->payment_breakdown as $channel => $amt) {
-                        $nk = $normalizeKey($channel);
+                        $nk = $this->normalizePaymentChannel($channel);
                         $amt = (float)$amt;
                         if ($nk === 'cash') {
                             $r->submitted_cash += $amt;
-                        } elseif (in_array($nk, ['mpesa', 'tigo_pesa', 'airtel_money', 'halopesa', 'mixx'])) {
+                        } elseif (in_array($nk, ['mpesa', 'tigo_pesa', 'tpesa', 'airtel_money', 'halopesa', 'mixx'])) {
                             $r->submitted_mobile += $amt;
                         } elseif (in_array($nk, ['crdb', 'nmb', 'nbc', 'kcb', 'stanbic', 'equity', 'dtb', 'exim', 'azania', 'bank_transfer'])) {
                             $r->submitted_bank += $amt;
@@ -1150,8 +1008,8 @@ class ManagerReconciliationController extends Controller
             // but also preserve the full breakdown in notes.
             $waiterCashActual = ($validated['platform_amounts']['cash'] ?? 0) * $proportion;
             
-            $mobileKeys = ['mpesa', 'tigo_pesa', 'airtel_money', 'halopesa', 'mixx'];
-            $bankKeys = ['nmb', 'crdb', 'nbc', 'kcb', 'equity', 'dtb', 'exim', 'azania', 'stanbic', 'bank_transfer', 'bank'];
+            $mobileKeys = ['mpesa', 'tigo_pesa', 'tpesa', 'airtel_money', 'halopesa', 'mixx'];
+            $bankKeys = ['nmb', 'crdb', 'nbc', 'kcb', 'equity', 'dtb', 'exim', 'azania', 'stanbic', 'bank_transfer', 'bank', 'absa'];
             $cardKeys = ['visa', 'mastercard', 'bank_card'];
 
             $sumMobile = 0; foreach($mobileKeys as $mk) if(isset($validated['platform_amounts'][$mk])) $sumMobile += $validated['platform_amounts'][$mk];
@@ -1182,8 +1040,8 @@ class ManagerReconciliationController extends Controller
                     'difference' => $waiterSubmittedActual - $expected,
                     'status' => 'verified',
                     'verified_at' => now(),
-                    'verified_by' => session('staff_id') ?? auth()->id(),
-                    'notes' => $validated['notes'] . " (Bulk reconciled by Manager/Accountant)"
+                    'verified_by' => auth()->id(), // Use ONLY User ID to prevent constraint crashes
+                    'notes' => ($validated['notes'] ?? '') . " (Bulk reconciled by Manager)"
                 ]
             );
 
@@ -1247,7 +1105,7 @@ class ManagerReconciliationController extends Controller
             $handoverMatch,
             [
                 'handover_date' => $date, // Ensure it has the manager's requested date for the entry
-                'accountant_id' => session('staff_id') ?? auth()->id(),
+                'accountant_id' => auth()->id() ?: session('staff_id'),
                 'amount' => $totalAmtRecv,
                 'circulation_money' => $validated['circulation_money'] ?? 0,
                 'profit_amount' => $profitAmount,
@@ -2462,14 +2320,15 @@ class ManagerReconciliationController extends Controller
                 'date'      => 'required|date',
                 'type'      => 'required|string',
                 'amount'    => 'required|numeric|min:0',
-                'channel'   => 'required|string|in:cash,mobile_money,bank_transfer,pos_card',
+                'channel'   => 'required|string',
                 'reference' => 'nullable|string|max:500',
             ]);
 
             $ownerId = $this->getOwnerId();
             
-            $query = \App\Models\FinancialHandover::where('user_id', $ownerId)
-                ->where('department', $request->type);
+            return DB::transaction(function() use ($request, $ownerId) {
+                $query = \App\Models\FinancialHandover::where('user_id', $ownerId)
+                    ->where('department', $request->type);
             
             if ($request->filled('handover_id')) {
                 $query->where('id', $request->handover_id);
@@ -2484,106 +2343,188 @@ class ManagerReconciliationController extends Controller
             }
 
             $existingNotes = $handover->notes ?? '';
-            $channel = $request->channel;
             $amount = (float)$request->amount;
-
-            // 1. Accumulate total paid
-            $shortagePaidTotal = 0;
-            if (preg_match('/\[ShortagePaidTotal:(\d+)\]/', $existingNotes, $m)) {
-                $shortagePaidTotal = (int)$m[1];
-            }
-            $newTotal = $shortagePaidTotal + $amount;
+            $shiftId = $request->shift_id ?: ($handover->staff_shift_id ?: null);
             
-            // 2. Accumulate channel breakdown
-            $breakdown = [];
-            if (preg_match('/\[ShortagePaidBreakdown:([^\]]+)\]/', $existingNotes, $bm)) {
-                foreach (explode(',', $bm[1]) as $pair) {
-                    $kv = explode('=', $pair);
-                    if (count($kv) == 2) $breakdown[$kv[0]] = (float)$kv[1];
+            // Intelligence: Automatically distribute settlement to platforms that are SHORT
+            $systemExpected = $this->getSystemExpectedBreakdown($ownerId, $handover->handover_date, $handover->department, $shiftId);
+            $staffSubmitted = $handover->payment_breakdown ?: [];
+            
+            $distBreakdown = [];
+            $remainingPayment = $amount;
+
+            // Phase 1: Bridge the Gaps (Pro-rata settlement for short rows)
+            foreach ($systemExpected as $platform => $expected) {
+                $actual = (float)($staffSubmitted[$platform] ?? 0);
+                if ($actual < $expected && $remainingPayment > 0) {
+                    $deficit = $expected - $actual;
+                    $fill = min($deficit, $remainingPayment);
+                    $distBreakdown[$platform] = ($distBreakdown[$platform] ?? 0) + $fill;
+                    $remainingPayment -= $fill;
                 }
-            }
-            $breakdown[$channel] = ($breakdown[$channel] ?? 0) + $amount;
-            $breakdownStr = "";
-            foreach ($breakdown as $k => $v) {
-                $breakdownStr .= ($breakdownStr ? "," : "") . "{$k}={$v}";
-            }
-            // Distribute the payment into the actual platform breakdown for a clean audit table!
-            $currentBreakdown = $handover->payment_breakdown ?: [];
-            // Re-identify System Expected to find the "Shorts"
-            $ordersQuery = \App\Models\BarOrder::where('payment_status', 'paid')->with('orderPayments');
-            if ($handover->staff_shift_id) $ordersQuery->where('shift_id', $handover->staff_shift_id);
-            else $ordersQuery->whereDate('created_at', $handover->handover_date)->where('user_id', $handover->user_id);
-            $shiftOrders = $ordersQuery->get();
-            $systemByChannel = [];
-            foreach($shiftOrders as $o) {
-                foreach($o->orderPayments as $p) {
-                    $m = strtolower($p->payment_method);
-                    $prov = strtolower($p->mobile_money_number ?? '');
-                    $k = 'cash';
-                    if($m !== 'cash') {
-                       if(str_contains($prov, 'mpesa')) $k = 'mpesa';
-                       elseif(str_contains($prov, 'azania')) $k = 'azania';
-                       elseif(str_contains($prov,'nbc')) $k = 'nbc';
-                       elseif(str_contains($prov,'crdb')) $k = 'crdb';
-                       elseif(str_contains($prov,'nmb')) $k = 'nmb';
-                       else $k = 'bank_transfer';
-                    }
-                    $systemByChannel[$k] = ($systemByChannel[$k] ?? 0) + $p->amount;
-                }
-            }
-            // Subtract expenses (Simplified mapping)
-            $expenses = \App\Models\CounterExpense::where('user_id', $handover->user_id)
-                ->where('staff_shift_id', $handover->staff_shift_id)->get();
-            foreach($expenses as $e) {
-                $m = str_contains(strtolower($e->payment_method), 'cash') ? 'cash' : 'bank_transfer';
-                $systemByChannel[$m] = ($systemByChannel[$m] ?? 0) - $e->amount;
             }
 
-            // SMART DISTRIBUTION
-            $remainingPayment = $amount;
-            foreach($systemByChannel as $channelName => $expectedVal) {
-                $actualVal = $currentBreakdown[$channelName] ?? 0;
-                if ($actualVal < $expectedVal) {
-                    $gap = $expectedVal - $actualVal;
-                    $toFill = min($remainingPayment, $gap);
-                    $currentBreakdown[$channelName] = $actualVal + $toFill;
-                    $remainingPayment -= $toFill;
-                }
-                if ($remainingPayment <= 0) break;
+            // Phase 2: Any leftover surplus goes to the specifically selected channel
+            if ($remainingPayment > 0) {
+                $chosen = $this->normalizePaymentChannel($request->channel ?: 'cash');
+                $distBreakdown[$chosen] = ($distBreakdown[$chosen] ?? 0) + $remainingPayment;
             }
-            if ($remainingPayment > 0) { // All digital shorts covered? Put remaining in Cash
-                $currentBreakdown['cash'] = ($currentBreakdown['cash'] ?? 0) + $remainingPayment;
+
+            // Update the master record with Distributed Breakdown
+            Log::info('Shortage Settlement Distribution', [
+                'handover_id' => $handover->id,
+                'total_amount' => $amount,
+                'dist_breakdown' => $distBreakdown,
+                'remaining' => $remainingPayment
+            ]);
+
+            $currentBreakdown = $handover->payment_breakdown ?: [];
+            foreach ($distBreakdown as $p => $v) {
+                $currentBreakdown[$p] = ($currentBreakdown[$p] ?? 0) + $v;
             }
             $handover->payment_breakdown = $currentBreakdown;
             $handover->amount += $amount;
 
-            // Clean up old tags
-            $newNotes = preg_replace('/\[ShortagePaidTotal:\d+\]/', '', $existingNotes);
-            $newNotes = preg_replace('/\[ShortagePaidBreakdown:[^\]]+\]/', '', $newNotes);
-            $newNotes = trim($newNotes);
+            // Update Notes & Tags
+            $existingNotes = $handover->notes ?? '';
+            $shortagePaidTotal = 0;
+            if (preg_match('/\[ShortagePaidTotal:(\d+)\]/', $existingNotes, $m)) $shortagePaidTotal = (int)$m[1];
+            $newTotal = $shortagePaidTotal + $amount;
 
-            $newNotes .= "\n[ShortagePaidTotal:{$newTotal}]";
-            $newNotes .= "\n[ShortagePaidBreakdown:{$breakdownStr}]";
+            $breakTags = [];
+            if (preg_match('/\[ShortagePaidBreakdown:([^\]]+)\]/', $existingNotes, $bm)) {
+                foreach (explode(',', $bm[1]) as $pair) {
+                    $kv = explode('=', $pair);
+                    if (count($kv) == 2) $breakTags[$kv[0]] = (float)$kv[1];
+                }
+            }
+            foreach ($distBreakdown as $p => $v) $breakTags[$p] = ($breakTags[$p] ?? 0) + $v;
+            
+            $breakdownStr = "";
+            foreach ($breakTags as $k => $v) $breakdownStr .= ($breakdownStr ? "," : "") . "{$k}={$v}";
 
-            $timestamp = now()->format('d M Y H:i');
-            $noteEntry = "Shortage payment of TSh " . number_format($amount) . " (" . strtoupper(str_replace('_', ' ', $channel)) . ") recorded on {$timestamp}";
-            if ($request->reference) { $noteEntry .= " - " . $request->reference; }
-            $newNotes .= "\n[ShortageNote: {$noteEntry}]";
-            
-            $refStr = $request->reference ? str_replace(',', ' ', $request->reference) : 'Manual settlement';
-            $newNotes .= "\n[ShortagePaid:amount={$amount},channel={$channel},ref={$refStr}]";
-            
+            $newNotes = $existingNotes;
+            $newNotes = preg_match('/\[ShortagePaidTotal:(\d+)\]/', $newNotes) 
+                ? preg_replace('/\[ShortagePaidTotal:(\d+)\]/', "[ShortagePaidTotal:{$newTotal}]", $newNotes)
+                : $newNotes . "\n[ShortagePaidTotal:{$newTotal}]";
+
+            $newNotes = preg_match('/\[ShortagePaidBreakdown:[^\]]+\]/', $newNotes)
+                ? preg_replace('/\[ShortagePaidBreakdown:[^\]]+\]/', "[ShortagePaidBreakdown:{$breakdownStr}]", $newNotes)
+                : $newNotes . "\n[ShortagePaidBreakdown:{$breakdownStr}]";
+
+            $noteStr = "Shortage settlement of TSh " . number_format($amount) . " distributed per platform on " . now()->format('d M y H:i');
+            $newNotes .= "\n[ShortageNote: {$noteStr}]";
             $handover->notes = $newNotes;
-            $handover->status = 'verified'; // Paying a shortage implies audit is being finalized
+            $handover->status = 'verified';
             $handover->confirmed_at = now();
-            // Use staff_id from session if available, otherwise fallback to auth id
-            $handover->accountant_id = session('staff_id') ?: (auth()->id() ?: $handover->accountant_id);
+            $handover->accountant_id = auth()->id() ?: (session('staff_id') ?: $handover->accountant_id);
             $handover->save();
 
-            return response()->json(['success' => true, 'message' => 'Shortage payment recorded and handover verified successfully.']);
+                return response()->json(['success' => true, 'message' => 'Shortage of TSh ' . number_format($amount) . ' successfully recorded and distributed across platforms.']);
+            });
         } catch (\Exception $e) {
-            \Log::error('Shortage Payment Error: ' . $e->getMessage());
-            return response()->json(['success' => false, 'error' => 'Server Error: ' . $e->getMessage()], 500);
+            Log::error('Shortage Settlement Error: ' . $e->getMessage(), [
+                'trace' => $e->getTraceAsString(),
+                'input' => $request->all()
+            ]);
+            return response()->json(['success' => false, 'error' => 'Failed to record settlement: ' . $e->getMessage()], 500);
         }
+    }
+
+    /**
+     * Canonical Truth: Calculate Expected (Net) Platform Breakdown for any audit context
+     */
+    private function getSystemExpectedBreakdown($ownerId, $date, $type, $shiftId = null)
+    {
+        $dbDate = $date instanceof \Carbon\Carbon ? $date->toDateString() : date('Y-m-d', strtotime($date));
+        $recordedPlatformBreakdown = [];
+
+        $ordersQuery = \App\Models\BarOrder::where('payment_status', 'paid')->with('orderPayments');
+        if ($shiftId) $ordersQuery->where('shift_id', $shiftId);
+        else $ordersQuery->where('user_id', $ownerId)->whereDate('created_at', $dbDate);
+
+        foreach ($ordersQuery->get() as $order) {
+            $barAmount = $order->items ? $order->items->sum('total_price') : 0;
+            $foodAmount = $order->kitchenOrderItems ? $order->kitchenOrderItems->sum('total_price') : 0;
+            $totalAmount = $barAmount + $foodAmount;
+            $currentDeptAmount = ($type === 'bar') ? $barAmount : $foodAmount;
+            $proportion = ($totalAmount > 0) ? ($currentDeptAmount / $totalAmount) : 0;
+            if ($proportion <= 0) continue;
+
+            foreach ($order->orderPayments as $payment) {
+                $pProvider = strtolower(trim($payment->mobile_money_number ?? ''));
+                $pMethod   = strtolower(trim($payment->payment_method ?? 'cash'));
+                $pAmount   = (float)$payment->amount * $proportion;
+                
+                $key = 'cash';
+                if ($pMethod !== 'cash') {
+                    $key = $this->normalizePaymentChannel($pMethod);
+                    if (str_contains($pProvider, 'nbc')) $key = 'nbc';
+                    elseif (str_contains($pProvider, 'nmb')) $key = 'nmb';
+                    elseif (str_contains($pProvider, 'crdb')) $key = 'crdb';
+                    elseif (str_contains($pProvider, 'absa')) $key = 'absa';
+                    elseif (str_contains($pProvider, 'halopesa')) $key = 'halopesa';
+                    elseif (str_contains($pProvider, 'mpesa')) $key = 'mpesa';
+                    elseif (str_contains($pProvider, 't-pesa') || str_contains($pProvider, 'tpesa') || str_contains($pProvider, 'ttcl')) $key = 'tpesa';
+                }
+                $recordedPlatformBreakdown[$key] = ($recordedPlatformBreakdown[$key] ?? 0) + $pAmount;
+            }
+        }
+
+        if ($type === 'bar') {
+            $expensesQuery = \App\Models\CounterExpense::query();
+            if ($shiftId) $expensesQuery->where('staff_shift_id', $shiftId);
+            else $expensesQuery->where('expense_date', $dbDate);
+
+            foreach ($expensesQuery->get() as $exp) {
+                $method = $this->normalizePaymentChannel($exp->payment_method ?: 'cash');
+                $labelFound = isset($recordedPlatformBreakdown[$method]) ? $method : null;
+                if (!$labelFound) {
+                    foreach ($recordedPlatformBreakdown as $channel => $amt) {
+                        if (str_contains($channel, $method)) { $labelFound = $channel; break; }
+                    }
+                }
+                
+                if ($labelFound) {
+                    $recordedPlatformBreakdown[$labelFound] -= $exp->amount;
+                    if ($labelFound !== 'cash' && $recordedPlatformBreakdown[$labelFound] < 0) {
+                        $recordedPlatformBreakdown['cash'] = ($recordedPlatformBreakdown['cash'] ?? 0) - abs($recordedPlatformBreakdown[$labelFound]);
+                        $recordedPlatformBreakdown[$labelFound] = 0;
+                    }
+                } else {
+                    $defKey = ($method === 'cash') ? 'cash' : $method;
+                    $recordedPlatformBreakdown[$defKey] = ($recordedPlatformBreakdown[$defKey] ?? 0) - $exp->amount;
+                }
+            }
+        }
+        return $recordedPlatformBreakdown;
+    }
+
+    /**
+     * Canonical key normalizer — used for BOTH system and handover breakdowns
+     */
+    public function normalizePaymentChannel($channel)
+    {
+        $c = strtolower(trim(str_replace([' ', '-', '_'], '', $channel)));
+        if (str_contains($c, 'mpesa')) return 'mpesa';
+        if (str_contains($c, 'tpesa') || str_contains($c, 'ttcl')) return 'tpesa';
+        if (str_contains($c, 'tigo')) return 'tigo_pesa';
+        if (str_contains($c, 'airtel')) return 'airtel_money';
+        if (str_contains($c, 'halo')) return 'halopesa';
+        if (str_contains($c, 'mixx')) return 'mixx';
+        if (str_contains($c, 'crdb')) return 'crdb';
+        if (str_contains($c, 'nmb')) return 'nmb';
+        if (str_contains($c, 'nbc')) return 'nbc';
+        if (str_contains($c, 'kcb')) return 'kcb';
+        if (str_contains($c, 'stanbic')) return 'stanbic';
+        if (str_contains($c, 'equity')) return 'equity';
+        if (str_contains($c, 'dtb') || str_contains($c, 'diamond')) return 'dtb';
+        if (str_contains($c, 'exim')) return 'exim';
+        if (str_contains($c, 'azania')) return 'azania';
+        if (str_contains($c, 'visa')) return 'visa';
+        if (str_contains($c, 'mastercard')) return 'mastercard';
+        if (str_contains($c, 'cash')) return 'cash';
+        if (str_contains($c, 'bank') || str_contains($c, 'transfer')) return 'bank_transfer';
+        return $c;
     }
 }

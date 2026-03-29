@@ -14,7 +14,7 @@ class MenuService
      */
     protected const COMMON_SLUGS = [
         'dashboard', 'sales', 'products', 'customers', 'staff', 
-        'reports', 'marketing', 'settings', 'accountant-parent', 'stock-audit', 'counter-reconciliation', 'chef-reconciliation', 'targets'
+        'reports', 'marketing', 'settings', 'accountant-parent', 'stock-audit', 'counter-reconciliation', 'chef-reconciliation', 'targets', 'support'
     ];
 
     /**
@@ -334,8 +334,8 @@ class MenuService
             ]
         ];
 
-        // Dashboard is always accessible
-        if ($menu->slug === 'dashboard' || $menu->route === 'dashboard') {
+        // Dashboard and Support are always accessible
+        if (in_array($menu->slug, ['dashboard', 'support']) || in_array($menu->route, ['dashboard', 'support'])) {
             return true;
         }
 

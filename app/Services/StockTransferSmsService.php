@@ -37,7 +37,7 @@ class StockTransferSmsService
 
         foreach ($batchItems as $item) {
             $item->load(['productVariant.product']);
-            $productName = $item->productVariant->product->name ?? 'N/A';
+            $productName = $item->productVariant->display_name ?? ($item->productVariant->product->name ?? 'N/A');
             $message .= "- {$productName}: {$item->quantity_requested} " . ($item->productVariant->packaging ?? 'units') . " (" . number_format($item->total_units) . " total)\n";
         }
 
@@ -608,7 +608,7 @@ class StockTransferSmsService
             $variant = $transfer->productVariant;
             
             $pkg = $transfer->quantity_requested == 1 ? $variant->packaging : ($variant->packaging . 's');
-            $message .= "- {$product->name} ({$variant->measurement}): {$transfer->quantity_requested} {$pkg}\n";
+            $message .= "- {$variant->display_name}: {$transfer->quantity_requested} {$pkg}\n";
             $totalItems++;
         }
 

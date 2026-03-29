@@ -22,25 +22,44 @@
       }
       body {
         font-family: "Century Gothic", sans-serif;
+        background: url('{{ asset('default_images/bar_login_page_background.jpg') }}') no-repeat center center fixed;
+        background-size: cover;
       }
       .btn-primary {
         background-color: #940000;
         border-color: #940000;
+        box-shadow: 0 4px 10px rgba(148, 0, 0, 0.3);
       }
       .btn-primary:hover {
         background-color: #7a0000;
         border-color: #7a0000;
+      }
+      .logo {
+        background: rgba(0, 0, 0, 0.5);
+        padding: 15px 40px;
+        border-radius: 4px;
+        margin-bottom: 25px;
+        display: inline-block;
+        backdrop-filter: blur(5px);
+        border: 1px solid rgba(255, 255, 255, 0.1);
       }
       .logo h1 {
         color: #ffffff;
         font-family: "Century Gothic", sans-serif !important;
         letter-spacing: 5px;
         font-weight: 800;
-        text-shadow: 0 2px 4px rgba(0,0,0,0.2);
+        text-shadow: 0 4px 20px rgba(0,0,0,0.9);
         text-transform: uppercase;
+        margin: 0;
       }
-      .material-half-bg .cover {
-        background: linear-gradient(135deg, #940000 0%, #7a0000 100%);
+      /* Hide the original material half-bg to let body image shine through */
+      .material-half-bg {
+        display: none;
+      }
+      .login-box {
+        box-shadow: 0 15px 35px rgba(0,0,0,0.4);
+        border-radius: 8px;
+        background: rgba(255, 255, 255, 0.95);
       }
       /* Password toggle */
       .password-wrapper {
@@ -124,7 +143,6 @@
                   <input type="checkbox" name="remember" {{ old('remember') ? 'checked' : '' }}><span class="label-text">Stay Signed in</span>
                 </label>
               </div>
-              <p class="semibold-text mb-2"><a href="#" data-toggle="flip">Forgot Password ?</a></p>
             </div>
           </div>
           <div class="form-group btn-container">
@@ -135,21 +153,45 @@
             </button>
           </div>
         </form>
-        <form class="forget-form" action="#" method="POST">
-          @csrf
-          <h3 class="login-head"><i class="fa fa-lg fa-fw fa-lock"></i>Forgot Password ?</h3>
-          <div class="form-group">
-            <label class="control-label">EMAIL</label>
-            <input class="form-control" type="text" placeholder="Email">
-          </div>
-          <div class="form-group btn-container">
-            <button type="submit" class="btn btn-primary btn-block"><i class="fa fa-unlock fa-lg fa-fw"></i>RESET</button>
-          </div>
-          <div class="form-group mt-3">
-            <p class="semibold-text mb-0"><a href="#" data-toggle="flip"><i class="fa fa-angle-left fa-fw"></i> Back to Login</a></p>
-          </div>
-        </form>
       </div>
+      <!-- Floating Support Button -->
+      <a href="https://www.emca.tech/contact" target="_blank" class="reach-us-btn shadow-lg" title="Support" style="position: fixed; bottom: 85px; right: 25px; z-index: 1000; background: #940000; color: white; width: 50px; height: 50px; border-radius: 50%; display: flex; align-items: center; justify-content: center; text-decoration: none; border: 2px solid white; transition: all 0.3s ease;">
+        <i class="fa fa-phone fa-lg"></i>
+        <span class="reach-text" style="position: absolute; right: 60px; background: rgba(0,0,0,0.7); color: white; padding: 4px 15px; border-radius: 20px; font-size: 10px; font-weight: 900; white-space: nowrap; transition: all 0.3s ease; letter-spacing: 1.5px; border: 1px solid rgba(255,255,255,0.2);">SUPPORT</span>
+      </a>
+
+      <!-- Animated Powered By Badge -->
+      <div class="powered-badge shadow-lg" style="position: fixed; bottom: 20px; right: 25px; z-index: 1000; background: rgba(255,255,255,0.95); padding: 8px 18px; border-radius: 4px; border-left: 4px solid #940000; animation: pulse-border 2s infinite;">
+        <p class="small mb-0" style="color: #333; font-weight: 800; letter-spacing: 1px; font-size: 10px; text-transform: uppercase;">
+          <span style="color: #888;">Powered By</span> <a href="https://www.emca.tech" target="_blank" class="animated-text" style="color: #940000; text-decoration: none; font-weight: 900; animation: color-pulse 2s infinite; text-transform: none !important;">EmCa Techonologies LTD</a>
+        </p>
+      </div>
+
+      <style>
+        .reach-us-btn {
+          animation: float-pulse 3s infinite ease-in-out;
+        }
+        .reach-us-btn:hover {
+          transform: scale(1.1);
+          background: #7a0000;
+          animation-play-state: paused;
+        }
+        @keyframes float-pulse {
+          0% { transform: scale(1); box-shadow: 0 0 0 0 rgba(148, 0, 0, 0.7); }
+          50% { transform: scale(1.1); box-shadow: 0 0 0 15px rgba(148, 0, 0, 0); }
+          100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(148, 0, 0, 0); }
+        }
+        @keyframes pulse-border {
+          0% { box-shadow: 0 0 0 0 rgba(148, 0, 0, 0.4); }
+          70% { box-shadow: 0 0 0 10px rgba(148, 0, 0, 0); }
+          100% { box-shadow: 0 0 0 0 rgba(148, 0, 0, 0); }
+        }
+        @keyframes color-pulse {
+          0% { opacity: 1; }
+          50% { opacity: 0.7; }
+          100% { opacity: 1; }
+        }
+      </style>
     </section>
     <!-- Essential javascripts for application to work-->
     <script src="{{ asset('js/admin/jquery-3.2.1.min.js') }}"></script>

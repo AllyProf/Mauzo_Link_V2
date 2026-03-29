@@ -121,10 +121,16 @@ class ProductVariant extends Model
      */
     public function getDisplayNameAttribute()
     {
+        $specificName = $this->name;
+        // If variant name is empty, identical to product name, or generic, try falling back to brand
+        if (empty(trim($specificName)) || strcasecmp(trim($specificName), trim($this->product->name ?? '')) === 0) {
+            $specificName = $this->product->brand ?? $specificName;
+        }
+
         return \App\Helpers\ProductHelper::generateDisplayName(
             $this->product->name ?? 'N/A', 
             ($this->measurement ?? '') . ' - ' . ($this->packaging ?? ''),
-            $this->name
+            $specificName
         );
     }
 

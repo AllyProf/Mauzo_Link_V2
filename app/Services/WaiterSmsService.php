@@ -35,7 +35,7 @@ class WaiterSmsService
         
         // Add drink items
         foreach ($order->items as $item) {
-            $productName = $item->productVariant->product->name ?? 'Item';
+            $productName = $item->productVariant->display_name ?? ($item->productVariant->product->name ?? 'Item');
             $items[] = $item->quantity . 'x ' . $productName;
         }
         
@@ -181,7 +181,7 @@ class WaiterSmsService
         
         // Add drink items
         foreach ($order->items as $item) {
-            $productName = $item->productVariant->product->name ?? 'Item';
+            $productName = $item->productVariant->display_name ?? ($item->productVariant->product->name ?? 'Item');
             $items[] = $item->quantity . 'x ' . $productName;
         }
         
